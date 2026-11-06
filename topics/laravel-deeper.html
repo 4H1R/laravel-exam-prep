@@ -1,0 +1,2310 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laravel Deeper — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="laravel-deeper">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Laravel Deeper</h1>
+    <p class="lead">سازوکارهای درونی و زیرسیستم‌های پیشرفته Laravel: Service Container و Service Providerها در عمق، درون Facadeها، صف و Job، رویدادها و Broadcasting، Cache و قفل اتمیک، زمان‌بندی، مجوزدهی و احراز هویت API، Pipeline، تست، Octane و نکات استقرار و امنیت.</p>
+  </header>
+
+  <section class="lesson" id="container" data-title="Service Container در عمق">
+    <h2>Service Container در عمق</h2>
+    <p><strong>Service Container</strong> قلب Laravel است: یک <strong>IoC Container</strong> که دو کار اصلی انجام می‌دهد: <strong>ثبت</strong> (binding) یعنی «وقتی کسی X خواست، این‌طور بسازش» و <strong>حل وابستگی</strong> (resolving) یعنی ساختن شیء همراه با تمام وابستگی‌هایش. خود شیء <code>Illuminate\Foundation\Application</code> از <code>Illuminate\Container\Container</code> ارث می‌برد؛ پس <code>app()</code> همان کانتینر است. Controllerها، Middlewareها، Jobها، Listenerها، Commandها و Policyها همه از طریق کانتینر ساخته می‌شوند و به همین دلیل type-hint در constructor آن‌ها «خودبه‌خود کار می‌کند».</p>
+
+    <h3>انواع binding</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>طول عمر نمونه</th><th>کاربرد معمول</th></tr></thead>
+      <tbody>
+        <tr><td><code>bind</code></td><td>هر بار <code>make</code> یک نمونه جدید (transient)</td><td>سرویس‌های بدون state یا وقتی هر مصرف‌کننده نمونه مستقل لازم دارد</td></tr>
+        <tr><td><code>singleton</code></td><td>یک نمونه برای کل عمر Application (در PHP-FPM یعنی یک درخواست؛ در Octane و Queue Worker یعنی تا ری‌استارت پروسه)</td><td>کلاینت‌های پرهزینه، سرویس‌های بدون state وابسته به درخواست</td></tr>
+        <tr><td><code>scoped</code></td><td>یک نمونه در هر «چرخه» درخواست یا Job؛ Octane و Queue Worker در شروع هر درخواست/Job آن را flush می‌کنند</td><td>سرویس‌هایی که state مربوط به درخواست جاری دارند (tenant فعلی، کاربر فعلی)</td></tr>
+        <tr><td><code>instance</code></td><td>شیئی که خودتان از قبل ساخته‌اید به‌عنوان singleton ثبت می‌شود</td><td>تست‌ها، اشیای ساخته‌شده بیرون از کانتینر</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+use App\Contracts\PaymentGateway;
+use App\Services\ZarinpalGateway;
+use Illuminate\Contracts\Foundation\Application;
+
+// داخل register() یک ServiceProvider
+$this-&gt;app-&gt;bind(ReportBuilder::class, fn (Application $app) =&gt; new ReportBuilder($app-&gt;make(Exporter::class)));
+
+$this-&gt;app-&gt;singleton(PaymentGateway::class, function (Application $app) {
+    return new ZarinpalGateway(config('services.zarinpal.merchant_id'));
+});
+
+$this-&gt;app-&gt;scoped(TenantContext::class, fn () =&gt; new TenantContext());
+
+$this-&gt;app-&gt;instance(Clock::class, new FrozenClock('2026-11-11 12:45'));
+
+// نسخه‌های شرطی: فقط اگر قبلاً ثبت نشده باشد
+$this-&gt;app-&gt;singletonIf(Exporter::class, CsvExporter::class);</code></pre>
+    <div class="callout exam"><p>تفاوت <code>singleton</code> و <code>scoped</code> فقط در محیط‌های <strong>long-running</strong> (Octane، Queue Worker) معنا پیدا می‌کند. در PHP-FPM معمولی هر درخواست پروسه را از صفر boot می‌کند، پس هر دو عملاً یکسان رفتار می‌کنند.</p></div>
+
+    <h3>Auto-resolution با Reflection (Autowiring)</h3>
+    <p>اگر برای یک <strong>کلاس concrete</strong> هیچ bindingی ثبت نشده باشد، کانتینر با <strong>Reflection API</strong> خود PHP آن را می‌سازد. به همین دلیل اکثر کلاس‌ها اصلاً نیازی به binding ندارند. مراحل متد <code>build()</code>:</p>
+    <ol>
+      <li>با <code>ReflectionClass</code> بررسی می‌کند کلاس <strong>instantiable</strong> است یا نه (interface و abstract نیستند).</li>
+      <li>constructor را می‌خواند؛ اگر constructor نداشته باشد، مستقیم <code>new</code> می‌کند.</li>
+      <li>برای هر پارامتر: اگر type آن یک کلاس یا interface باشد، به‌صورت <strong>بازگشتی</strong> <code>make</code> می‌کند؛ اگر primitive باشد (<code>string</code>، <code>int</code>) و مقدار پیش‌فرض داشته باشد از آن استفاده می‌کند، وگرنه <code>BindingResolutionException</code> می‌دهد.</li>
+      <li>نتیجه را با <code>newInstanceArgs</code> می‌سازد و resolving callbackها را اجرا می‌کند.</li>
+    </ol>
+    <pre><code class="language-php">&lt;?php
+class InvoiceService
+{
+    // هیچ binding لازم نیست؛ کانتینر Mailer و InvoiceRepository را خودش می‌سازد
+    public function __construct(
+        private InvoiceRepository $invoices,
+        private Mailer $mailer,
+        private int $dueDays = 30, // primitive با مقدار پیش‌فرض: مشکلی نیست
+    ) {}
+}
+
+// خطای رایج: interface بدون binding
+// Target [App\Contracts\PaymentGateway] is not instantiable while building [CheckoutController].</code></pre>
+
+    <h3>bind کردن interface به implementation</h3>
+    <p>این مهم‌ترین کاربرد کانتینر در معماری تمیز است: کد مصرف‌کننده به <strong>abstraction</strong> وابسته است (اصل Dependency Inversion) و تصمیم «کدام پیاده‌سازی» در یک جای مرکزی گرفته می‌شود. تعویض درگاه پرداخت یا Mock کردن در تست فقط یک خط تغییر است.</p>
+    <pre><code class="language-php">&lt;?php
+$this-&gt;app-&gt;bind(PaymentGateway::class, ZarinpalGateway::class);
+
+// یا با property در ServiceProvider (برای bindingهای ساده)
+public array $bindings = [
+    PaymentGateway::class =&gt; ZarinpalGateway::class,
+];
+public array $singletons = [
+    SmsSender::class =&gt; KavenegarSmsSender::class,
+];</code></pre>
+
+    <h3>Contextual Binding</h3>
+    <p>وقتی دو کلاس به <strong>یک interface</strong> نیاز دارند ولی هرکدام پیاده‌سازی متفاوتی می‌خواهند:</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Storage;
+
+$this-&gt;app-&gt;when(PhotoController::class)
+    -&gt;needs(Filesystem::class)
+    -&gt;give(fn () =&gt; Storage::disk('local'));
+
+$this-&gt;app-&gt;when([VideoController::class, UploadController::class])
+    -&gt;needs(Filesystem::class)
+    -&gt;give(fn () =&gt; Storage::disk('s3'));
+
+// تزریق مقدار primitive
+$this-&gt;app-&gt;when(SmsSender::class)
+    -&gt;needs('$apiKey')
+    -&gt;giveConfig('services.kavenegar.key');</code></pre>
+    <p>در نسخه‌های اخیر Laravel 11 به بعد، <strong>Contextual Attributeها</strong> هم اضافه شده‌اند که همین کار را در خود امضای constructor انجام می‌دهند؛ مثل <code>#[Config('app.timezone')] string $tz</code>، <code>#[Storage('s3')] Filesystem $disk</code> و <code>#[CurrentUser] User $user</code> (از فضای نام <code>Illuminate\Container\Attributes</code>).</p>
+
+    <h3>Tagging، extend و resolving callback</h3>
+    <pre><code class="language-php">&lt;?php
+// Tagging: گروه‌بندی چند binding و resolve یکجا
+$this-&gt;app-&gt;tag([CpuReport::class, MemoryReport::class], 'reports');
+$this-&gt;app-&gt;bind(ReportAggregator::class, fn ($app) =&gt; new ReportAggregator($app-&gt;tagged('reports')));
+
+// extend: تزئین (Decorator) یک سرویس بعد از ساخته شدن
+$this-&gt;app-&gt;extend(PaymentGateway::class, function (PaymentGateway $gateway, $app) {
+    return new LoggingPaymentGateway($gateway, $app-&gt;make(LoggerInterface::class));
+});
+
+// resolving: هر بار که نوعی resolve شد، روی آن کاری انجام بده
+$this-&gt;app-&gt;resolving(ApiClient::class, function (ApiClient $client, $app) {
+    $client-&gt;setUserAgent('MyApp/1.0');
+});
+$this-&gt;app-&gt;afterResolving(ApiClient::class, fn ($client) =&gt; /* ... */ null);</code></pre>
+
+    <h3>گرفتن نمونه و Method Injection</h3>
+    <ul>
+      <li><code>app(Foo::class)</code>، <code>resolve(Foo::class)</code>، <code>$this-&gt;app-&gt;make(Foo::class)</code> معادل‌اند؛ <code>makeWith(Foo::class, ['id' =&gt; 5])</code> پارامترهای ناقص را تکمیل می‌کند.</li>
+      <li><code>app()-&gt;bound(Foo::class)</code> و <code>app()-&gt;has()</code> وجود binding را بررسی می‌کنند.</li>
+      <li><strong>Method injection:</strong> علاوه بر constructor، کانتینر پارامترهای متدهایی مثل action کنترلر، <code>handle()</code> در Job و Command، و <code>boot()</code> در Provider را هم تزریق می‌کند. خودتان هم می‌توانید با <code>App::call([$obj, 'method'])</code> یا <code>app()-&gt;call(fn (Mailer $m) =&gt; ...)</code> از آن استفاده کنید.</li>
+    </ul>
+    <div class="callout warn"><p>صدا زدن <code>app()</code> یا <code>resolve()</code> در وسط منطق کسب‌وکار یعنی الگوی <strong>Service Locator</strong>: وابستگی‌ها پنهان می‌شوند و تست سخت‌تر می‌شود. تا جایی که می‌شود از <strong>constructor injection</strong> استفاده کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="providers" data-title="Service Providerها و توسعه پکیج">
+    <h2>Service Providerها و توسعه پکیج</h2>
+    <p><strong>Service Provider</strong> محل مرکزی <strong>bootstrap</strong> کردن برنامه است: ثبت bindingها در کانتینر، ثبت event listener، middleware، route، macro، view composer و هر پیکربندی دیگر. خود Laravel هم تمام زیرسیستم‌هایش (Cache، Queue، Mail، Database…) را با Providerها ثبت می‌کند. در Laravel 11 به بعد، Providerهای برنامه در فایل <code>bootstrap/providers.php</code> فهرست می‌شوند (در Laravel ≤10 در آرایه <code>providers</code> فایل <code>config/app.php</code>) و <code>make:provider</code> آن را خودکار به این فایل اضافه می‌کند.</p>
+
+    <h3>register در برابر boot و چرا این تفکیک وجود دارد</h3>
+    <div class="grid-2">
+      <div class="card"><h4>register()</h4><ul>
+        <li>فقط و فقط <strong>binding در کانتینر</strong>.</li>
+        <li>برای <strong>همه</strong> Providerها اول register اجرا می‌شود و بعد boot.</li>
+        <li>نباید از سرویس دیگری استفاده کنید؛ ممکن است Provider آن هنوز register نشده باشد.</li>
+        <li><code>mergeConfigFrom</code> پکیج اینجاست.</li>
+      </ul></div>
+      <div class="card"><h4>boot()</h4><ul>
+        <li>بعد از register همه Providerها اجرا می‌شود؛ <strong>همه سرویس‌ها در دسترس‌اند</strong>.</li>
+        <li>ثبت Gate و Policy، <code>RateLimiter::for</code>، <code>Event::listen</code>، macroها، view composer، <code>Model::preventLazyLoading()</code>.</li>
+        <li>از method injection پشتیبانی می‌کند: <code>boot(Dispatcher $events)</code>.</li>
+      </ul></div>
+    </div>
+    <p>دلیل این طراحی، <strong>ترتیب نامعلوم</strong> Providerهاست. Laravel اول نقشه کامل «چه چیزی را چطور بسازم» را کامل می‌کند (فاز register) و بعد اجازه استفاده از سرویس‌ها را می‌دهد (فاز boot). اگر در register مثلاً <code>Route::</code> یا <code>Auth::</code> را صدا بزنید، ممکن است سرویس پشت آن هنوز ثبت نشده باشد یا زودتر از موعد و با پیکربندی ناقص ساخته شود.</p>
+    <pre><code class="language-php">&lt;?php
+namespace App\Providers;
+
+use App\Contracts\PaymentGateway;
+use App\Services\ZarinpalGateway;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\ServiceProvider;
+
+class AppServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this-&gt;app-&gt;singleton(PaymentGateway::class, ZarinpalGateway::class);
+    }
+
+    public function boot(): void
+    {
+        RateLimiter::for('api', fn (Request $request) =&gt;
+            Limit::perMinute(60)-&gt;by($request-&gt;user()?-&gt;id ?: $request-&gt;ip()));
+    }
+}</code></pre>
+
+    <h3>Deferred Provider</h3>
+    <p>Providerی که <strong>فقط binding ثبت می‌کند</strong> را می‌توان <strong>deferred</strong> کرد تا تنها زمانی load شود که یکی از سرویس‌هایش واقعاً درخواست شود. Laravel فهرست سرویس‌های هر deferred provider را در <code>bootstrap/cache/services.php</code> کش می‌کند و در هر درخواست به‌جای register همه، فقط نقشه را می‌خواند؛ نتیجه، boot سریع‌تر است.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Contracts\Support\DeferrableProvider;
+
+class RiakServiceProvider extends ServiceProvider implements DeferrableProvider
+{
+    public function register(): void
+    {
+        $this-&gt;app-&gt;singleton(Connection::class, fn ($app) =&gt; new Connection(config('riak')));
+    }
+
+    public function provides(): array
+    {
+        return [Connection::class];
+    }
+}</code></pre>
+    <div class="callout warn"><p>Providerی که در <code>boot()</code> کار جانبی دارد (ثبت route، listener، macro) نباید deferred باشد؛ چون ممکن است هرگز load نشود و آن کارها انجام نشوند.</p></div>
+
+    <h3>Package Auto-Discovery</h3>
+    <p>پکیج‌ها در <code>composer.json</code> خود، Provider و Facade را اعلام می‌کنند و Laravel بعد از <code>composer install</code> با اسکریپت <code>package:discover</code> آن‌ها را خودکار ثبت می‌کند (نتیجه در <code>bootstrap/cache/packages.php</code>). برنامه می‌تواند با <code>dont-discover</code> در <code>composer.json</code> خودش جلوی کشف یک پکیج را بگیرد.</p>
+    <pre><code class="language-json">{
+  "extra": {
+    "laravel": {
+      "providers": ["Acme\\Invoices\\InvoicesServiceProvider"],
+      "aliases": { "Invoices": "Acme\\Invoices\\Facades\\Invoices" }
+    }
+  }
+}</code></pre>
+
+    <h3>مبانی توسعه پکیج</h3>
+    <p>یک پکیج Laravel در اصل یک پکیج Composer با یک Service Provider است. ابزارهای اصلی Provider پکیج:</p>
+    <pre><code class="language-php">&lt;?php
+class InvoicesServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        // config پیش‌فرض پکیج با config برنامه ادغام می‌شود
+        $this-&gt;mergeConfigFrom(__DIR__.'/../config/invoices.php', 'invoices');
+        $this-&gt;app-&gt;singleton(InvoiceManager::class);
+    }
+
+    public function boot(): void
+    {
+        $this-&gt;loadRoutesFrom(__DIR__.'/../routes/web.php');
+        $this-&gt;loadViewsFrom(__DIR__.'/../resources/views', 'invoices'); // view('invoices::pdf')
+        $this-&gt;loadMigrationsFrom(__DIR__.'/../database/migrations');
+        $this-&gt;loadTranslationsFrom(__DIR__.'/../lang', 'invoices');
+
+        $this-&gt;publishes([
+            __DIR__.'/../config/invoices.php' =&gt; config_path('invoices.php'),
+        ], 'invoices-config'); // php artisan vendor:publish --tag=invoices-config
+
+        if ($this-&gt;app-&gt;runningInConsole()) {
+            $this-&gt;commands([GenerateInvoicesCommand::class]);
+        }
+    }
+}</code></pre>
+    <div class="callout tip"><p>برای تست پکیج بیرون از یک برنامه کامل، از <strong>Orchestra Testbench</strong> استفاده می‌شود که یک Application مینیمال برای تست فراهم می‌کند.</p></div>
+  </section>
+
+  <section class="lesson" id="facades" data-title="درون Facadeها و Contracts">
+    <h2>درون Facadeها و Contracts</h2>
+    <p><strong>Facade</strong> یک کلاس با رابط <strong>static</strong> است که فراخوانی را به یک <strong>شیء واقعی در کانتینر</strong> پراکسی می‌کند. پس <code>Cache::get('key')</code> در واقع متد static نیست؛ معادل <code>app('cache')-&gt;get('key')</code> است. (مقدمه Facade در صفحه Laravel Basics آمده؛ اینجا سازوکار درونی را می‌بینیم.)</p>
+
+    <h3>یک فراخوانی Facade قدم به قدم</h3>
+    <pre class="diagram">Cache::get('key')
+   │  متد static به نام get در کلاس Facade وجود ندارد
+   ▼
+Facade::__callStatic('get', ['key'])
+   │
+   ▼
+static::getFacadeRoot()
+   │  getFacadeAccessor()  ──►  'cache'
+   ▼
+resolveFacadeInstance('cache')
+   │  اگر در static::$resolvedInstance کش شده بود همان را برگردان
+   │  وگرنه  static::$app['cache']   (یعنی $app-&gt;make('cache'))
+   ▼
+CacheManager  ──►  $instance-&gt;get('key')</pre>
+    <pre><code class="language-php">&lt;?php
+// تعریف یک Facade سفارشی
+namespace App\Facades;
+
+use Illuminate\Support\Facades\Facade;
+
+/**
+ * @method static bool charge(int $amount, string $token)
+ * @see \App\Services\ZarinpalGateway
+ */
+class Payment extends Facade
+{
+    protected static function getFacadeAccessor(): string
+    {
+        return \App\Contracts\PaymentGateway::class; // کلید binding در کانتینر
+    }
+}
+
+// استفاده
+Payment::charge(50000, $token);</code></pre>
+    <p>docblockهای <code>@method</code> فقط برای IDE و ابزارهای تحلیل ایستا است؛ اجرای واقعی با <code>__callStatic</code> انجام می‌شود.</p>
+
+    <h3>Real-time Facade</h3>
+    <p>با پیشوند <code>Facades\</code> در namespace، هر کلاسی بدون تعریف کلاس Facade، رابط Facade پیدا می‌کند. Laravel کلاس Facade را در زمان اجرا تولید و کش می‌کند (در <code>storage/framework/cache</code>).</p>
+    <pre><code class="language-php">&lt;?php
+use Facades\App\Services\ExchangeRateService;
+
+$rate = ExchangeRateService::usdToIrr();   // پشت صحنه: app(ExchangeRateService::class)-&gt;usdToIrr()
+
+// در تست
+ExchangeRateService::shouldReceive('usdToIrr')-&gt;andReturn(600000);</code></pre>
+
+    <h3>Facade در برابر Helper در برابر Dependency Injection</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Facade</th><th>Helper (مثل <code>cache()</code>)</th><th>Constructor DI</th></tr></thead>
+      <tbody>
+        <tr><td>خوانایی</td><td>کوتاه و گویا</td><td>کوتاه</td><td>کمی پرحرف‌تر</td></tr>
+        <tr><td>آشکار بودن وابستگی</td><td>پنهان در بدنه متد</td><td>پنهان</td><td><strong>آشکار در امضای constructor</strong></td></tr>
+        <tr><td>تست‌پذیری</td><td>خوب: <code>shouldReceive</code>، <code>fake()</code></td><td>خوب (همان سرویس کانتینر را می‌گیرد)</td><td>عالی؛ حتی بدون کانتینر Laravel قابل unit test</td></tr>
+        <tr><td>وابستگی به فریم‌ورک</td><td>بالا</td><td>بالا</td><td>کم (اگر به Contract وابسته باشید)</td></tr>
+        <tr><td>خطر</td><td>«Scope creep»: کلاسی که ده Facade صدا می‌زند و کسی متوجه بزرگ شدنش نمی‌شود</td><td>مشابه Facade</td><td>constructor شلوغ، که خودش هشدار طراحی است</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>جمله کلیدی: «Facadeها <strong>static واقعی نیستند</strong>؛ چون پشتشان یک شیء کانتینر است، برخلاف متدهای static معمولی <strong>قابل mock</strong> هستند.» تفاوت با DI در آشکار بودن وابستگی‌ها و میزان coupling با فریم‌ورک است، نه در تست‌پذیری.</p></div>
+
+    <h3>تست با Facadeها</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
+
+Cache::shouldReceive('get')-&gt;once()-&gt;with('settings')-&gt;andReturn(['theme' =&gt; 'dark']);
+
+Queue::fake();   // Jobها push نمی‌شوند، فقط ثبت می‌شوند
+Mail::fake();
+// ... اجرای کد
+Queue::assertPushed(ProcessOrder::class, fn ($job) =&gt; $job-&gt;order-&gt;id === 1);
+Mail::assertSent(OrderShipped::class);</code></pre>
+    <p>متدهای <code>shouldReceive</code>، <code>spy</code>، <code>partialMock</code> و <code>expects</code> روی همه Facadeها در دسترس‌اند (Mockery). Facadeهایی مثل <code>Queue</code>، <code>Bus</code>، <code>Event</code>، <code>Mail</code>، <code>Notification</code>، <code>Storage</code> و <code>Http</code> متد <code>fake()</code> اختصاصی دارند که شیء واقعی را با یک Fake قابل assert جایگزین می‌کند.</p>
+
+    <h3>Contracts</h3>
+    <p><strong>Contracts</strong> مجموعه interfaceهای <code>Illuminate\Contracts\*</code> است که سرویس‌های هسته را تعریف می‌کنند؛ مثل <code>Illuminate\Contracts\Cache\Repository</code>، <code>Illuminate\Contracts\Queue\Queue</code>، <code>Illuminate\Contracts\Mail\Mailer</code>، <code>Illuminate\Contracts\Auth\Guard</code>. هر Facade معادل یک Contract دارد. type-hint روی Contract یعنی:</p>
+    <ul>
+      <li><strong>loose coupling:</strong> کد شما به interface وابسته است نه به پیاده‌سازی Redis یا File.</li>
+      <li><strong>وابستگی صریح</strong> در constructor (بر خلاف Facade).</li>
+      <li>برای <strong>نویسندگان پکیج</strong> بهترین گزینه است؛ چون پکیج به جزئیات فریم‌ورک گره نمی‌خورد.</li>
+    </ul>
+    <p>Contractهای علامت‌گذار (marker) هم داریم که متدی ندارند و فقط رفتار را فعال می‌کنند: <code>ShouldQueue</code>، <code>ShouldBroadcast</code>، <code>ShouldBeUnique</code>، <code>DeferrableProvider</code>.</p>
+  </section>
+
+  <section class="lesson" id="queues" data-title="صف‌ها و Jobها: مبانی">
+    <h2>صف‌ها و Jobها: مبانی</h2>
+    <p><strong>Queue</strong> کارهای زمان‌بر یا ناپایدار (ارسال ایمیل و SMS، پردازش تصویر، فراخوانی API خارجی، تولید گزارش) را از چرخه درخواست HTTP بیرون می‌برد تا پاسخ سریع برگردد و کار در پس‌زمینه توسط <strong>Worker</strong> انجام شود. مزایا: زمان پاسخ کمتر، <strong>retry</strong> خودکار در خطاهای گذرا، کنترل نرخ و موازی‌سازی، و جداسازی خرابی‌ها.</p>
+
+    <h3>درایورها و پیکربندی</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>درایور</th><th>توضیح</th></tr></thead>
+      <tbody>
+        <tr><td><code>sync</code></td><td>Job همان لحظه در همان پروسه اجرا می‌شود؛ برای توسعه و تست</td></tr>
+        <tr><td><code>database</code></td><td>جدول <code>jobs</code>؛ در Laravel 11 پیش‌فرض است. ساده و بدون زیرساخت اضافه ولی در بار بالا فشار روی DB</td></tr>
+        <tr><td><code>redis</code></td><td>سریع و رایج‌ترین انتخاب production؛ پیش‌نیاز Horizon</td></tr>
+        <tr><td><code>sqs</code></td><td>صف مدیریت‌شده AWS</td></tr>
+        <tr><td><code>beanstalkd</code></td><td>صف سبک اختصاصی</td></tr>
+        <tr><td><code>null</code></td><td>Jobها را دور می‌ریزد</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>connection</strong> (در <code>config/queue.php</code> و <code>QUEUE_CONNECTION</code>) سرویس صف است و <strong>queue</strong> نام یک صف داخل آن connection (مثل <code>high</code>، <code>default</code>، <code>emails</code>). Worker می‌تواند با اولویت چند صف را بخواند: <code>queue:work --queue=high,default</code>.</p>
+
+    <h3>آناتومی یک Job</h3>
+    <pre><code class="language-php">&lt;?php
+namespace App\Jobs;
+
+use App\Models\Podcast;
+use App\Services\AudioProcessor;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+
+class ProcessPodcast implements ShouldQueue
+{
+    use Queueable; // Laravel 11: شامل Dispatchable, InteractsWithQueue, Queueable, SerializesModels
+
+    public int $tries = 3;
+    public int $timeout = 120;
+
+    public function __construct(public Podcast $podcast) {}
+
+    // وابستگی‌های handle با method injection از کانتینر می‌آیند
+    public function handle(AudioProcessor $processor): void
+    {
+        $processor-&gt;process($this-&gt;podcast);
+    }
+}</code></pre>
+    <div class="callout note"><p>در Laravel ≤10 کلاس Job چهار trait جدا داشت: <code>Dispatchable, InteractsWithQueue, Queueable, SerializesModels</code>. در Laravel 11 همه در trait واحد <code>Illuminate\Foundation\Queue\Queueable</code> جمع شده‌اند.</p></div>
+
+    <h3>SerializesModels: چه چیزی واقعاً در صف ذخیره می‌شود؟</h3>
+    <p>وقتی یک مدل Eloquent را به Job می‌دهید، کل مدل serialize نمی‌شود؛ فقط <strong>کلاس و کلید اصلی</strong> (و relationهای load شده) ذخیره می‌شود و Worker هنگام اجرا مدل را <strong>دوباره از دیتابیس می‌خواند</strong>. نتیجه‌ها:</p>
+    <ul>
+      <li>payload کوچک می‌ماند و Job با <strong>داده تازه</strong> کار می‌کند.</li>
+      <li>اگر مدل تا زمان اجرا حذف شود، <code>ModelNotFoundException</code> رخ می‌دهد. با <code>public bool $deleteWhenMissingModels = true;</code> Job بی‌صدا حذف می‌شود.</li>
+      <li>closure، resource، اتصال PDO و اشیای غیرقابل serialize را در property قرار ندهید.</li>
+    </ul>
+
+    <h3>روش‌های dispatch</h3>
+    <pre><code class="language-php">&lt;?php
+ProcessPodcast::dispatch($podcast);                         // به صف پیش‌فرض
+ProcessPodcast::dispatch($podcast)-&gt;onQueue('media')-&gt;onConnection('redis');
+ProcessPodcast::dispatch($podcast)-&gt;delay(now()-&gt;addMinutes(10));
+ProcessPodcast::dispatchIf($podcast-&gt;isReady(), $podcast);
+ProcessPodcast::dispatchSync($podcast);                     // فوراً و همزمان، بدون صف
+ProcessPodcast::dispatchAfterResponse($podcast);            // بعد از ارسال پاسخ به کاربر، در همان پروسه
+ProcessPodcast::dispatch($podcast)-&gt;afterCommit();          // فقط بعد از commit تراکنش جاری
+
+dispatch(function () use ($podcast) {                       // Closure job
+    $podcast-&gt;publish();
+});</code></pre>
+
+    <h3>مشکل dispatch داخل تراکنش و afterCommit</h3>
+    <p>اگر Job را داخل <code>DB::transaction</code> dispatch کنید، ممکن است Worker <strong>قبل از commit</strong> آن را بردارد؛ رکورد هنوز در دیتابیس دیده نمی‌شود (ModelNotFound) یا اگر تراکنش rollback شود، Job برای داده‌ای اجرا می‌شود که هرگز وجود نداشته (مثلاً ایمیل تأیید سفارشی که ثبت نشد).</p>
+    <pre><code class="language-php">&lt;?php
+DB::transaction(function () use ($request) {
+    $order = Order::create($request-&gt;validated());
+    SendOrderConfirmation::dispatch($order)-&gt;afterCommit(); // تا commit صبر می‌کند؛ با rollback دور ریخته می‌شود
+});</code></pre>
+    <div class="callout exam"><p>می‌توان در <code>config/queue.php</code> برای یک connection گزینه <code>'after_commit' =&gt; true</code> را فعال کرد تا همه Jobهای آن رفتار afterCommit داشته باشند؛ متد <code>beforeCommit()</code> هم برعکس عمل می‌کند. همین مفهوم برای Event Listenerها، Mail و Notificationهای صف‌شده هم وجود دارد.</p></div>
+  </section>
+
+  <section class="lesson" id="queue-reliability" data-title="قابلیت اطمینان Jobها">
+    <h2>قابلیت اطمینان Jobها: retry، timeout، failed، unique</h2>
+
+    <h3>تلاش مجدد و زمان‌بندی آن</h3>
+    <dl class="terms">
+      <dt><code>$tries</code></dt><dd>حداکثر دفعات اجرا. پیش‌فرض worker برابر 1 است (<code>--tries</code>). property خود Job بر گزینه worker مقدم است.</dd>
+      <dt><code>$maxExceptions</code></dt><dd>حداکثر تعداد exception مجاز؛ با آن می‌توان tries زیاد (مثلاً برای release دستی) ولی exception کم داشت.</dd>
+      <dt><code>$backoff</code> / <code>backoff()</code></dt><dd>فاصله بین تلاش‌ها به ثانیه؛ آرایه مثل <code>[10, 60, 300]</code> یعنی exponential backoff.</dd>
+      <dt><code>retryUntil()</code></dt><dd>به‌جای تعداد، یک <strong>مهلت زمانی</strong> برمی‌گرداند؛ تا آن زمان Job هر چند بار لازم باشد تکرار می‌شود.</dd>
+      <dt><code>$timeout</code></dt><dd>حداکثر ثانیه اجرای یک تلاش؛ worker پروسه فرزند را kill می‌کند (نیازمند افزونه <code>pcntl</code>). با <code>$failOnTimeout = true</code> Job مستقیم fail می‌شود.</dd>
+      <dt><code>retry_after</code></dt><dd>در <code>config/queue.php</code>؛ اگر Job بعد از این مدت هنوز تمام نشده باشد، connection فرض می‌کند worker مرده و Job را دوباره در دسترس قرار می‌دهد.</dd>
+    </dl>
+    <div class="callout exam"><p>قانون طلایی: <strong><code>--timeout</code> باید همیشه چند ثانیه کمتر از <code>retry_after</code> باشد.</strong> در غیر این صورت Job هنوز در حال اجراست که کپی دومش توسط worker دیگری برداشته می‌شود و Job <strong>دو بار</strong> اجرا می‌شود (ایمیل یا شارژ دوباره).</p></div>
+    <pre><code class="language-php">&lt;?php
+class SyncInvoiceToAccounting implements ShouldQueue
+{
+    use Queueable;
+
+    public int $tries = 5;
+    public int $maxExceptions = 3;
+    public int $timeout = 30;
+
+    public function backoff(): array
+    {
+        return [10, 60, 300];
+    }
+
+    public function handle(AccountingApi $api): void
+    {
+        if (! $api-&gt;isAvailable()) {
+            $this-&gt;release(120); // دستی به صف برگردان؛ یک tries مصرف می‌شود
+            return;
+        }
+        $api-&gt;push($this-&gt;invoice);
+    }
+
+    public function failed(?\Throwable $e): void
+    {
+        // بعد از تمام شدن همه تلاش‌ها: اطلاع به تیم، علامت‌گذاری رکورد و ...
+        $this-&gt;invoice-&gt;update(['sync_status' =&gt; 'failed']);
+    }
+}</code></pre>
+
+    <h3>Failed Jobs</h3>
+    <p>Jobی که تلاش‌هایش تمام شود در جدول <code>failed_jobs</code> با payload و stack trace ذخیره می‌شود (migration آن در اسکلت Laravel 11 وجود دارد؛ در صورت نیاز <code>make:queue-failed-table</code>؛ در نسخه‌های قدیمی <code>queue:failed-table</code>).</p>
+    <pre><code class="language-bash">php artisan queue:failed              # فهرست
+php artisan queue:retry all           # یا با UUID مشخص
+php artisan queue:retry --queue=emails
+php artisan queue:forget 5f2c...      # حذف یکی
+php artisan queue:flush               # حذف همه
+php artisan queue:prune-failed --hours=48</code></pre>
+
+    <h3>Unique Jobs</h3>
+    <p>با پیاده‌سازی <code>ShouldBeUnique</code>، اگر نمونه‌ای با همان <code>uniqueId</code> در صف یا در حال اجرا باشد، <strong>dispatch جدید نادیده گرفته می‌شود</strong>. این کار با <strong>قفل Cache</strong> انجام می‌شود، پس درایور cache باید از lock پشتیبانی کند (redis، database، memcached، dynamodb، file، array).</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Contracts\Queue\ShouldBeUnique;
+
+class RecalculateProductStock implements ShouldQueue, ShouldBeUnique
+{
+    use Queueable;
+
+    public int $uniqueFor = 3600; // قفل حداکثر یک ساعت
+
+    public function __construct(public Product $product) {}
+
+    public function uniqueId(): string
+    {
+        return (string) $this-&gt;product-&gt;id;
+    }
+}</code></pre>
+    <p><code>ShouldBeUniqueUntilProcessing</code> قفل را به‌محض <strong>شروع</strong> پردازش آزاد می‌کند (نه پایان)، تا در حین اجرا بتوان یک نمونه جدید در صف گذاشت.</p>
+
+    <h3>Job Middleware</h3>
+    <p>منطق‌های تکراری حول اجرای Job (قفل، محدودیت نرخ، throttle خطا) را از <code>handle</code> بیرون می‌کشد. متد <code>middleware()</code> آرایه‌ای از middlewareها برمی‌گرداند:</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Queue\Middleware\RateLimited;
+use Illuminate\Queue\Middleware\ThrottlesExceptions;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
+
+public function middleware(): array
+{
+    return [
+        // دو Job برای یک کاربر همزمان اجرا نشوند (قفل cache)
+        (new WithoutOverlapping($this-&gt;user-&gt;id))-&gt;releaseAfter(60)-&gt;expireAfter(180),
+
+        // از limiter تعریف‌شده با RateLimiter::for('backups', ...) استفاده می‌کند
+        new RateLimited('backups'),
+
+        // اگر سرویس خارجی پشت سر هم خطا داد، مدتی دست نگه دار
+        (new ThrottlesExceptions(10, 5 * 60))-&gt;backoff(5),
+    ];
+}</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4>ShouldBeUnique</h4><ul><li>در زمان <strong>dispatch</strong> عمل می‌کند.</li><li>نسخه تکراری اصلاً وارد صف نمی‌شود.</li><li>برای جلوگیری از کار اضافه (dedupe).</li></ul></div>
+      <div class="card"><h4>WithoutOverlapping</h4><ul><li>در زمان <strong>اجرا</strong> عمل می‌کند.</li><li>همه Jobها وارد صف می‌شوند ولی همزمان اجرا نمی‌شوند؛ تکراری release می‌شود.</li><li>برای جلوگیری از race condition روی یک منبع.</li></ul></div>
+    </div>
+    <div class="callout tip"><p><strong>Idempotency</strong> را جدی بگیرید: چون هر Job ممکن است بیش از یک بار اجرا شود (retry، timeout، crash worker)، طراحی کنید که اجرای دوباره آسیبی نزند؛ مثلاً قبل از شارژ وضعیت را چک کنید، از کلید یکتا (idempotency key) در API پرداخت و از <code>updateOrCreate</code> به‌جای <code>create</code> استفاده کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="queue-ops" data-title="Chain، Batch، Worker و Horizon">
+    <h2>Chain، Batch، Worker و Horizon</h2>
+
+    <h3>Job Chaining</h3>
+    <p>اجرای <strong>ترتیبی</strong> چند Job؛ هر Job فقط در صورت موفقیت قبلی اجرا می‌شود و اگر یکی fail شود بقیه زنجیره اجرا نمی‌شوند.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\Bus;
+
+Bus::chain([
+    new ProcessPodcast($podcast),
+    new OptimizePodcast($podcast),
+    new ReleasePodcast($podcast),
+])-&gt;onQueue('media')
+  -&gt;catch(function (\Throwable $e) {
+      // یکی از Jobهای زنجیره شکست خورد
+  })
+  -&gt;dispatch();</code></pre>
+
+    <h3>Job Batching</h3>
+    <p>اجرای <strong>موازی</strong> گروهی از Jobها با امکان پیگیری پیشرفت و callback در پایان. Jobها باید trait <code>Batchable</code> داشته باشند و جدول <code>job_batches</code> لازم است (<code>make:queue-batches-table</code>).</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Bus\Batch;
+
+$batch = Bus::batch(
+    $rows-&gt;chunk(500)-&gt;map(fn ($chunk) =&gt; new ImportCustomers($chunk))-&gt;all()
+)-&gt;name('Import customers')
+ -&gt;allowFailures()                                  // بدون آن، اولین شکست batch را cancelled می‌کند
+ -&gt;then(fn (Batch $batch) =&gt; /* همه موفق */ null)
+ -&gt;catch(fn (Batch $batch, \Throwable $e) =&gt; /* اولین شکست */ null)
+ -&gt;finally(fn (Batch $batch) =&gt; /* در هر حال */ null)
+ -&gt;dispatch();
+
+// بعداً
+$batch = Bus::findBatch($batchId);
+$batch-&gt;progress();     // درصد
+$batch-&gt;failedJobs;
+
+// داخل Job
+public function handle(): void
+{
+    if ($this-&gt;batch()-&gt;cancelled()) {
+        return;
+    }
+    // ...
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Chain</th><th>Batch</th></tr></thead>
+      <tbody>
+        <tr><td>اجرا</td><td>ترتیبی، یکی بعد از دیگری</td><td>موازی بین workerها</td></tr>
+        <tr><td>وابستگی</td><td>مرحله بعد به نتیجه قبلی وابسته است</td><td>Jobها مستقل‌اند</td></tr>
+        <tr><td>شکست</td><td>بقیه زنجیره اجرا نمی‌شوند</td><td>batch لغو می‌شود مگر <code>allowFailures</code></td></tr>
+        <tr><td>پیگیری</td><td>ندارد</td><td>progress، تعداد موفق/ناموفق، جدول <code>job_batches</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>می‌توان این دو را ترکیب کرد: یک chain داخل batch (آرایه تو در تو) یا یک batch به‌عنوان حلقه‌ای از chain.</p>
+
+    <h3>queue:work در برابر queue:listen</h3>
+    <div class="grid-2">
+      <div class="card"><h4>queue:work</h4><ul>
+        <li>پروسه <strong>long-running</strong>؛ فریم‌ورک یک بار boot می‌شود و در حافظه می‌ماند.</li>
+        <li>بسیار سریع‌تر؛ مخصوص <strong>production</strong>.</li>
+        <li>تغییرات کد را <strong>نمی‌بیند</strong>؛ بعد از deploy باید ری‌استارت شود.</li>
+        <li>مراقب نشت حافظه و state ماندگار (مثل Octane).</li>
+      </ul></div>
+      <div class="card"><h4>queue:listen</h4><ul>
+        <li>برای <strong>هر Job</strong> فریم‌ورک را از نو boot می‌کند.</li>
+        <li>کندتر، ولی تغییرات کد را فوراً می‌بیند.</li>
+        <li>مناسب محیط توسعه.</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-bash">php artisan queue:work redis --queue=high,default --tries=3 --timeout=60 \
+    --sleep=3 --max-jobs=1000 --max-time=3600 --memory=256
+php artisan queue:work --once            # فقط یک Job
+php artisan queue:work --stop-when-empty # مناسب کانتینرهای موقت
+php artisan queue:restart                # به همه workerها سیگنال ری‌استارت نرم می‌دهد</code></pre>
+    <p><code>queue:restart</code> یک timestamp در <strong>cache</strong> می‌نویسد؛ هر worker بعد از تمام کردن Job جاری آن را می‌بیند و <strong>با ظرافت</strong> خارج می‌شود و Supervisor آن را با کد جدید بالا می‌آورد. پس درایور cache باید بین سرورها مشترک باشد و این دستور باید جزو اسکریپت deploy باشد. گزینه‌های <code>--max-jobs</code> و <code>--max-time</code> هم با خروج دوره‌ای جلوی نشت حافظه را می‌گیرند.</p>
+
+    <h3>Supervisor در production</h3>
+    <pre><code class="language-plaintext">[program:laravel-worker]
+process_name=%(program_name)s_%(process_num)02d
+command=php /var/www/app/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+user=www-data
+numprocs=4
+redirect_stderr=true
+stdout_logfile=/var/www/app/storage/logs/worker.log
+stopwaitsecs=3600</code></pre>
+    <p><code>numprocs</code> تعداد worker موازی است و <code>stopwaitsecs</code> باید از طولانی‌ترین Job بیشتر باشد تا Supervisor هنگام توقف، Job را وسط کار نکشد. در محیط کانتینری (Docker/Kubernetes) نقش Supervisor را orchestrator بازی می‌کند.</p>
+
+    <h3>Laravel Horizon</h3>
+    <p><strong>Horizon</strong> داشبورد و مدیر workerها برای صف‌های <strong>Redis</strong> است. به‌جای چند خط Supervisor، پیکربندی workerها (supervisorها، صف‌ها، تعداد پروسه، استراتژی <strong>auto-balancing</strong>) در کد و فایل <code>config/horizon.php</code> نگه‌داری می‌شود و داشبورد آن throughput، زمان اجرا، Jobهای ناموفق، tagها و متریک‌ها را نشان می‌دهد.</p>
+    <pre><code class="language-bash">composer require laravel/horizon
+php artisan horizon:install
+php artisan horizon             # این پروسه را Supervisor نگه می‌دارد
+php artisan horizon:terminate   # در deploy، به‌جای queue:restart
+php artisan horizon:pause / horizon:continue / horizon:status</code></pre>
+    <div class="callout warn"><p>داشبورد Horizon در production فقط با Gate <code>viewHorizon</code> (در <code>HorizonServiceProvider</code>) باز می‌شود؛ فراموش کردن تعریف آن یعنی یا کسی دسترسی ندارد یا (در صورت پیکربندی اشتباه) همه دارند.</p></div>
+  </section>
+
+  <section class="lesson" id="events" data-title="Events، Listeners و Broadcasting">
+    <h2>Events، Listeners و Broadcasting</h2>
+    <p><strong>Event</strong> پیاده‌سازی الگوی <strong>Observer / Pub-Sub</strong> درون برنامه است: کدی که اتفاقی را اعلام می‌کند (<code>OrderPlaced</code>) نمی‌داند چه کسانی به آن واکنش نشان می‌دهند (ارسال ایمیل، به‌روزرسانی موجودی، ثبت آمار). نتیجه، <strong>decoupling</strong> و رعایت Single Responsibility است: اضافه کردن واکنش جدید بدون دست زدن به کد سفارش.</p>
+
+    <h3>تعریف و dispatch</h3>
+    <pre><code class="language-php">&lt;?php
+// php artisan make:event OrderPlaced
+class OrderPlaced
+{
+    use Dispatchable, InteractsWithSockets, SerializesModels;
+
+    public function __construct(public Order $order) {}
+}
+
+// php artisan make:listener SendOrderConfirmation --event=OrderPlaced
+class SendOrderConfirmation
+{
+    public function handle(OrderPlaced $event): void
+    {
+        Mail::to($event-&gt;order-&gt;user)-&gt;send(new OrderConfirmed($event-&gt;order));
+    }
+}
+
+// اعلام رویداد
+OrderPlaced::dispatch($order);
+// یا: event(new OrderPlaced($order));</code></pre>
+
+    <h3>ثبت Listener: Event Discovery</h3>
+    <p>در Laravel 11، <strong>Event Discovery</strong> به‌صورت پیش‌فرض فعال است: فریم‌ورک پوشه <code>app/Listeners</code> را اسکن می‌کند و هر متد <code>handle</code> (یا <code>__invoke</code>) را بر اساس <strong>type-hint پارامترش</strong> به رویداد مربوط وصل می‌کند. پوشه‌های دیگر را با <code>-&gt;withEvents(discover: [...])</code> در <code>bootstrap/app.php</code> اضافه کنید. ثبت دستی هم ممکن است:</p>
+    <pre><code class="language-php">&lt;?php
+// AppServiceProvider::boot()
+Event::listen(OrderPlaced::class, SendOrderConfirmation::class);
+Event::listen(function (OrderPlaced $event) { /* closure listener */ });</code></pre>
+    <p>در Laravel ≤10 نگاشت رویداد به listener در آرایه <code>$listen</code> کلاس <code>EventServiceProvider</code> انجام می‌شد. در production با <code>php artisan event:cache</code> نتیجه اسکن کش می‌شود؛ <code>event:list</code> نگاشت فعلی را نشان می‌دهد.</p>
+
+    <h3>Listener صف‌شده</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Queue\InteractsWithQueue;
+
+class UpdateSalesReport implements ShouldQueue, ShouldHandleEventsAfterCommit
+{
+    use InteractsWithQueue;
+
+    public string $queue = 'reports';
+    public int $tries = 3;
+
+    public function shouldQueue(OrderPlaced $event): bool
+    {
+        return $event-&gt;order-&gt;total &gt; 0; // شرط صف شدن
+    }
+
+    public function handle(OrderPlaced $event): void { /* ... */ }
+
+    public function failed(OrderPlaced $event, \Throwable $e): void { /* ... */ }
+}</code></pre>
+    <ul>
+      <li>با <code>ShouldQueue</code> روی listener، فقط همان listener به صف می‌رود و بقیه همزمان اجرا می‌شوند.</li>
+      <li><code>ShouldHandleEventsAfterCommit</code> روی listener، یا <code>ShouldDispatchAfterCommit</code> روی خود <strong>event</strong>، باعث می‌شود اجرا تا commit تراکنش عقب بیفتد.</li>
+      <li>اگر listener همزمان <code>false</code> برگرداند، انتشار رویداد به listenerهای بعدی متوقف می‌شود.</li>
+    </ul>
+
+    <h3>Event Subscriber</h3>
+    <p>کلاسی که چند رویداد را در یک جا مدیریت می‌کند؛ مناسب وقتی منطق مرتبط (مثلاً همه رویدادهای ورود و خروج کاربر) را می‌خواهید کنار هم نگه دارید:</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\Events\Logout;
+use Illuminate\Events\Dispatcher;
+
+class UserAuthSubscriber
+{
+    public function handleLogin(Login $event): void { /* ... */ }
+    public function handleLogout(Logout $event): void { /* ... */ }
+
+    public function subscribe(Dispatcher $events): array
+    {
+        return [
+            Login::class =&gt; 'handleLogin',
+            Logout::class =&gt; 'handleLogout',
+        ];
+    }
+}
+
+// AppServiceProvider::boot()
+Event::subscribe(UserAuthSubscriber::class);</code></pre>
+    <div class="callout warn"><p>Event همه‌جا راه‌حل نیست: زنجیره‌های طولانی رویداد، جریان کنترل را <strong>پنهان</strong> و دیباگ را سخت می‌کنند. وقتی واکنش بخش جدانشدنی منطق اصلی است (مثلاً کم کردن موجودی در همان تراکنش سفارش)، فراخوانی مستقیم سرویس شفاف‌تر است. تفاوت با Model Observer در صفحه Eloquent آمده است.</p></div>
+
+    <h3>Broadcasting (نمای کلی)</h3>
+    <p><strong>Broadcasting</strong> رویدادهای سمت سرور را از طریق <strong>WebSocket</strong> به مرورگر می‌رساند (اعلان لحظه‌ای، چت، داشبورد زنده). اجزا:</p>
+    <ul>
+      <li><strong>سرور WebSocket:</strong> <strong>Laravel Reverb</strong> (سرور first-party، با <code>php artisan reverb:start</code>)، یا سرویس‌های میزبانی‌شده مثل Pusher و Ably. در Laravel 11 دستور <code>php artisan install:broadcasting</code> پیکربندی و فایل <code>routes/channels.php</code> را می‌سازد.</li>
+      <li><strong>رویداد:</strong> پیاده‌سازی <code>ShouldBroadcast</code> (از طریق صف ارسال می‌شود) یا <code>ShouldBroadcastNow</code> (همزمان).</li>
+      <li><strong>کلاینت:</strong> کتابخانه JavaScript به نام <strong>Laravel Echo</strong>.</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع کانال</th><th>کلاس</th><th>دسترسی</th></tr></thead>
+      <tbody>
+        <tr><td>Public</td><td><code>Channel</code></td><td>همه، بدون احراز هویت</td></tr>
+        <tr><td>Private</td><td><code>PrivateChannel</code></td><td>کاربر لاگین‌شده‌ای که callback مجوز در <code>routes/channels.php</code> برایش true برگرداند</td></tr>
+        <tr><td>Presence</td><td><code>PresenceChannel</code></td><td>مثل Private، به‌علاوه آگاهی از اینکه چه کسانی در کانال حاضرند (برای «چه کسی آنلاین است» و «در حال تایپ…»)</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+class OrderShipmentStatusUpdated implements ShouldBroadcast
+{
+    public function __construct(public Order $order) {}
+
+    public function broadcastOn(): array
+    {
+        return [new PrivateChannel('orders.'.$this-&gt;order-&gt;id)];
+    }
+
+    public function broadcastWith(): array
+    {
+        return ['status' =&gt; $this-&gt;order-&gt;status]; // فقط داده لازم را بفرستید
+    }
+}
+
+// routes/channels.php
+Broadcast::channel('orders.{orderId}', function (User $user, int $orderId) {
+    return $user-&gt;id === Order::findOrNew($orderId)-&gt;user_id;
+});</code></pre>
+    <p>متد <code>broadcast(new X)-&gt;toOthers()</code> فرستنده را از دریافت‌کنندگان حذف می‌کند. احراز هویت کانال‌های خصوصی از طریق endpoint <code>/broadcasting/auth</code> انجام می‌شود.</p>
+  </section>
+
+  <section class="lesson" id="notifications-mail" data-title="Notifications و Mail">
+    <h2>Notifications و Mail</h2>
+    <p><strong>Mailable</strong> فقط ایمیل است؛ <strong>Notification</strong> یک «پیام کوتاه درباره یک اتفاق» است که می‌تواند همزمان از <strong>چند کانال</strong> (mail، database، broadcast، SMS، Slack) به کاربر برسد. قاعده سرانگشتی: ایمیل‌های غنی و مستقل (فاکتور، خبرنامه) → Mailable؛ اطلاع‌رسانی به کاربر درباره رویدادی در سیستم → Notification.</p>
+
+    <h3>Mailable</h3>
+    <pre><code class="language-php">&lt;?php
+// php artisan make:mail OrderShipped --markdown=mail.orders.shipped
+use Illuminate\Mail\Mailables\Attachment;
+use Illuminate\Mail\Mailables\Content;
+use Illuminate\Mail\Mailables\Envelope;
+
+class OrderShipped extends Mailable implements ShouldQueue
+{
+    use Queueable, SerializesModels;
+
+    public function __construct(public Order $order) {}
+
+    public function envelope(): Envelope
+    {
+        return new Envelope(subject: 'سفارش شما ارسال شد');
+    }
+
+    public function content(): Content
+    {
+        return new Content(markdown: 'mail.orders.shipped'); // propertyهای public در view در دسترس‌اند
+    }
+
+    public function attachments(): array
+    {
+        return [Attachment::fromStorage("invoices/{$this-&gt;order-&gt;id}.pdf")];
+    }
+}
+
+Mail::to($user)-&gt;cc($manager)-&gt;send(new OrderShipped($order));
+Mail::to($user)-&gt;queue(new OrderShipped($order));
+Mail::to($user)-&gt;later(now()-&gt;addMinutes(5), new OrderShipped($order));</code></pre>
+    <ul>
+      <li>درایورها (mailer): <code>smtp</code>، <code>ses</code>، <code>postmark</code>، <code>mailgun</code>، <code>resend</code>، <code>sendmail</code>، <code>log</code> و <code>array</code> برای توسعه و تست؛ mailer نوع <code>failover</code> بین چند سرویس جابه‌جا می‌شود.</li>
+      <li>Mailableی که <code>ShouldQueue</code> را پیاده کند، حتی با <code>send()</code> هم صف می‌شود.</li>
+      <li>برای پیش‌نمایش در مرورگر، کافی است Mailable را از یک route برگردانید.</li>
+      <li>تست: <code>Mail::fake()</code> سپس <code>Mail::assertSent(OrderShipped::class, fn ($m) =&gt; $m-&gt;hasTo($user-&gt;email))</code> یا <code>assertQueued</code>.</li>
+    </ul>
+
+    <h3>Notification چندکاناله</h3>
+    <pre><code class="language-php">&lt;?php
+// php artisan make:notification InvoicePaid
+class InvoicePaid extends Notification implements ShouldQueue
+{
+    use Queueable;
+
+    public function __construct(public Invoice $invoice) {}
+
+    public function via(object $notifiable): array
+    {
+        return $notifiable-&gt;prefers_sms ? ['vonage', 'database'] : ['mail', 'database', 'broadcast'];
+    }
+
+    public function toMail(object $notifiable): MailMessage
+    {
+        return (new MailMessage)
+            -&gt;subject('فاکتور پرداخت شد')
+            -&gt;line("فاکتور شماره {$this-&gt;invoice-&gt;number} پرداخت شد.")
+            -&gt;action('مشاهده فاکتور', route('invoices.show', $this-&gt;invoice));
+    }
+
+    // برای کانال database و broadcast (اگر toDatabase تعریف نشود)
+    public function toArray(object $notifiable): array
+    {
+        return ['invoice_id' =&gt; $this-&gt;invoice-&gt;id, 'amount' =&gt; $this-&gt;invoice-&gt;amount];
+    }
+}
+
+$user-&gt;notify(new InvoicePaid($invoice));                      // مدل با trait Notifiable
+Notification::send($admins, new InvoicePaid($invoice));         // گروهی
+Notification::route('mail', 'finance@example.com')-&gt;notify(new InvoicePaid($invoice)); // on-demand</code></pre>
+    <ul>
+      <li><strong>database:</strong> در جدول <code>notifications</code> ذخیره می‌شود (<code>make:notifications-table</code>؛ در نسخه‌های قدیمی <code>notifications:table</code>). سپس <code>$user-&gt;unreadNotifications</code> و <code>-&gt;markAsRead()</code>.</li>
+      <li><strong>broadcast:</strong> از طریق Broadcasting روی کانال خصوصی کاربر ارسال می‌شود (اعلان زنده در UI).</li>
+      <li><strong>SMS:</strong> کانال رسمی Vonage در پکیج جدا؛ برای سرویس‌های ایرانی (کاوه‌نگار و…) یک <strong>Custom Channel</strong> می‌نویسید: کلاسی با متد <code>send($notifiable, Notification $notification)</code> که در <code>via()</code> نام کلاسش را برمی‌گردانید.</li>
+      <li>کاربر هر کانال را با متدهایی مثل <code>routeNotificationForMail()</code> یا <code>routeNotificationForVonage()</code> روی مدل سفارشی می‌کند.</li>
+    </ul>
+    <div class="callout exam"><p>با <code>ShouldQueue</code> روی Notification، برای <strong>هر ترکیب notifiable و کانال یک Job جدا</strong> ساخته می‌شود؛ پس خرابی سرویس SMS جلوی ثبت database notification را نمی‌گیرد.</p></div>
+  </section>
+
+  <section class="lesson" id="cache" data-title="Cache، قفل اتمیک و Stampede">
+    <h2>Cache، قفل اتمیک و Cache Stampede</h2>
+    <p>لایه Cache در Laravel یک API یکسان (<code>Illuminate\Contracts\Cache\Repository</code>) روی چند <strong>store</strong> مختلف است. انتخاب store در <code>config/cache.php</code> و متغیر <code>CACHE_STORE</code> (در Laravel ≤10: <code>CACHE_DRIVER</code>) انجام می‌شود؛ در Laravel 11 پیش‌فرض <code>database</code> است.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Store</th><th>ویژگی</th><th>Tags</th></tr></thead>
+      <tbody>
+        <tr><td><code>redis</code></td><td>سریع، مشترک بین سرورها، رایج‌ترین انتخاب production</td><td>دارد</td></tr>
+        <tr><td><code>memcached</code></td><td>سریع، مشترک، فقط key-value</td><td>دارد</td></tr>
+        <tr><td><code>database</code></td><td>بدون زیرساخت اضافه؛ مشترک بین سرورها ولی کندتر</td><td>ندارد</td></tr>
+        <tr><td><code>file</code></td><td>محلی روی هر سرور؛ در چندسروره ناسازگار</td><td>ندارد</td></tr>
+        <tr><td><code>dynamodb</code></td><td>مدیریت‌شده AWS</td><td>ندارد</td></tr>
+        <tr><td><code>array</code></td><td>فقط در حافظه همان درخواست؛ برای تست</td><td>دارد</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>API اصلی</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\Cache;
+
+$users = Cache::remember('users:active', now()-&gt;addMinutes(10), function () {
+    return User::where('active', true)-&gt;get();
+});
+$settings = Cache::rememberForever('settings', fn () =&gt; Setting::pluck('value', 'key'));
+
+Cache::put('key', $value, 600);     // TTL به ثانیه یا DateTime
+Cache::add('key', $value, 600);     // فقط اگر وجود نداشته باشد (اتمیک) ← true/false
+Cache::get('key', 'default');
+Cache::pull('key');                 // بخوان و حذف کن
+Cache::increment('visits');         // اتمیک در redis/memcached
+Cache::forget('key');
+Cache::store('redis')-&gt;get('key');  // انتخاب store مشخص
+cache(['key' =&gt; 'value'], 600);     // helper</code></pre>
+
+    <h3>Cache Tags</h3>
+    <p>با tag می‌توان گروهی از کلیدها را یکجا باطل کرد؛ مثلاً همه cacheهای مربوط به محصولات بعد از به‌روزرسانی قیمت‌ها. فقط روی storeهایی که پشتیبانی می‌کنند (redis، memcached، array).</p>
+    <pre><code class="language-php">&lt;?php
+Cache::tags(['products', 'category:5'])-&gt;put("product:{$id}", $product, 3600);
+Cache::tags(['products', 'category:5'])-&gt;get("product:{$id}");
+Cache::tags('category:5')-&gt;flush();  // همه آیتم‌های این tag</code></pre>
+
+    <h3>Atomic Lock</h3>
+    <p>قفل توزیع‌شده روی store مشترک، تا از اجرای همزمان یک بخش حساس در چند پروسه یا سرور جلوگیری شود (پردازش دوباره یک پرداخت، جلوگیری از اجرای دوباره cron، race condition در موجودی).</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Contracts\Cache\LockTimeoutException;
+
+$lock = Cache::lock("order:{$order-&gt;id}:pay", 10); // قفل حداکثر ۱۰ ثانیه (برای جلوگیری از قفل یتیم)
+
+if ($lock-&gt;get()) {
+    try {
+        $this-&gt;processPayment($order);
+    } finally {
+        $lock-&gt;release();
+    }
+}
+
+// یا: تا ۵ ثانیه برای گرفتن قفل صبر کن، وگرنه LockTimeoutException
+try {
+    Cache::lock('report:generate', 120)-&gt;block(5, function () {
+        // قفل خودکار آزاد می‌شود
+    });
+} catch (LockTimeoutException $e) {
+    // کس دیگری مشغول است
+}
+
+// آزاد کردن قفل در پروسه دیگر (مثلاً در Job)
+$owner = $lock-&gt;owner();
+Cache::restoreLock("order:{$order-&gt;id}:pay", $owner)-&gt;release();</code></pre>
+
+    <h3>Cache Stampede (Dog-piling)</h3>
+    <p>وقتی یک کلید <strong>پربازدید و گران</strong> منقضی می‌شود، صدها درخواست همزمان cache miss می‌خورند و همه با هم کوئری سنگین را اجرا می‌کنند؛ دیتابیس زیر بار می‌رود و ممکن است کل سیستم از دسترس خارج شود.</p>
+    <pre class="diagram">t=0   کلید "dashboard:stats" منقضی شد
+t=0+  درخواست ۱ ──► miss ──► کوئری ۳ ثانیه‌ای
+      درخواست ۲ ──► miss ──► کوئری ۳ ثانیه‌ای
+      ...
+      درخواست ۵۰۰ ──► miss ──► کوئری ۳ ثانیه‌ای   ⇐ DB از کار می‌افتد</pre>
+    <p>راه‌حل‌ها:</p>
+    <ol>
+      <li><strong>قفل:</strong> فقط یک درخواست مقدار را بازسازی کند و بقیه کمی صبر کنند یا مقدار قدیمی را بگیرند.</li>
+      <li><strong>Stale-while-revalidate با <code>Cache::flexible</code></strong> (از Laravel 11.23): تا یک مدت داده تازه است؛ در بازه دوم داده کهنه فوراً برگردانده می‌شود و بازسازی <strong>بعد از ارسال پاسخ</strong> در پس‌زمینه انجام می‌شود.</li>
+      <li><strong>Jitter</strong> در TTL تا کلیدهای مشابه همزمان منقضی نشوند.</li>
+      <li><strong>Pre-warming</strong>: یک Job زمان‌بندی‌شده قبل از انقضا مقدار را تازه کند (یا کلید بدون انقضا که فقط Job آن را بازنویسی می‌کند).</li>
+    </ol>
+    <pre><code class="language-php">&lt;?php
+// ۵ ثانیه تازه، تا ۶۰ ثانیه مقدار کهنه سرو می‌شود و در پس‌زمینه بازسازی می‌گردد
+$stats = Cache::flexible('dashboard:stats', [5, 60], fn () =&gt; Stats::compute());
+
+// الگوی قفل دستی
+$stats = Cache::get('dashboard:stats');
+if ($stats === null) {
+    $stats = Cache::lock('dashboard:stats:rebuild', 30)-&gt;block(10, function () {
+        // ممکن است درخواست دیگری در این فاصله ساخته باشد
+        return Cache::remember('dashboard:stats', 300 + random_int(0, 60), fn () =&gt; Stats::compute());
+    });
+}</code></pre>
+    <div class="callout warn"><p>اشتباهات رایج cache: cache کردن داده وابسته به کاربر با کلید عمومی (نشت اطلاعات بین کاربران)، cache کردن مدل‌های Eloquent سنگین به‌جای آرایه‌های سبک، فراموش کردن invalidation بعد از update، و استفاده از store <code>file</code> روی چند سرور.</p></div>
+  </section>
+
+  <section class="lesson" id="scheduling" data-title="زمان‌بندی وظایف و Artisan Command">
+    <h2>زمان‌بندی وظایف و Artisan Command سفارشی</h2>
+    <p><strong>Task Scheduler</strong> به‌جای ده‌ها خط crontab روی سرور، زمان‌بندی را <strong>در کد و قابل version control</strong> نگه می‌دارد. روی سرور فقط <strong>یک</strong> cron لازم است که هر دقیقه scheduler را اجرا کند و scheduler تصمیم می‌گیرد کدام وظیفه موعدش رسیده است.</p>
+    <pre><code class="language-bash">* * * * * cd /var/www/app &amp;&amp; php artisan schedule:run &gt;&gt; /dev/null 2&gt;&amp;1
+
+php artisan schedule:list   # فهرست وظایف و زمان اجرای بعدی
+php artisan schedule:work   # در توسعه: هر دقیقه scheduler را در foreground اجرا می‌کند
+php artisan schedule:test</code></pre>
+    <p>در Laravel 11 وظایف در <code>routes/console.php</code> تعریف می‌شوند (یا با <code>-&gt;withSchedule(fn (Schedule $schedule) =&gt; ...)</code> در <code>bootstrap/app.php</code>). در Laravel ≤10 جای آن متد <code>schedule()</code> در <code>app/Console/Kernel.php</code> بود.</p>
+    <pre><code class="language-php">&lt;?php
+// routes/console.php
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('reports:daily')-&gt;dailyAt('02:00')-&gt;timezone('Asia/Tehran')
+    -&gt;withoutOverlapping()
+    -&gt;onOneServer()
+    -&gt;runInBackground()
+    -&gt;onFailure(fn () =&gt; Log::error('daily report failed'));
+
+Schedule::job(new PruneStaleCarts)-&gt;hourly();
+Schedule::call(fn () =&gt; DB::table('sessions')-&gt;where('last_activity', '&lt;', now()-&gt;subDay()-&gt;timestamp)-&gt;delete())-&gt;daily();
+Schedule::command('model:prune')-&gt;daily();
+Schedule::command('queue:prune-failed --hours=72')-&gt;weekly();
+Schedule::command('sync:prices')-&gt;everyFiveMinutes()-&gt;between('08:00', '22:00')-&gt;environments(['production']);</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>مسئله‌ای که حل می‌کند</th><th>سازوکار</th></tr></thead>
+      <tbody>
+        <tr><td><code>withoutOverlapping()</code></td><td>اجرای قبلی هنوز تمام نشده و دقیقه بعد دوباره شروع می‌شود (روی <strong>همان</strong> سرور)</td><td>قفل cache؛ پیش‌فرض بعد از ۲۴ ساعت منقضی می‌شود؛ <code>withoutOverlapping(10)</code> یعنی ۱۰ دقیقه</td></tr>
+        <tr><td><code>onOneServer()</code></td><td>چند سرور app همه cron دارند و وظیفه N بار اجرا می‌شود</td><td>قفل اتمیک روی cache <strong>مشترک</strong> (redis، database، memcached، dynamodb)؛ اولین سرور برنده است</td></tr>
+        <tr><td><code>runInBackground()</code></td><td>وظایف همزمان پشت سر هم اجرا می‌شوند و یک وظیفه طولانی بقیه را عقب می‌اندازد</td><td>فقط برای <code>command</code> و <code>exec</code>؛ پروسه جدا</td></tr>
+        <tr><td><code>evenInMaintenanceMode()</code></td><td>در حالت <code>down</code> وظایف اجرا نمی‌شوند</td><td>اجرا حتی در maintenance</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p><code>withoutOverlapping</code> و <code>onOneServer</code> را اشتباه نگیرید: اولی جلوی <strong>هم‌پوشانی زمانی</strong> را می‌گیرد، دومی جلوی <strong>اجرای تکراری روی چند سرور</strong> در همان دقیقه. در یک cluster معمولاً هر دو را با هم می‌خواهید.</p></div>
+    <p>در نسخه‌های جدید زمان‌بندی زیر یک دقیقه هم ممکن است (<code>everySecond()</code>، <code>everyTenSeconds()</code>)؛ در این حالت <code>schedule:run</code> تا پایان دقیقه زنده می‌ماند. سایر hookها: <code>before</code>، <code>after</code>، <code>onSuccess</code>، <code>sendOutputTo</code>، <code>emailOutputOnFailure</code>.</p>
+
+    <h3>Artisan Command سفارشی</h3>
+    <pre><code class="language-php">&lt;?php
+// php artisan make:command SendInvoiceReminders
+namespace App\Console\Commands;
+
+use Illuminate\Console\Command;
+
+class SendInvoiceReminders extends Command
+{
+    // {days=3} آرگومان با پیش‌فرض، {--dry-run} فلگ، {--queue=} گزینه با مقدار، {ids*} آرایه
+    protected $signature = 'invoices:remind {days=3} {--dry-run} {--queue=default}';
+    protected $description = 'Send reminders for invoices due in N days';
+
+    public function handle(InvoiceRepository $invoices): int  // method injection
+    {
+        $due = $invoices-&gt;dueIn((int) $this-&gt;argument('days'));
+
+        if ($due-&gt;isEmpty()) {
+            $this-&gt;info('Nothing to do.');
+            return self::SUCCESS;
+        }
+
+        if (! $this-&gt;option('dry-run') &amp;&amp; ! $this-&gt;confirm("Send {$due-&gt;count()} reminders?", true)) {
+            return self::FAILURE;
+        }
+
+        $this-&gt;withProgressBar($due, function ($invoice) {
+            SendReminder::dispatch($invoice)-&gt;onQueue($this-&gt;option('queue'));
+        });
+
+        $this-&gt;newLine();
+        $this-&gt;table(['ID', 'Due'], $due-&gt;map-&gt;only(['id', 'due_at'])-&gt;all());
+
+        return self::SUCCESS;
+    }
+}</code></pre>
+    <ul>
+      <li>در Laravel 11 commandهای پوشه <code>app/Console/Commands</code> خودکار ثبت می‌شوند.</li>
+      <li>Closure command: <code>Artisan::command('mail:test {email}', function (string $email) { ... })-&gt;purpose('...');</code> در <code>routes/console.php</code>.</li>
+      <li>اجرا از کد: <code>Artisan::call('invoices:remind', ['days' =&gt; 7, '--dry-run' =&gt; true])</code> یا <code>Artisan::queue(...)</code>.</li>
+      <li>پیاده‌سازی <code>Isolatable</code> گزینه <code>--isolated</code> را اضافه می‌کند تا فقط یک نمونه همزمان اجرا شود.</li>
+      <li>کد خروجی (<code>SUCCESS</code>=0، <code>FAILURE</code>=1) برای CI و Supervisor معنادار است.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="authorization" data-title="Authorization در عمق: Gate و Policy">
+    <h2>Authorization در عمق: Gate و Policy</h2>
+    <p><strong>Authentication</strong> می‌پرسد «تو کی هستی؟» و <strong>Authorization</strong> می‌پرسد «آیا اجازه این کار را داری؟». Laravel دو ابزار دارد: <strong>Gate</strong> که یک closure برای یک توانایی (ability) است و <strong>Policy</strong> که کلاسی است که همه مجوزهای مربوط به یک <strong>مدل</strong> را گروه‌بندی می‌کند. پشت صحنه هر دو از طریق همان سرویس Gate ارزیابی می‌شوند.</p>
+    <div class="grid-2">
+      <div class="card"><h4>Gate</h4><ul>
+        <li>closure در <code>AppServiceProvider::boot</code>.</li>
+        <li>برای کارهای <strong>غیروابسته به مدل</strong>: «دسترسی به پنل ادمین»، «مشاهده گزارش مالی».</li>
+        <li>سریع برای موارد ساده؛ اگر زیاد شود، شلوغ و پراکنده می‌شود.</li>
+      </ul></div>
+      <div class="card"><h4>Policy</h4><ul>
+        <li>کلاس با متدهای <code>viewAny</code>، <code>view</code>، <code>create</code>، <code>update</code>، <code>delete</code>، <code>restore</code>، <code>forceDelete</code>.</li>
+        <li>برای مجوزهای <strong>حول یک مدل یا resource</strong>.</li>
+        <li>منظم، قابل تست، auto-discovery بر اساس نام.</li>
+      </ul></div>
+    </div>
+
+    <h3>Gate</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Auth\Access\Response;
+use Illuminate\Support\Facades\Gate;
+
+// AppServiceProvider::boot()
+Gate::define('view-financial-reports', fn (User $user) =&gt; $user-&gt;hasRole('finance'));
+
+Gate::define('publish-post', function (User $user, Post $post) {
+    return $user-&gt;id === $post-&gt;user_id
+        ? Response::allow()
+        : Response::deny('فقط نویسنده می‌تواند منتشر کند.');
+});
+
+// سوپرادمین: قبل از همه بررسی‌ها
+Gate::before(function (User $user, string $ability) {
+    if ($user-&gt;isSuperAdmin()) {
+        return true;   // true یا false یعنی تصمیم نهایی؛ null یعنی «ادامه بده»
+    }
+});
+
+// استفاده
+Gate::allows('publish-post', $post);
+Gate::denies('view-financial-reports');
+Gate::forUser($otherUser)-&gt;allows('publish-post', $post);
+Gate::authorize('publish-post', $post);              // در صورت عدم مجوز AuthorizationException ← 403
+$response = Gate::inspect('publish-post', $post);    // $response-&gt;allowed(), -&gt;message()</code></pre>
+    <div class="callout warn"><p>در <code>before</code> اگر برای کاربر عادی <code>false</code> برگردانید، <strong>همه</strong> مجوزهای او رد می‌شود. برای «ادامه بررسی معمول» باید <code>null</code> (هیچ چیز) برگردانید.</p></div>
+
+    <h3>Policy</h3>
+    <pre><code class="language-php">&lt;?php
+// php artisan make:policy PostPolicy --model=Post
+class PostPolicy
+{
+    public function before(User $user, string $ability): ?bool
+    {
+        return $user-&gt;isAdmin() ? true : null;
+    }
+
+    public function view(?User $user, Post $post): bool   // ?User یعنی مهمان هم بررسی می‌شود
+    {
+        return $post-&gt;published || $user?-&gt;id === $post-&gt;user_id;
+    }
+
+    public function update(User $user, Post $post): Response
+    {
+        return $user-&gt;id === $post-&gt;user_id
+            ? Response::allow()
+            : Response::denyAsNotFound(); // 404 به‌جای 403 برای پنهان کردن وجود منبع
+    }
+
+    public function create(User $user): bool   // بدون نمونه مدل
+    {
+        return $user-&gt;hasVerifiedEmail();
+    }
+}</code></pre>
+    <p><strong>Auto-discovery:</strong> اگر مدل در <code>App\Models\Post</code> و Policy در <code>App\Policies\PostPolicy</code> باشد، ثبت لازم نیست. در غیر این صورت <code>Gate::policy(Post::class, PostPolicy::class)</code> در <code>boot</code> (در Laravel ≤10 آرایه <code>$policies</code> در <code>AuthServiceProvider</code>).</p>
+
+    <h3>نقاط اعمال مجوز</h3>
+    <pre><code class="language-php">&lt;?php
+// ۱) در کنترلر
+public function update(UpdatePostRequest $request, Post $post)
+{
+    Gate::authorize('update', $post);
+    // ...
+}
+public function store(Request $request)
+{
+    Gate::authorize('create', Post::class);  // متد بدون مدل: نام کلاس
+}
+
+// ۲) در route با middleware
+Route::put('/posts/{post}', [PostController::class, 'update'])-&gt;can('update', 'post');
+Route::post('/posts', [PostController::class, 'store'])-&gt;middleware('can:create,App\Models\Post');
+
+// ۳) روی مدل کاربر
+if ($request-&gt;user()-&gt;cannot('delete', $post)) { abort(403); }
+
+// ۴) در Form Request
+public function authorize(): bool
+{
+    return $this-&gt;user()-&gt;can('update', $this-&gt;route('post'));
+}</code></pre>
+    <pre><code class="language-xml">@can('update', $post)
+    &lt;a href="{{ route('posts.edit', $post) }}"&gt;ویرایش&lt;/a&gt;
+@elsecan('view', $post)
+    &lt;span&gt;فقط مشاهده&lt;/span&gt;
+@endcan
+
+@cannot('create', App\Models\Post::class)
+    &lt;p&gt;برای نوشتن، ایمیل خود را تأیید کنید.&lt;/p&gt;
+@endcannot</code></pre>
+    <div class="callout exam"><p>در Laravel 11 کلاس پایه <code>App\Http\Controllers\Controller</code> خالی است و trait <code>AuthorizesRequests</code> را ندارد؛ پس <code>$this-&gt;authorize()</code> کار نمی‌کند مگر trait را اضافه کنید. روش توصیه‌شده <code>Gate::authorize()</code> است. در Laravel ≤10 متد <code>$this-&gt;authorizeResource(Post::class, 'post')</code> در constructor همه actionهای resource را به متدهای Policy نگاشت می‌کرد.</p></div>
+    <div class="callout tip"><p>مخفی کردن دکمه در Blade <strong>امنیت نیست</strong>؛ بررسی مجوز باید همیشه در سرور (کنترلر، route یا Form Request) انجام شود. همچنین برای جلوگیری از IDOR، به‌جای <code>Post::find($id)</code> از <code>$user-&gt;posts()-&gt;findOrFail($id)</code> یا Policy استفاده کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="api-auth" data-title="احراز هویت API و Rate Limiting">
+    <h2>احراز هویت API (Sanctum و Passport) و Rate Limiting</h2>
+    <p>در Laravel 11 دستور <code>php artisan install:api</code> فایل <code>routes/api.php</code> را می‌سازد و <strong>Sanctum</strong> را نصب می‌کند (با <code>--passport</code> به‌جای آن Passport نصب می‌شود).</p>
+
+    <h3>Sanctum: دو حالت کاملاً متفاوت</h3>
+    <div class="grid-2">
+      <div class="card"><h4>API Token (Personal Access Token)</h4><ul>
+        <li>برای <strong>اپ موبایل</strong>، کلاینت‌های third-party ساده، اسکریپت‌ها.</li>
+        <li>توکن در هدر <code>Authorization: Bearer ...</code>.</li>
+        <li>در جدول <code>personal_access_tokens</code> به‌صورت <strong>hash SHA-256</strong> ذخیره می‌شود؛ متن کامل فقط یک بار نمایش داده می‌شود.</li>
+        <li>پشتیبانی از <strong>abilities</strong> (شبیه scope) و انقضا.</li>
+      </ul></div>
+      <div class="card"><h4>SPA Authentication</h4><ul>
+        <li>برای SPA روی <strong>همان دامنه سطح بالا</strong> (مثلاً <code>app.example.com</code> و <code>api.example.com</code>).</li>
+        <li>بدون توکن؛ از <strong>session cookie</strong> معمولی Laravel و محافظت CSRF استفاده می‌کند.</li>
+        <li>امن‌تر از ذخیره توکن در localStorage (در برابر XSS، کوکی HttpOnly است).</li>
+        <li>نیازمند پیکربندی stateful domains و CORS با credentials.</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+// مدل User
+use Laravel\Sanctum\HasApiTokens;
+class User extends Authenticatable { use HasApiTokens, Notifiable; }
+
+// صدور توکن (مثلاً endpoint لاگین موبایل)
+Route::post('/tokens', function (Request $request) {
+    $request-&gt;validate(['email' =&gt; 'required|email', 'password' =&gt; 'required', 'device_name' =&gt; 'required']);
+    $user = User::where('email', $request-&gt;email)-&gt;first();
+
+    if (! $user || ! Hash::check($request-&gt;password, $user-&gt;password)) {
+        throw ValidationException::withMessages(['email' =&gt; ['اطلاعات ورود نادرست است.']]);
+    }
+
+    return ['token' =&gt; $user-&gt;createToken($request-&gt;device_name, ['orders:read'])-&gt;plainTextToken];
+});
+
+// محافظت از routeها
+Route::middleware('auth:sanctum')-&gt;group(function () {
+    Route::get('/orders', fn (Request $r) =&gt; $r-&gt;user()-&gt;orders);
+    Route::post('/orders', [OrderController::class, 'store'])-&gt;middleware('abilities:orders:write');
+});
+
+// بررسی ability در کد
+$request-&gt;user()-&gt;tokenCan('orders:write');
+
+// ابطال
+$request-&gt;user()-&gt;currentAccessToken()-&gt;delete();   // logout از همین دستگاه
+$user-&gt;tokens()-&gt;delete();                           // logout از همه دستگاه‌ها</code></pre>
+    <p>middlewareهای <code>abilities</code> (همه) و <code>ability</code> (حداقل یکی) در Laravel 11 باید در <code>bootstrap/app.php</code> با <code>$middleware-&gt;alias([...])</code> به کلاس‌های <code>CheckAbilities</code> و <code>CheckForAnyAbility</code> نگاشت شوند. انقضای توکن با <code>expiration</code> در <code>config/sanctum.php</code> و پاک‌سازی با <code>sanctum:prune-expired</code>.</p>
+    <p><strong>جریان SPA:</strong></p>
+    <ol>
+      <li>در <code>bootstrap/app.php</code>: <code>-&gt;withMiddleware(fn ($m) =&gt; $m-&gt;statefulApi())</code> و تنظیم <code>SANCTUM_STATEFUL_DOMAINS</code>.</li>
+      <li>SPA ابتدا <code>GET /sanctum/csrf-cookie</code> را صدا می‌زند تا کوکی <code>XSRF-TOKEN</code> را بگیرد.</li>
+      <li>سپس <code>POST /login</code> (با <code>withCredentials</code>)؛ Laravel session می‌سازد.</li>
+      <li>درخواست‌های بعدی با session cookie و هدر <code>X-XSRF-TOKEN</code> از <code>auth:sanctum</code> عبور می‌کنند.</li>
+    </ol>
+
+    <h3>Passport: چه زمانی؟</h3>
+    <p><strong>Passport</strong> یک <strong>OAuth2 Server</strong> کامل (بر پایه league/oauth2-server) است: client registration، authorization code با <strong>PKCE</strong>، client credentials برای ارتباط ماشین به ماشین، refresh token و scope. زمانی لازم است که <strong>برنامه‌های شخص ثالث</strong> بخواهند از طرف کاربران شما به داده‌هایشان دسترسی بگیرند («ورود با حساب ما» یا یک اکوسیستم API عمومی) یا قرارداد صریحاً OAuth2 بخواهد. برای اپ موبایل و SPA خودتان، Sanctum ساده‌تر و کافی است.</p>
+    <div class="callout exam"><p>جمع‌بندی برای جواب تشریحی: <strong>SPA خودی ← Sanctum cookie؛ موبایل و توکن ساده ← Sanctum token؛ کلاینت‌های third-party و OAuth2 ← Passport.</strong> grant نوع password در OAuth جدید توصیه نمی‌شود.</p></div>
+
+    <h3>Rate Limiting</h3>
+    <p>limiterها با نام در <code>AppServiceProvider::boot</code> تعریف و با middleware <code>throttle</code> اعمال می‌شوند. شمارنده‌ها در cache پیش‌فرض نگه داشته می‌شوند (در production روی چند سرور، Redis؛ متد <code>$middleware-&gt;throttleWithRedis()</code> در bootstrap/app.php).</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Support\Facades\RateLimiter;
+
+RateLimiter::for('api', function (Request $request) {
+    return $request-&gt;user()
+        ? Limit::perMinute(120)-&gt;by($request-&gt;user()-&gt;id)
+        : Limit::perMinute(30)-&gt;by($request-&gt;ip());
+});
+
+RateLimiter::for('login', fn (Request $request) =&gt; [
+    Limit::perMinute(500),                                            // سقف کلی
+    Limit::perMinute(5)-&gt;by($request-&gt;input('email').'|'.$request-&gt;ip()) // هر ایمیل و IP
+        -&gt;response(fn () =&gt; response()-&gt;json(['message' =&gt; 'تلاش بیش از حد'], 429)),
+]);
+
+RateLimiter::for('exports', fn (Request $r) =&gt; $r-&gt;user()-&gt;isPremium() ? Limit::none() : Limit::perDay(10)-&gt;by($r-&gt;user()-&gt;id));
+
+Route::post('/login', LoginController::class)-&gt;middleware('throttle:login');
+Route::middleware('throttle:60,1')-&gt;get('/ping', fn () =&gt; 'pong'); // ۶۰ در ۱ دقیقه، بدون نام</code></pre>
+    <pre><code class="language-php">&lt;?php
+// استفاده دستی (مثلاً ارسال OTP)
+$key = 'otp:'.$phone;
+if (RateLimiter::tooManyAttempts($key, 3)) {
+    $seconds = RateLimiter::availableIn($key);
+    return back()-&gt;withErrors(['phone' =&gt; "لطفاً {$seconds} ثانیه دیگر تلاش کنید."]);
+}
+RateLimiter::hit($key, 600);   // decay ده دقیقه
+// ... ارسال
+RateLimiter::clear($key);      // بعد از موفقیت</code></pre>
+    <p>پاسخ رد شده کد <strong>429 Too Many Requests</strong> با هدرهای <code>Retry-After</code> و <code>X-RateLimit-Remaining</code> دارد.</p>
+  </section>
+
+  <section class="lesson" id="pipeline-macros" data-title="Pipeline، Macro و Collections">
+    <h2>Pipeline، Macro و Collections</h2>
+
+    <h3>Pipeline: الگوی زنجیره پردازش</h3>
+    <p>کلاس <code>Illuminate\Pipeline\Pipeline</code> یک شیء (passable) را از میان مجموعه‌ای از «pipe» عبور می‌دهد؛ هر pipe می‌تواند شیء را تغییر دهد، کار را متوقف کند یا به بعدی بسپارد (<code>$next</code>). این دقیقاً سازوکار <strong>Middleware</strong> است: HTTP Kernel درخواست را از طریق Pipeline از میان middlewareهای global به Router می‌فرستد و Router همین کار را برای middlewareهای route انجام می‌دهد.</p>
+    <pre class="diagram">Pipeline::send($request)-&gt;through([A, B, C])-&gt;then($destination)
+
+  array_reduce(array_reverse([A,B,C]), carry, destination)  ⇒ پیازی از closureها:
+
+  A.handle( req, fn ⇒ B.handle( req, fn ⇒ C.handle( req, fn ⇒ destination(req) ) ) )
+
+  ┌─ A (before) ─┐
+  │ ┌ B (before) ┐│
+  │ │ ┌ C ─────┐ ││
+  │ │ │ هسته   │ ││   ← Controller
+  │ │ └────────┘ ││
+  │ └ B (after) ─┘│
+  └─ A (after) ──┘</pre>
+    <p>متد <code>then()</code> آرایه pipeها را <strong>معکوس</strong> و با <code>array_reduce</code> به یک closure تو در تو تبدیل می‌کند؛ پس اولین pipe در آرایه، بیرونی‌ترین لایه است: اول «before» آن اجرا می‌شود و آخر از همه «after» آن.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\Pipeline;
+
+// هر pipe: کلاسی با متد handle($passable, Closure $next)
+class ApplyCoupon
+{
+    public function handle(Order $order, \Closure $next)
+    {
+        if ($order-&gt;coupon) {
+            $order-&gt;total -= $order-&gt;coupon-&gt;discountFor($order);
+        }
+        return $next($order);
+    }
+}
+
+class EnsureStockAvailable
+{
+    public function handle(Order $order, \Closure $next)
+    {
+        throw_if(! $order-&gt;inStock(), OutOfStockException::class);
+        return $next($order);
+    }
+}
+
+$order = Pipeline::send($order)
+    -&gt;through([EnsureStockAvailable::class, ApplyCoupon::class, CalculateTax::class])
+    -&gt;then(fn (Order $order) =&gt; tap($order)-&gt;save());   // یا -&gt;thenReturn()</code></pre>
+    <p>pipeها از کانتینر resolve می‌شوند (DI دارند)؛ با <code>via('process')</code> نام متد را عوض کنید. کاربردهای رایج: فیلترهای جستجو روی query builder، فرایند checkout، پردازش چندمرحله‌ای فایل.</p>
+
+    <h3>Macroable</h3>
+    <p>trait <code>Illuminate\Support\Traits\Macroable</code> اجازه می‌دهد به کلاس‌های فریم‌ورک در زمان اجرا <strong>متد اضافه کنید</strong> بدون ارث‌بری. macroها در آرایه static <code>$macros</code> ذخیره می‌شوند و <code>__call</code> / <code>__callStatic</code> آن‌ها را پیدا می‌کند و closure را با <code>Closure::bind</code> به نمونه فعلی متصل می‌کند؛ پس داخل macro، <code>$this</code> همان شیء است. کلاس‌های macroable مهم: <code>Collection</code>، <code>Str</code>، <code>Arr</code>، <code>Request</code>، <code>Response</code>، Query <code>Builder</code>، <code>Router</code>، <code>Http</code> (PendingRequest)، <code>Carbon</code> (macro مخصوص خودش).</p>
+    <pre><code class="language-php">&lt;?php
+// AppServiceProvider::boot()
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Str;
+
+Collection::macro('toPersianDigits', function () {
+    return $this-&gt;map(fn ($v) =&gt; strtr((string) $v, ['0'=&gt;'۰','1'=&gt;'۱','2'=&gt;'۲','3'=&gt;'۳','4'=&gt;'۴','5'=&gt;'۵','6'=&gt;'۶','7'=&gt;'۷','8'=&gt;'۸','9'=&gt;'۹']));
+});
+
+Str::macro('mobile', fn (string $v) =&gt; preg_replace('/^(\+98|0098|0)/', '0', $v));
+
+Response::macro('apiError', function (string $message, int $status = 400) {
+    return Response::json(['error' =&gt; ['message' =&gt; $message]], $status);
+});
+
+collect([12, 7])-&gt;toPersianDigits();   // ['۱۲', '۷']
+return response()-&gt;apiError('Invalid state', 409);
+
+// چند macro یکجا: Collection::mixin(new CollectionMixin)</code></pre>
+    <div class="callout warn"><p>macroها برای IDE نامرئی‌اند (مگر با ide-helper یا docblock) و زیاده‌روی در آن‌ها کد را «جادویی» می‌کند. برای منطق دامنه، کلاس سرویس واضح‌تر است.</p></div>
+
+    <h3>Collections: استفاده حرفه‌ای</h3>
+    <p><code>Illuminate\Support\Collection</code> wrapper شیءگرا و <strong>زنجیره‌پذیر</strong> روی آرایه است. بیشتر متدها <strong>immutable</strong> هستند و Collection جدید برمی‌گردانند (استثناها مثل <code>transform</code>، <code>push</code>، <code>put</code>، <code>forget</code>، <code>pop</code>، <code>shift</code> خود Collection را تغییر می‌دهند).</p>
+    <pre><code class="language-php">&lt;?php
+$orders = collect($rawOrders);
+
+$report = $orders
+    -&gt;filter(fn ($o) =&gt; $o['status'] === 'paid')
+    -&gt;groupBy('customer_id')
+    -&gt;map(fn ($group, $customerId) =&gt; [
+        'customer' =&gt; $customerId,
+        'count'    =&gt; $group-&gt;count(),
+        'total'    =&gt; $group-&gt;sum('amount'),
+    ])
+    -&gt;sortByDesc('total')
+    -&gt;take(10)
+    -&gt;values();
+
+[$vip, $regular] = $customers-&gt;partition(fn ($c) =&gt; $c-&gt;total_spent &gt; 10_000_000);
+$byId     = $users-&gt;keyBy('id');
+$names    = $users-&gt;pluck('name', 'id');
+$mapped   = $users-&gt;mapWithKeys(fn ($u) =&gt; [$u-&gt;email =&gt; $u-&gt;name]);
+$flat     = $orders-&gt;flatMap(fn ($o) =&gt; $o['items']);
+$users-&gt;each-&gt;notify(new Welcome);      // higher-order message
+$adults   = $users-&gt;filter-&gt;isAdult();  // higher-order message
+$result   = $orders-&gt;when($onlyPaid, fn ($c) =&gt; $c-&gt;where('status', 'paid'));
+$total    = $orders-&gt;pipe(fn ($c) =&gt; $c-&gt;sum('amount') * 1.09);</code></pre>
+
+    <h3>LazyCollection</h3>
+    <p><code>LazyCollection</code> بر پایه <strong>Generator</strong> است: آیتم‌ها یکی‌یکی و فقط هنگام نیاز تولید می‌شوند؛ پس پردازش فایل چند گیگابایتی یا میلیون‌ها رکورد با <strong>حافظه ثابت</strong> ممکن است. <code>Model::cursor()</code> و <code>lazy()</code> در Eloquent هم LazyCollection برمی‌گردانند (جزئیات در صفحه Eloquent).</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\LazyCollection;
+
+LazyCollection::make(function () {
+    $handle = fopen(storage_path('imports/customers.csv'), 'r');
+    while (($line = fgetcsv($handle)) !== false) {
+        yield $line;
+    }
+    fclose($handle);
+})
+-&gt;skip(1)                       // header
+-&gt;map(fn ($row) =&gt; ['name' =&gt; $row[0], 'email' =&gt; $row[1]])
+-&gt;filter(fn ($row) =&gt; filter_var($row['email'], FILTER_VALIDATE_EMAIL))
+-&gt;chunk(1000)
+-&gt;each(fn ($chunk) =&gt; DB::table('customers')-&gt;insert($chunk-&gt;all()));</code></pre>
+    <div class="callout exam"><p>تفاوت کلیدی: Collection معمولی <strong>همه داده را در حافظه</strong> دارد؛ LazyCollection <strong>جریانی</strong> است. ولی متدهایی مثل <code>sortBy</code> یا <code>groupBy</code> در LazyCollection هم ناچارند همه داده را جمع کنند. و همیشه یادتان باشد: فیلتر و جمع روی دیتابیس (<code>where</code>، <code>sum</code> در SQL) از فیلتر روی Collection بعد از <code>get()</code> بسیار کاراتر است.</p></div>
+  </section>
+
+  <section class="lesson" id="http-storage-i18n" data-title="HTTP Client، Storage و Localization">
+    <h2>HTTP Client، Storage و Localization</h2>
+
+    <h3>HTTP Client</h3>
+    <p>Facade <code>Http</code> یک wrapper روان روی <strong>Guzzle</strong> است با timeout، retry، fake و pool.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Http;
+
+$response = Http::baseUrl(config('services.shipping.url'))
+    -&gt;withToken(config('services.shipping.token'))
+    -&gt;acceptJson()
+    -&gt;connectTimeout(3)
+    -&gt;timeout(10)                         // پیش‌فرض ۳۰ ثانیه است
+    -&gt;retry(3, 200, fn (\Throwable $e) =&gt; $e instanceof ConnectionException) // فقط خطای شبکه
+    -&gt;post('/shipments', ['order_id' =&gt; $order-&gt;id]);
+
+$response-&gt;successful();   // 2xx
+$response-&gt;failed();       // 4xx یا 5xx
+$response-&gt;status();
+$response-&gt;json('data.tracking_code');
+$response-&gt;throw();        // در 4xx/5xx استثنای RequestException
+
+// درخواست‌های موازی
+$responses = Http::pool(fn (Pool $pool) =&gt; [
+    $pool-&gt;as('rates')-&gt;get('https://api.example.com/rates'),
+    $pool-&gt;as('stock')-&gt;get('https://api.example.com/stock'),
+]);
+$responses['rates']-&gt;json();</code></pre>
+    <div class="callout warn"><p>فراخوانی API خارجی <strong>بدون timeout</strong> داخل درخواست HTTP کاربر، پروسه PHP-FPM را تا ۳۰ ثانیه قفل می‌کند؛ با چند ده درخواست همزمان، همه workerهای FPM پر می‌شوند و کل سایت از دسترس خارج می‌شود. timeout کوتاه بگذارید، retry را محدود به خطاهای گذرا کنید و کارهای غیرفوری را به Queue ببرید. retry روی درخواست‌های غیر idempotent (مثل POST پرداخت) خطرناک است.</p></div>
+    <pre><code class="language-php">&lt;?php
+// تست
+Http::preventStrayRequests();   // هر درخواست fake نشده ← exception
+Http::fake([
+    'api.example.com/shipments' =&gt; Http::response(['data' =&gt; ['tracking_code' =&gt; 'X1']], 201),
+    'api.example.com/*'         =&gt; Http::response('Server Error', 500),
+]);
+// ... اجرای کد
+Http::assertSent(fn ($request) =&gt; $request-&gt;url() === 'https://api.example.com/shipments'
+    &amp;&amp; $request['order_id'] === 1);
+Http::assertSentCount(1);</code></pre>
+
+    <h3>File Storage</h3>
+    <p>Laravel روی <strong>Flysystem</strong> یک API یکسان برای دیسک‌های مختلف می‌دهد؛ کد برنامه با تغییر config از دیسک local به S3 یا MinIO می‌رود. دیسک‌ها در <code>config/filesystems.php</code>:</p>
+    <ul>
+      <li><code>local</code>: فایل‌های خصوصی زیر <code>storage/app</code>؛ مستقیماً از وب قابل دسترسی نیست.</li>
+      <li><code>public</code>: <code>storage/app/public</code> که با <code>php artisan storage:link</code> به <code>public/storage</code> لینک می‌شود.</li>
+      <li><code>s3</code>: نیازمند پکیج <code>league/flysystem-aws-s3-v3</code>؛ با تنظیم endpoint برای سرویس‌های سازگار با S3 (MinIO، ابرآروان) هم کار می‌کند.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\Storage;
+
+$path = $request-&gt;file('avatar')-&gt;store('avatars', 's3');           // نام یکتا
+$path = $request-&gt;file('avatar')-&gt;storeAs('avatars', "{$user-&gt;id}.jpg", 'public');
+
+Storage::disk('s3')-&gt;put('reports/2026-11.csv', $csv);
+Storage::disk('s3')-&gt;exists($path);
+Storage::disk('s3')-&gt;delete($path);
+Storage::disk('public')-&gt;url($path);
+Storage::disk('s3')-&gt;temporaryUrl($path, now()-&gt;addMinutes(10)); // لینک امضاشده موقت برای فایل خصوصی
+return Storage::download($path, 'invoice.pdf');
+
+// فایل‌های بزرگ: stream تا کل فایل وارد حافظه نشود
+Storage::disk('s3')-&gt;writeStream('backups/db.sql.gz', fopen($local, 'r'));
+
+// تست
+Storage::fake('s3');
+// ...
+Storage::disk('s3')-&gt;assertExists('avatars/1.jpg');</code></pre>
+    <div class="callout tip"><p>فایل آپلودی را همیشه با قانون‌های <code>file</code>، <code>mimes</code>، <code>max</code> اعتبارسنجی کنید، به نام فایل کاربر اعتماد نکنید و فایل‌های حساس را روی دیسک خصوصی با <code>temporaryUrl</code> یا یک route با بررسی مجوز سرو کنید.</p></div>
+
+    <h3>Localization</h3>
+    <ul>
+      <li>اسکلت Laravel 11 پوشه <code>lang</code> ندارد؛ با <code>php artisan lang:publish</code> ساخته می‌شود.</li>
+      <li>دو قالب: فایل PHP با کلید کوتاه (<code>lang/fa/messages.php</code> ← <code>__('messages.welcome')</code>) و فایل JSON با متن پیش‌فرض به‌عنوان کلید (<code>lang/fa.json</code> ← <code>__('Welcome back')</code>).</li>
+      <li>placeholder: <code>__('messages.hello', ['name' =&gt; $user-&gt;name])</code> برای <code>'hello' =&gt; 'سلام :name'</code>.</li>
+      <li>جمع: <code>trans_choice('messages.items', $count)</code> با <code>'{0} خالی|{1} یک مورد|[2,*] :count مورد'</code>.</li>
+      <li>زبان: <code>APP_LOCALE</code> و <code>APP_FALLBACK_LOCALE</code> در <code>.env</code>؛ در زمان اجرا <code>App::setLocale('fa')</code> و <code>App::currentLocale()</code>؛ معمولاً در یک middleware بر اساس کاربر یا هدر <code>Accept-Language</code>.</li>
+      <li>پیام‌های اعتبارسنجی فارسی در <code>lang/fa/validation.php</code> و نام فیلدها در کلید <code>attributes</code>.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="exceptions-testing" data-title="Exception Handling و تست">
+    <h2>سفارشی‌سازی Exception Handling و امکانات تست</h2>
+
+    <h3>Exception Handling به سبک Laravel 11</h3>
+    <p>در Laravel 11 کلاس <code>App\Exceptions\Handler</code> حذف شده و همه چیز در <code>-&gt;withExceptions()</code> فایل <code>bootstrap/app.php</code> انجام می‌شود. دو مفهوم جدا را تفکیک کنید: <strong>report</strong> یعنی ثبت و ارسال خطا (log، Sentry، Slack) و <strong>render</strong> یعنی تبدیل خطا به پاسخ HTTP.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Foundation\Configuration\Exceptions;
+use Illuminate\Http\Request;
+use Psr\Log\LogLevel;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+
+-&gt;withExceptions(function (Exceptions $exceptions) {
+    // report سفارشی؛ stop() یعنی logging پیش‌فرض هم انجام نشود
+    $exceptions-&gt;report(function (PaymentFailedException $e) {
+        Log::channel('payments')-&gt;critical($e-&gt;getMessage(), ['order' =&gt; $e-&gt;orderId]);
+    })-&gt;stop();
+
+    // render سفارشی
+    $exceptions-&gt;render(function (NotFoundHttpException $e, Request $request) {
+        if ($request-&gt;is('api/*')) {
+            return response()-&gt;json(['message' =&gt; 'منبع یافت نشد.'], 404);
+        }
+        // برگرداندن null یعنی render پیش‌فرض
+    });
+
+    $exceptions-&gt;dontReport([InvalidCouponException::class]);
+    $exceptions-&gt;level(PDOException::class, LogLevel::CRITICAL);
+    $exceptions-&gt;context(fn () =&gt; ['tenant' =&gt; tenant()?-&gt;id]);   // context سراسری لاگ
+    $exceptions-&gt;shouldRenderJsonWhen(fn (Request $r, Throwable $e) =&gt; $r-&gt;is('api/*') || $r-&gt;expectsJson());
+})</code></pre>
+    <p>خود Exception هم می‌تواند متدهای <code>report()</code> و <code>render(Request $request)</code> داشته باشد که فریم‌ورک خودکار صدا می‌زند؛ این برای خطاهای دامنه‌ای تمیزترین روش است:</p>
+    <pre><code class="language-php">&lt;?php
+class InsufficientBalanceException extends \DomainException
+{
+    public function __construct(public int $needed) { parent::__construct('Insufficient balance'); }
+
+    public function render(Request $request): JsonResponse
+    {
+        return response()-&gt;json(['message' =&gt; 'موجودی کافی نیست', 'needed' =&gt; $this-&gt;needed], 422);
+    }
+
+    public function report(): bool
+    {
+        return false; // خطای کسب‌وکار است؛ log نکن (true/void یعنی گزارش پیش‌فرض)
+    }
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Exception</th><th>پاسخ پیش‌فرض</th></tr></thead>
+      <tbody>
+        <tr><td><code>ModelNotFoundException</code></td><td>به <code>NotFoundHttpException</code> تبدیل ← 404</td></tr>
+        <tr><td><code>ValidationException</code></td><td>API: JSON با کد 422 و کلید <code>errors</code>؛ وب: redirect back با errors و old input</td></tr>
+        <tr><td><code>AuthenticationException</code></td><td>API: 401؛ وب: redirect به login</td></tr>
+        <tr><td><code>AuthorizationException</code></td><td>403</td></tr>
+        <tr><td><code>TokenMismatchException</code></td><td>419 (CSRF / session منقضی)</td></tr>
+        <tr><td><code>ThrottleRequestsException</code></td><td>429</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>helperها: <code>report($e)</code> برای گزارش بدون قطع جریان، <code>rescue(fn () =&gt; ..., $default)</code>، <code>abort(403)</code>، <code>abort_if</code>، <code>throw_if</code>.</li>
+      <li>صفحه خطای سفارشی: <code>resources/views/errors/404.blade.php</code>.</li>
+      <li>در Laravel ≤10: متد <code>register()</code> در <code>Handler</code> با <code>$this-&gt;reportable(...)</code> و <code>$this-&gt;renderable(...)</code> و property <code>$dontReport</code>.</li>
+    </ul>
+
+    <h3>تست: ابزارهای اصلی</h3>
+    <pre><code class="language-php">&lt;?php
+namespace Tests\Feature;
+
+use App\Jobs\SendOrderConfirmation;
+use App\Models\Product;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use Tests\TestCase;
+
+class PlaceOrderTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_user_can_place_order(): void
+    {
+        Queue::fake();
+        $user = User::factory()-&gt;create();
+        $product = Product::factory()-&gt;create(['stock' =&gt; 5]);
+
+        $response = $this-&gt;actingAs($user)-&gt;postJson('/api/orders', [
+            'product_id' =&gt; $product-&gt;id,
+            'qty' =&gt; 2,
+        ]);
+
+        $response-&gt;assertCreated()
+            -&gt;assertJsonPath('data.qty', 2)
+            -&gt;assertJsonStructure(['data' =&gt; ['id', 'qty', 'total']]);
+
+        $this-&gt;assertDatabaseHas('orders', ['user_id' =&gt; $user-&gt;id, 'qty' =&gt; 2]);
+        $this-&gt;assertSame(3, $product-&gt;fresh()-&gt;stock);
+        Queue::assertPushed(SendOrderConfirmation::class);
+    }
+
+    public function test_validation_errors(): void
+    {
+        $this-&gt;actingAs(User::factory()-&gt;create())
+            -&gt;postJson('/api/orders', [])
+            -&gt;assertUnprocessable()
+            -&gt;assertJsonValidationErrors(['product_id', 'qty']);
+    }
+
+    public function test_guest_is_rejected(): void
+    {
+        $this-&gt;postJson('/api/orders')-&gt;assertUnauthorized();
+    }
+}</code></pre>
+    <pre><code class="language-php">&lt;?php
+// همان تست با Pest
+it('lets a user place an order', function () {
+    Queue::fake();
+    $user = User::factory()-&gt;create();
+
+    $this-&gt;actingAs($user)
+        -&gt;postJson('/api/orders', ['product_id' =&gt; Product::factory()-&gt;create()-&gt;id, 'qty' =&gt; 1])
+        -&gt;assertCreated();
+
+    Queue::assertPushed(SendOrderConfirmation::class);
+});</code></pre>
+    <dl class="terms">
+      <dt><code>RefreshDatabase</code></dt><dd>یک بار migrate می‌کند و هر تست را در یک <strong>تراکنش</strong> اجرا و در پایان rollback می‌کند؛ سریع و ایزوله.</dd>
+      <dt><code>DatabaseMigrations</code> / <code>DatabaseTransactions</code></dt><dd>اولی برای هر تست migrate کامل (کند)، دومی فقط تراکنش بدون migrate.</dd>
+      <dt>Fakes</dt><dd><code>Queue</code>، <code>Bus</code>، <code>Event</code>، <code>Mail</code>، <code>Notification</code>، <code>Storage</code>، <code>Http</code> + متدهای <code>assertPushed</code>، <code>assertDispatched</code>، <code>assertSentTo</code>، <code>assertNothingSent</code>.</dd>
+      <dt>Mock سرویس</dt><dd><code>$this-&gt;mock(PaymentGateway::class, fn ($m) =&gt; $m-&gt;shouldReceive('charge')-&gt;once()-&gt;andReturn(true));</code> که نمونه را در کانتینر جایگزین می‌کند.</dd>
+      <dt>احراز هویت</dt><dd><code>actingAs($user)</code>؛ برای ability توکن: <code>Sanctum::actingAs($user, ['orders:write'])</code>.</dd>
+      <dt>زمان</dt><dd><code>$this-&gt;travel(3)-&gt;days()</code>، <code>$this-&gt;freezeTime()</code>، <code>$this-&gt;travelTo($date)</code>.</dd>
+      <dt>دیباگ</dt><dd><code>$this-&gt;withoutExceptionHandling()</code> تا exception واقعی به‌جای پاسخ 500 دیده شود.</dd>
+    </dl>
+    <div class="callout tip"><p>محیط تست در <code>phpunit.xml</code> تنظیم می‌شود (مثلاً <code>DB_CONNECTION=sqlite</code> و <code>DB_DATABASE=:memory:</code>، <code>QUEUE_CONNECTION=sync</code>، <code>MAIL_MAILER=array</code>). <code>php artisan test --parallel</code> تست‌ها را موازی اجرا می‌کند. اگر production روی MySQL/PostgreSQL است، تفاوت رفتار SQLite (مثلاً در JSON و foreign key) را در نظر بگیرید.</p></div>
+  </section>
+
+  <section class="lesson" id="octane-deploy-security" data-title="Octane، استقرار و امنیت">
+    <h2>Octane، کارایی و استقرار، و جمع‌بندی امنیت</h2>
+
+    <h3>Laravel Octane و نشت state</h3>
+    <p><strong>Octane</strong> برنامه را روی یک application server دائمی (<strong>FrankenPHP</strong>، <strong>Swoole</strong> یا <strong>RoadRunner</strong>) اجرا می‌کند: فریم‌ورک <strong>یک بار boot</strong> می‌شود و در حافظه worker می‌ماند و همان نمونه Application به درخواست‌های متوالی پاسخ می‌دهد. bootstrap تکراری حذف می‌شود و throughput چند برابر می‌شود؛ ولی فرض «هر درخواست از صفر شروع می‌شود» دیگر درست نیست.</p>
+    <div class="grid-2">
+      <div class="card"><h4>PHP-FPM</h4><ul><li>هر درخواست: boot کامل، اجرا، دور ریختن همه چیز.</li><li>state نشت نمی‌کند.</li><li>هزینه boot در هر درخواست.</li></ul></div>
+      <div class="card"><h4>Octane</h4><ul><li>یک boot، هزاران درخواست.</li><li>singletonها، propertyهای static و متغیرهای global <strong>بین درخواست‌ها می‌مانند</strong>.</li><li>نیازمند کد «stateless-aware».</li></ul></div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+// ❌ مشکل: singleton یک بار با Request درخواست اول ساخته می‌شود
+$this-&gt;app-&gt;singleton(CartService::class, function ($app) {
+    return new CartService($app['request']);   // تمام کاربران بعدی Request کاربر اول را می‌بینند!
+});
+
+// ✅ راه‌حل ۱: scoped (در هر درخواست از نو ساخته می‌شود)
+$this-&gt;app-&gt;scoped(CartService::class, fn ($app) =&gt; new CartService($app['request']));
+
+// ✅ راه‌حل ۲: resolver به‌جای خود شیء
+$this-&gt;app-&gt;singleton(CartService::class, fn ($app) =&gt; new CartService(fn () =&gt; $app['request']));
+
+// ✅ راه‌حل ۳: داده را به متد پاس بدهید
+$cart-&gt;totalFor($request-&gt;user());
+
+// ❌ نشت حافظه: آرایه static که مدام بزرگ می‌شود
+class Metrics { public static array $events = []; }</code></pre>
+    <ul>
+      <li>در singletonها، <code>Request</code>، <code>Application</code> یا <code>config</code> repository را <strong>در constructor نگه ندارید</strong>؛ <code>app()</code>/<code>request()</code> را هنگام نیاز صدا بزنید.</li>
+      <li>Octane بعضی state‌های داخلی فریم‌ورک را بین درخواست‌ها reset می‌کند، ولی کد شما و پکیج‌های third-party مسئولیت خودشان را دارند.</li>
+      <li>با <code>--max-requests</code> workerها بعد از N درخواست بازیافت می‌شوند تا نشت حافظه مهار شود.</li>
+      <li>بعد از deploy: <code>php artisan octane:reload</code>؛ در توسعه <code>octane:start --watch</code>.</li>
+      <li>همین هشدارها برای <strong>queue:work</strong> هم صدق می‌کند؛ چون آن هم پروسه long-running است.</li>
+    </ul>
+
+    <h3>دستورات کارایی و استقرار</h3>
+    <pre><code class="language-bash">composer install --no-dev --optimize-autoloader   # classmap بهینه، بدون پکیج‌های dev
+php artisan down --secret="bypass-token"          # (اختیاری) maintenance با امکان عبور
+php artisan migrate --force                        # --force چون در production تأیید می‌خواهد
+php artisan optimize                               # config:cache + route:cache + view:cache + event:cache
+php artisan storage:link
+php artisan queue:restart                          # یا horizon:terminate
+php artisan up
+
+php artisan optimize:clear                         # پاک کردن همه کش‌ها</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دستور</th><th>چه می‌کند</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td><code>config:cache</code></td><td>همه فایل‌های config را در یک فایل PHP ادغام می‌کند</td><td>بعد از آن <code>.env</code> خوانده نمی‌شود و <code>env()</code> بیرون از config مقدار <code>null</code> می‌دهد</td></tr>
+        <tr><td><code>route:cache</code></td><td>جدول route را serialize می‌کند؛ ثبت route بسیار سریع‌تر</td><td>بعد از هر تغییر route باید دوباره اجرا شود</td></tr>
+        <tr><td><code>view:cache</code></td><td>همه Blade viewها را از پیش کامپایل می‌کند</td><td>اولین درخواست کند نمی‌شود</td></tr>
+        <tr><td><code>event:cache</code></td><td>نتیجه event discovery را کش می‌کند</td><td>بدون آن هر درخواست پوشه Listeners اسکن می‌شود</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>OPcache</strong> را فعال کنید؛ با <code>opcache.validate_timestamps=0</code> بیشترین سرعت را دارید ولی بعد از deploy باید PHP-FPM را reload کنید.</li>
+      <li><strong>Zero-downtime deploy</strong> با پوشه‌های release و symlink (Envoyer، Deployer، Forge) و migrationهای سازگار با نسخه قبلی (expand/contract).</li>
+      <li>session و cache و queue را روی <strong>Redis</strong> ببرید وقتی بیش از یک سرور دارید.</li>
+      <li>مانیتورینگ: <strong>Pulse</strong> (متریک‌های production)، <strong>Telescope</strong> (دیباگ؛ معمولاً فقط local/staging)، Horizon برای صف.</li>
+    </ul>
+
+    <h3>جمع‌بندی امکانات امنیتی Laravel</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>تهدید</th><th>سازوکار Laravel</th></tr></thead>
+      <tbody>
+        <tr><td>SQL Injection</td><td>Query Builder و Eloquent از <strong>PDO parameter binding</strong> استفاده می‌کنند؛ خطر فقط در <code>DB::raw</code>، <code>whereRaw</code> و نام ستون از ورودی کاربر</td></tr>
+        <tr><td>XSS</td><td><code>{{ }}</code> در Blade با <code>htmlspecialchars</code> escape می‌کند؛ <code>{!! !!}</code> فقط برای HTML مطمئن</td></tr>
+        <tr><td>CSRF</td><td>middleware <code>ValidateCsrfToken</code> (نام قدیمی <code>VerifyCsrfToken</code>) و <code>@csrf</code>؛ استثناها با <code>validateCsrfTokens(except: [...])</code> در bootstrap/app.php</td></tr>
+        <tr><td>Mass Assignment</td><td><code>$fillable</code> / <code>$guarded</code> و <code>$request-&gt;validated()</code> (صفحه Eloquent)</td></tr>
+        <tr><td>رمز عبور</td><td><code>Hash::make</code> با bcrypt یا argon2id؛ rehash خودکار هنگام ورود در Laravel 11؛ قانون <code>Password::min(8)-&gt;mixedCase()-&gt;uncompromised()</code></td></tr>
+        <tr><td>دستکاری داده</td><td>کوکی‌ها رمزنگاری و امضا می‌شوند؛ <code>Crypt::encryptString</code> و cast <code>encrypted</code> با <code>APP_KEY</code></td></tr>
+        <tr><td>دستکاری URL</td><td><code>URL::signedRoute</code> و <code>URL::temporarySignedRoute</code> + middleware <code>signed</code> (لینک لغو اشتراک، تأیید ایمیل)</td></tr>
+        <tr><td>Brute force</td><td>Rate Limiting و <code>throttle</code></td></tr>
+        <tr><td>Session fixation</td><td><code>$request-&gt;session()-&gt;regenerate()</code> بعد از login؛ <code>invalidate()</code> در logout</td></tr>
+        <tr><td>نشت اطلاعات</td><td><code>APP_DEBUG=false</code> در production؛ <code>$hidden</code> در مدل؛ API Resource به‌جای برگرداندن مدل خام</td></tr>
+        <tr><td>دسترسی غیرمجاز</td><td>Gate و Policy، scope کردن کوئری به کاربر (جلوگیری از IDOR)</td></tr>
+        <tr><td>CORS</td><td><code>config/cors.php</code> (با <code>config:publish cors</code>) و middleware <code>HandleCors</code></td></tr>
+        <tr><td>Secrets</td><td><code>.env</code> خارج از git؛ <code>env:encrypt</code> / <code>env:decrypt</code> برای ذخیره رمزنگاری‌شده</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-laravel-deeper-1">
+      <summary>انواع binding در Service Container (bind، singleton، scoped، instance) را تعریف و با هم مقایسه کنید. تفاوت singleton و scoped در چه محیطی اهمیت پیدا می‌کند؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> binding دستورالعمل کانتینر برای ساختن یک نوع است و تفاوت انواع آن در <strong>طول عمر نمونه</strong> است.</p>
+        <ul>
+          <li><strong>bind:</strong> هر <code>make</code> یک نمونه جدید (transient). برای اشیای سبک یا دارای state مستقل.</li>
+          <li><strong>singleton:</strong> بار اول ساخته و تا پایان عمر Application همان نمونه برگردانده می‌شود. برای کلاینت‌های پرهزینه (اتصال Redis، SDK).</li>
+          <li><strong>scoped:</strong> یک نمونه در هر چرخه درخواست یا Job؛ Octane و Queue Worker در ابتدای هر درخواست/Job این نمونه‌ها را flush می‌کنند.</li>
+          <li><strong>instance:</strong> شیء از پیش ساخته‌شده را به‌عنوان singleton ثبت می‌کند؛ رایج در تست.</li>
+        </ul>
+        <pre><code class="language-php">$this-&gt;app-&gt;bind(Exporter::class, CsvExporter::class);
+$this-&gt;app-&gt;singleton(GeoIpClient::class, fn () =&gt; new GeoIpClient(config('services.geoip.key')));
+$this-&gt;app-&gt;scoped(TenantContext::class);
+$this-&gt;app-&gt;instance(Clock::class, new FrozenClock());</code></pre>
+        <p><strong>اهمیت تفاوت:</strong> در PHP-FPM هر درخواست پروسه را از صفر boot می‌کند؛ پس singleton و scoped عملاً یکسان‌اند. در محیط‌های <strong>long-running</strong> مثل <strong>Octane</strong> و <strong>queue:work</strong>، singleton بین درخواست‌ها یا Jobها باقی می‌ماند؛ اگر state وابسته به درخواست (کاربر جاری، tenant، Request) داشته باشد، به درخواست بعدی <strong>نشت</strong> می‌کند. قاعده: سرویس stateless یا state سراسری ← singleton؛ state وابسته به درخواست ← scoped.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-2">
+      <summary>کانتینر Laravel چگونه کلاسی را که هیچ bindingی برایش ثبت نشده resolve می‌کند؟ در چه شرایطی این کار با خطا مواجه می‌شود و راه‌حل چیست؟</summary>
+      <div class="answer">
+        <p><strong>سازوکار (Autowiring با Reflection):</strong> وقتی <code>make(Foo::class)</code> صدا زده شود و bindingی نباشد، کانتینر:</p>
+        <ol>
+          <li>با <code>ReflectionClass</code> چک می‌کند کلاس instantiable باشد؛</li>
+          <li>پارامترهای constructor را می‌خواند؛</li>
+          <li>برای هر پارامتر با type کلاس، به‌صورت <strong>بازگشتی</strong> همان فرایند را تکرار می‌کند؛ برای primitive از مقدار پیش‌فرض استفاده می‌کند؛</li>
+          <li>شیء را با آرگومان‌های حل‌شده می‌سازد و resolving callbackها را اجرا می‌کند.</li>
+        </ol>
+        <p><strong>حالت‌های خطا</strong> (<code>BindingResolutionException</code>):</p>
+        <ul>
+          <li>type-hint روی <strong>interface</strong> یا کلاس abstract بدون binding: «Target [X] is not instantiable».</li>
+          <li>پارامتر <strong>primitive بدون مقدار پیش‌فرض</strong> (مثل <code>string $apiKey</code>): «Unresolvable dependency».</li>
+          <li>وابستگی حلقوی (A به B و B به A).</li>
+        </ul>
+        <pre><code class="language-php">// راه‌حل‌ها
+$this-&gt;app-&gt;bind(PaymentGateway::class, ZarinpalGateway::class);            // interface
+$this-&gt;app-&gt;when(SmsSender::class)-&gt;needs('$apiKey')-&gt;giveConfig('services.sms.key'); // primitive
+$this-&gt;app-&gt;singleton(SmsSender::class, fn () =&gt; new SmsSender(config('services.sms.key')));</code></pre>
+        <p><strong>نکته:</strong> به همین دلیل اکثر کلاس‌های concrete هیچ binding نمی‌خواهند و binding فقط برای interfaceها، primitiveها، singleton‌ها و پیکربندی خاص ضروری است. Reflection هزینه دارد ولی در عمل ناچیز است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-3">
+      <summary>تفاوت متدهای register و boot در Service Provider چیست و چرا Laravel این دو فاز را از هم جدا کرده است؟ مثالی از کد اشتباه بزنید.</summary>
+      <div class="answer">
+        <p><strong>register:</strong> فقط برای ثبت binding در کانتینر. Laravel اول register <strong>همه</strong> Providerها را اجرا می‌کند.</p>
+        <p><strong>boot:</strong> بعد از register شدن همه Providerها اجرا می‌شود؛ در این زمان تمام سرویس‌ها در دسترس‌اند. ثبت Gate، Policy، RateLimiter، listener، macro، view composer و route اینجاست. از method injection هم پشتیبانی می‌کند.</p>
+        <p><strong>چرا؟</strong> ترتیب اجرای Providerها تضمین‌شده نیست. اگر در register از سرویسی استفاده کنید، ممکن است Provider آن هنوز ثبت نشده باشد یا سرویس <strong>زودهنگام</strong> با پیکربندی ناقص ساخته شود (مثلاً قبل از اینکه Provider دیگری آن را extend کند). جداسازی دو فاز تضمین می‌کند «نقشه ساخت» کامل باشد و بعد استفاده شروع شود.</p>
+        <pre><code class="language-php">// ❌ اشتباه
+public function register(): void
+{
+    Gate::define('admin', fn ($u) =&gt; $u-&gt;is_admin);   // استفاده از سرویس Gate در فاز register
+    View::share('settings', Setting::all());           // کوئری DB در register؛ برای هر artisan command هم اجرا می‌شود
+}
+
+// ✅ درست
+public function register(): void
+{
+    $this-&gt;app-&gt;singleton(SettingsRepository::class);
+}
+public function boot(SettingsRepository $settings): void
+{
+    Gate::define('admin', fn ($u) =&gt; $u-&gt;is_admin);
+    View::composer('layouts.app', fn ($view) =&gt; $view-&gt;with('settings', $settings-&gt;all()));
+}</code></pre>
+        <p><strong>نکته تکمیلی:</strong> Providerی که فقط register دارد را می‌توان <strong>deferred</strong> کرد؛ Providerی که در boot کار جانبی دارد، نه.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-4">
+      <summary>Deferred Service Provider چیست، چگونه کار می‌کند و چه محدودیتی دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Providerی که فقط زمانی load و register می‌شود که یکی از سرویس‌هایی که ارائه می‌کند واقعاً از کانتینر درخواست شود.</p>
+        <p><strong>سازوکار:</strong> Provider اینترفیس <code>DeferrableProvider</code> را پیاده می‌کند و در متد <code>provides()</code> فهرست کلیدهای کانتینر را برمی‌گرداند. Laravel این نگاشت را در <code>bootstrap/cache/services.php</code> کش می‌کند. در هر درخواست، به‌جای اجرای register آن Provider، فقط می‌داند «اگر کسی X خواست، اول این Provider را register کن».</p>
+        <pre><code class="language-php">class PdfServiceProvider extends ServiceProvider implements DeferrableProvider
+{
+    public function register(): void
+    {
+        $this-&gt;app-&gt;singleton(PdfRenderer::class, fn () =&gt; new PdfRenderer(config('pdf')));
+    }
+
+    public function provides(): array
+    {
+        return [PdfRenderer::class];
+    }
+}</code></pre>
+        <p><strong>مزیت:</strong> کاهش هزینه boot در هر درخواست، مخصوصاً در برنامه‌های بزرگ با تعداد زیادی Provider پکیج.</p>
+        <p><strong>محدودیت‌ها:</strong></p>
+        <ul>
+          <li>فقط برای Providerهایی که <strong>صرفاً binding</strong> ثبت می‌کنند. اگر در boot route، listener، macro یا Gate ثبت شود، چون Provider ممکن است هرگز load نشود، آن کارها انجام نمی‌شوند.</li>
+          <li>اگر <code>provides()</code> ناقص باشد، سرویس پیدا نمی‌شود یا با autowiring اشتباه ساخته می‌شود.</li>
+          <li>بعد از تغییر، کش services باید بازسازی شود (به‌طور خودکار هنگام تغییر فهرست Providerها، یا با <code>optimize:clear</code>).</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-5">
+      <summary>Facade در Laravel به‌صورت داخلی چگونه کار می‌کند؟ آیا استفاده از Facade تست‌پذیری را کاهش می‌دهد؟ آن را با Dependency Injection مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>سازوکار:</strong> Facade کلاسی است که از <code>Illuminate\Support\Facades\Facade</code> ارث می‌برد و فقط متد <code>getFacadeAccessor()</code> را تعریف می‌کند که <strong>کلید سرویس در کانتینر</strong> را برمی‌گرداند. فراخوانی <code>Cache::get('k')</code> چون متد static وجود ندارد به <code>__callStatic</code> می‌رسد؛ این متد با <code>getFacadeRoot()</code> شیء را از کانتینر می‌گیرد (و در <code>$resolvedInstance</code> کش می‌کند) و متد را روی <strong>شیء واقعی</strong> صدا می‌زند.</p>
+        <pre><code class="language-php">class Cache extends Facade
+{
+    protected static function getFacadeAccessor(): string { return 'cache'; }
+}
+// Cache::get('k')  ≡  app('cache')-&gt;get('k')</code></pre>
+        <p><strong>تست‌پذیری:</strong> برخلاف متدهای static واقعی، Facade قابل mock است چون پشت آن شیء کانتینر است:</p>
+        <pre><code class="language-php">Cache::shouldReceive('get')-&gt;with('k')-&gt;andReturn('v');
+Mail::fake();  Queue::fake();  Http::fake();</code></pre>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Facade</th><th>Constructor DI</th></tr></thead>
+          <tbody>
+            <tr><td>وابستگی</td><td>پنهان در بدنه</td><td>صریح در امضا</td></tr>
+            <tr><td>Coupling</td><td>به فریم‌ورک</td><td>به Contract، قابل استفاده بیرون از Laravel</td></tr>
+            <tr><td>Unit test خالص</td><td>نیازمند کانتینر Laravel</td><td>با new و mock ساده</td></tr>
+            <tr><td>خوانایی</td><td>کوتاه</td><td>کمی پرحرف</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>جمع‌بندی:</strong> Facade تست‌پذیری را کم نمی‌کند؛ خطر اصلی آن <strong>scope creep</strong> است: کلاسی که بی‌صدا به ده سرویس وابسته می‌شود. برای کد دامنه و پکیج‌ها DI روی Contract، برای کد glue (کنترلر، route) Facade قابل قبول است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-6">
+      <summary>سناریو: دو سرویس ReportExporter و BackupService هر دو به Filesystem نیاز دارند، ولی اولی باید روی دیسک local و دومی روی S3 بنویسد. بدون تغییر کد این کلاس‌ها چطور پیاده‌سازی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>راه‌حل: Contextual Binding.</strong> کانتینر اجازه می‌دهد برای یک وابستگی واحد (<code>Filesystem</code>) بسته به <strong>کلاس مصرف‌کننده</strong> پیاده‌سازی متفاوتی تزریق شود. هر دو کلاس فقط به Contract وابسته‌اند و از جزئیات دیسک بی‌خبرند.</p>
+        <pre><code class="language-php">use Illuminate\Contracts\Filesystem\Filesystem;
+
+class ReportExporter { public function __construct(private Filesystem $disk) {} }
+class BackupService  { public function __construct(private Filesystem $disk) {} }
+
+// AppServiceProvider::register()
+$this-&gt;app-&gt;when(ReportExporter::class)
+    -&gt;needs(Filesystem::class)
+    -&gt;give(fn () =&gt; Storage::disk('local'));
+
+$this-&gt;app-&gt;when(BackupService::class)
+    -&gt;needs(Filesystem::class)
+    -&gt;give(fn () =&gt; Storage::disk('s3'));</code></pre>
+        <p>در نسخه‌های اخیر Laravel 11 می‌توان با <strong>contextual attribute</strong> همین را در خود constructor گفت: <code>public function __construct(#[Storage('s3')] private Filesystem $disk) {}</code>؛ ساده‌تر ولی تصمیم پیکربندی را به کلاس می‌برد.</p>
+        <p><strong>چرا این روش؟</strong></p>
+        <ul>
+          <li>رعایت <strong>Dependency Inversion</strong> و Open/Closed: تغییر دیسک فقط در Provider.</li>
+          <li>در تست به‌راحتی <code>Storage::fake()</code> یا یک Filesystem mock داده می‌شود.</li>
+          <li>جایگزین‌های بدتر: <code>Storage::disk('s3')</code> hardcode داخل کلاس (coupling) یا ساختن دو interface مصنوعی.</li>
+        </ul>
+        <p>همین الگو برای primitiveها هم کار می‌کند: <code>needs('$bucket')-&gt;giveConfig('backup.bucket')</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-7">
+      <summary>کد زیر گاهی ایمیل خوش‌آمد را با خطای ModelNotFoundException در صف شکست می‌دهد و گاهی برای کاربری ایمیل می‌فرستد که ثبت‌نامش rollback شده. علت چیست؟ بازنویسی کنید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">DB::transaction(function () use ($data) {
+    $user = User::create($data);
+    SendWelcomeEmail::dispatch($user);
+    $user-&gt;wallet()-&gt;create(['balance' =&gt; 0]);   // ممکن است exception بدهد
+});</code></pre>
+        <p><strong>علت:</strong> Job <strong>بلافاصله</strong> وارد صف می‌شود، در حالی که تراکنش هنوز commit نشده است.</p>
+        <ul>
+          <li>به‌خاطر <strong>SerializesModels</strong>، در payload فقط کلاس و id کاربر ذخیره می‌شود و worker هنگام اجرا آن را از DB می‌خواند. اگر worker سریع‌تر از commit باشد، به‌خاطر <strong>isolation تراکنش</strong> رکورد را نمی‌بیند ← <code>ModelNotFoundException</code>.</li>
+          <li>اگر ساختن wallet خطا دهد و تراکنش rollback شود، Job قبلاً در صف (مثلاً Redis، که بخشی از تراکنش DB نیست) قرار گرفته و برای داده‌ای ناموجود اجرا می‌شود.</li>
+        </ul>
+        <pre><code class="language-php">DB::transaction(function () use ($data) {
+    $user = User::create($data);
+    $user-&gt;wallet()-&gt;create(['balance' =&gt; 0]);
+    SendWelcomeEmail::dispatch($user)-&gt;afterCommit();   // فقط بعد از commit؛ با rollback دور ریخته می‌شود
+});
+
+class SendWelcomeEmail implements ShouldQueue
+{
+    use Queueable;
+    public bool $deleteWhenMissingModels = true;        // لایه دفاعی دوم
+    public function __construct(public User $user) {}
+}</code></pre>
+        <p><strong>گزینه‌های دیگر:</strong> <code>'after_commit' =&gt; true</code> در connection صف برای همه Jobها؛ برای رویدادها <code>ShouldDispatchAfterCommit</code> یا listener با <code>ShouldHandleEventsAfterCommit</code>؛ یا dispatch را بعد از بلوک transaction بنویسید. همین مشکل برای Mail و Notification صف‌شده هم وجود دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-8">
+      <summary>رابطه tries، backoff، timeout و retry_after را در صف Laravel توضیح دهید. چرا ممکن است یک Job دو بار اجرا شود و چطور از آسیب آن جلوگیری می‌کنید؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>tries:</strong> حداکثر دفعات تلاش (پیش‌فرض worker یک). <strong>maxExceptions</strong> تعداد exception مجاز را جدا محدود می‌کند و <strong>retryUntil()</strong> به‌جای تعداد، مهلت زمانی می‌دهد.</li>
+          <li><strong>backoff:</strong> فاصله بین تلاش‌ها؛ آرایه مثل <code>[10, 60, 300]</code> برای backoff افزایشی.</li>
+          <li><strong>timeout:</strong> حداکثر زمان یک تلاش؛ worker بعد از آن پروسه را kill می‌کند (و تلاش شکست‌خورده حساب می‌شود).</li>
+          <li><strong>retry_after:</strong> تنظیم connection؛ اگر Job بعد از این مدت acknowledge نشده باشد، صف فرض می‌کند worker مرده و Job را <strong>دوباره در دسترس</strong> می‌گذارد.</li>
+        </ul>
+        <p><strong>دلایل اجرای دوباره:</strong></p>
+        <ol>
+          <li><code>timeout</code> بزرگ‌تر یا مساوی <code>retry_after</code>: Job هنوز در حال اجراست که worker دوم آن را برمی‌دارد. <strong>قانون: timeout چند ثانیه کمتر از retry_after.</strong></li>
+          <li>crash یا kill شدن worker بعد از انجام کار ولی قبل از حذف Job از صف.</li>
+          <li>retry بعد از خطایی که <strong>بعد از</strong> یک اثر جانبی رخ داده (ایمیل رفته، بعد DB خطا داده).</li>
+        </ol>
+        <pre><code class="language-php">class ChargeSubscription implements ShouldQueue
+{
+    use Queueable;
+    public int $tries = 4;
+    public int $timeout = 50;          // retry_after = 90
+    public array $backoff = [30, 120, 600];
+
+    public function handle(PaymentGateway $gateway): void
+    {
+        if ($this-&gt;invoice-&gt;fresh()-&gt;isPaid()) {
+            return;                      // idempotent: اجرای دوباره بی‌اثر است
+        }
+        $gateway-&gt;charge($this-&gt;invoice, idempotencyKey: "invoice-{$this-&gt;invoice-&gt;id}");
+        $this-&gt;invoice-&gt;markPaid();
+    }
+}</code></pre>
+        <p><strong>محافظت:</strong> طراحی <strong>idempotent</strong> (بررسی وضعیت قبل از اثر، کلید یکتا در API پرداخت، <code>updateOrCreate</code>، unique index)، <code>WithoutOverlapping</code> برای منبع مشترک، و <code>failed()</code> برای مدیریت شکست نهایی.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-9">
+      <summary>تفاوت queue:work و queue:listen چیست؟ workerها را در production چگونه اجرا و بعد از هر deploy مدیریت می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>queue:work</strong> یک daemon طولانی‌مدت است: فریم‌ورک یک بار boot می‌شود و Jobها پشت سر هم در همان پروسه اجرا می‌شوند. سریع است ولی <strong>کد قدیمی در حافظه می‌ماند</strong> و state یا حافظه ممکن است نشت کند. <strong>queue:listen</strong> برای هر Job یک پروسه تازه با boot کامل می‌سازد؛ کند است ولی تغییرات کد را فوراً می‌بیند؛ مناسب توسعه.</p>
+        <p><strong>در production:</strong></p>
+        <ul>
+          <li>یک <strong>process monitor</strong> (Supervisor، systemd، یا orchestrator کانتینر) workerها را زنده نگه می‌دارد و پس از خروج ری‌استارت می‌کند؛ <code>numprocs</code> تعداد workerهای موازی.</li>
+          <li>با <code>--max-jobs</code> و <code>--max-time</code> و <code>--memory</code> workerها دوره‌ای بازیافت می‌شوند.</li>
+          <li>صف‌های اولویت‌دار: <code>--queue=high,default</code>.</li>
+          <li>اگر Redis دارید، <strong>Horizon</strong> مدیریت workerها، balancing و داشبورد را فراهم می‌کند.</li>
+        </ul>
+        <pre><code class="language-bash"># Supervisor
+command=php /var/www/app/artisan queue:work redis --tries=3 --timeout=60 --max-time=3600
+numprocs=4
+stopwaitsecs=3600
+
+# در اسکریپت deploy
+php artisan queue:restart       # یا php artisan horizon:terminate</code></pre>
+        <p><strong>چرا queue:restart؟</strong> بدون آن workerها با کد قبلی ادامه می‌دهند و ممکن است Jobهای جدید را با کلاس‌های قدیمی (یا ناسازگار با schema جدید) اجرا کنند. این دستور یک سیگنال در <strong>cache</strong> ثبت می‌کند؛ هر worker پس از اتمام Job جاری <strong>به‌آرامی</strong> خارج می‌شود و Supervisor آن را با کد جدید بالا می‌آورد؛ پس هیچ Jobی وسط کار قطع نمی‌شود. پیش‌نیاز: cache مشترک و <code>stopwaitsecs</code> بزرگ‌تر از طولانی‌ترین Job.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-10">
+      <summary>Job Chaining و Job Batching را مقایسه کنید. برای import یک فایل CSV با ۲ میلیون ردیف که بعد از اتمام باید گزارش ارسال شود، کدام را و چگونه استفاده می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>Chain:</strong> اجرای <strong>ترتیبی</strong>؛ هر Job بعد از موفقیت قبلی. اگر یکی fail شود، باقی زنجیره اجرا نمی‌شوند. مناسب مراحلی که به خروجی مرحله قبل وابسته‌اند (دانلود ← پردازش ← انتشار).</p>
+        <p><strong>Batch:</strong> اجرای <strong>موازی</strong> گروهی از Jobهای مستقل بین workerها، با پیگیری progress در جدول <code>job_batches</code> و callbackهای <code>then</code>، <code>catch</code>، <code>finally</code>. Jobها trait <code>Batchable</code> دارند.</p>
+        <p><strong>برای سناریوی import:</strong> ترکیب هر دو. ردیف‌ها مستقل‌اند پس موازی‌سازی با batch، و ارسال گزارش در <code>then</code>/<code>finally</code>:</p>
+        <pre><code class="language-php">class ImportChunk implements ShouldQueue
+{
+    use Batchable, Queueable;
+    public function __construct(public string $path, public int $offset, public int $limit) {}
+
+    public function handle(): void
+    {
+        if ($this-&gt;batch()-&gt;cancelled()) return;
+        // خواندن همین بازه با LazyCollection و upsert دسته‌ای
+    }
+}
+
+$jobs = collect(range(0, $totalRows, 5000))
+    -&gt;map(fn ($offset) =&gt; new ImportChunk($path, $offset, 5000));
+
+Bus::batch($jobs-&gt;all())
+    -&gt;name("import:{$import-&gt;id}")
+    -&gt;allowFailures()
+    -&gt;onQueue('imports')
+    -&gt;then(fn (Batch $b) =&gt; $import-&gt;user-&gt;notify(new ImportFinished($b-&gt;id)))
+    -&gt;catch(fn (Batch $b, Throwable $e) =&gt; Log::warning('chunk failed', ['batch' =&gt; $b-&gt;id]))
+    -&gt;dispatch();</code></pre>
+        <ul>
+          <li>Jobها فقط <strong>مسیر و بازه</strong> را حمل می‌کنند، نه داده را (payload کوچک).</li>
+          <li><code>upsert</code> روی کلید یکتا، Jobها را idempotent می‌کند.</li>
+          <li>UI می‌تواند با <code>Bus::findBatch($id)-&gt;progress()</code> درصد پیشرفت را نشان دهد.</li>
+          <li>اگر بعد از batch چند مرحله ترتیبی لازم باشد، batch را داخل یک chain قرار دهید.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-11">
+      <summary>تفاوت ShouldBeUnique با Job Middleware از نوع WithoutOverlapping چیست؟ برای هرکدام یک سناریوی مناسب بگویید.</summary>
+      <div class="answer">
+        <p><strong>ShouldBeUnique:</strong> در زمان <strong>dispatch</strong> عمل می‌کند. اگر Jobی با همان <code>uniqueId()</code> در صف یا در حال اجرا باشد، dispatch جدید <strong>نادیده</strong> گرفته می‌شود. قفل در cache تا پایان پردازش (یا <code>$uniqueFor</code> ثانیه) نگه داشته می‌شود. <code>ShouldBeUniqueUntilProcessing</code> قفل را هنگام شروع آزاد می‌کند.</p>
+        <p><strong>WithoutOverlapping:</strong> در زمان <strong>اجرا</strong> عمل می‌کند. همه Jobها وارد صف می‌شوند، ولی دو Job با یک کلید همزمان اجرا نمی‌شوند؛ Job دوم <strong>release</strong> می‌شود تا بعداً اجرا شود (یا با <code>dontRelease()</code> حذف شود).</p>
+        <pre><code class="language-php">// سناریوی ۱: بازمحاسبه موجودی محصول بعد از هر تغییر؛ ۵۰ تغییر پشت سر هم ← یک بازمحاسبه کافی است
+class RecalculateStock implements ShouldQueue, ShouldBeUnique
+{
+    use Queueable;
+    public int $uniqueFor = 600;
+    public function uniqueId(): string { return (string) $this-&gt;product-&gt;id; }
+}
+
+// سناریوی ۲: هر تراکنش کیف پول باید اعمال شود، ولی نه همزمان برای یک کاربر (race condition روی موجودی)
+class ApplyWalletTransaction implements ShouldQueue
+{
+    use Queueable;
+    public function middleware(): array
+    {
+        return [(new WithoutOverlapping("wallet:{$this-&gt;userId}"))-&gt;releaseAfter(5)-&gt;expireAfter(60)];
+    }
+}</code></pre>
+        <ul>
+          <li>Unique = <strong>حذف کار تکراری</strong> (dedupe)؛ WithoutOverlapping = <strong>سریال‌سازی</strong> کار روی یک منبع.</li>
+          <li>هر دو به cache با پشتیبانی از <strong>atomic lock</strong> نیاز دارند و روی چند سرور باید cache مشترک باشد.</li>
+          <li><code>expireAfter</code> برای جلوگیری از قفل یتیم در صورت crash ضروری است.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-12">
+      <summary>Cache Stampede چیست و در Laravel چه راه‌هایی برای جلوگیری از آن دارید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> وقتی کلید cache پربازدیدی که تولیدش گران است منقضی می‌شود، تعداد زیادی درخواست همزمان cache miss می‌خورند و همه با هم مقدار را از منبع (DB یا API) بازسازی می‌کنند. بار ناگهانی می‌تواند دیتابیس را از کار بیندازد و چون پاسخ‌ها کند می‌شوند، cache دیرتر پر می‌شود و مشکل تشدید می‌شود.</p>
+        <p><strong>راه‌حل‌ها:</strong></p>
+        <ol>
+          <li><strong>Stale-while-revalidate</strong> با <code>Cache::flexible</code> (Laravel 11.23+): در بازه دوم مقدار کهنه فوراً سرو و بازسازی پس از ارسال پاسخ انجام می‌شود.</li>
+          <li><strong>Atomic lock:</strong> فقط برنده قفل بازسازی می‌کند.</li>
+          <li><strong>Jitter</strong> تصادفی در TTL تا کلیدها همزمان منقضی نشوند.</li>
+          <li><strong>Pre-warm</strong> با Job زمان‌بندی‌شده که قبل از انقضا مقدار را تازه می‌کند.</li>
+        </ol>
+        <pre><code class="language-php">// ۱
+$stats = Cache::flexible('dashboard:stats', [60, 300], fn () =&gt; Stats::heavyQuery());
+
+// ۲
+$stats = Cache::get('dashboard:stats') ?? Cache::lock('rebuild:stats', 30)-&gt;block(10, fn () =&gt;
+    Cache::remember('dashboard:stats', 600 + random_int(0, 120), fn () =&gt; Stats::heavyQuery())
+);
+
+// ۴ (routes/console.php)
+Schedule::call(fn () =&gt; Cache::put('dashboard:stats', Stats::heavyQuery(), 900))-&gt;everyTenMinutes();</code></pre>
+        <p><strong>Trade-off:</strong> SWR و pre-warm داده کمی کهنه نشان می‌دهند ولی latency پایینی دارند؛ قفل داده تازه می‌دهد ولی درخواست‌های منتظر کندتر می‌شوند و <code>LockTimeoutException</code> باید مدیریت شود. همه این روش‌ها به cache مشترک (Redis) نیاز دارند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-13">
+      <summary>برنامه شما روی سه سرور اجرا می‌شود و روی هر سه cron مربوط به schedule:run فعال است. گزارش روزانه سه بار ارسال می‌شود و گاهی دو اجرای یک command پرحجم با هم تداخل دارند. مشکل را تحلیل و رفع کنید.</summary>
+      <div class="answer">
+        <p><strong>تحلیل:</strong> scheduler روی <strong>هر</strong> سروری که <code>schedule:run</code> را اجرا کند، وظایف موعدرسیده را اجرا می‌کند؛ پس با سه سرور، هر وظیفه سه بار اجرا می‌شود. مشکل دوم مستقل است: command قبلی هنوز تمام نشده که اجرای بعدی (در دقیقه یا ساعت بعد) شروع می‌شود.</p>
+        <pre><code class="language-php">// routes/console.php
+Schedule::command('reports:daily')
+    -&gt;dailyAt('07:00')
+    -&gt;onOneServer();                 // فقط یکی از سرورها برنده قفل می‌شود
+
+Schedule::command('sync:inventory')
+    -&gt;everyFifteenMinutes()
+    -&gt;withoutOverlapping(30)         // تا اجرای قبلی تمام نشده (حداکثر ۳۰ دقیقه قفل) اجرا نکن
+    -&gt;onOneServer()
+    -&gt;runInBackground();             // بقیه وظایف این دقیقه منتظر آن نمانند</code></pre>
+        <ul>
+          <li><strong>onOneServer:</strong> با atomic lock روی cache <strong>مشترک</strong> (Redis، database، memcached، dynamodb) کار می‌کند؛ با store <code>file</code> بی‌اثر است چون هر سرور cache خودش را دارد.</li>
+          <li><strong>withoutOverlapping:</strong> قفل cache تا پایان اجرا؛ پیش‌فرض انقضای قفل ۲۴ ساعت است، پس اگر پروسه crash کند ممکن است وظیفه یک روز اجرا نشود؛ عدد مناسب بدهید.</li>
+          <li><strong>runInBackground:</strong> وظایف طولانی بقیه را در صف همان دقیقه معطل نکنند.</li>
+        </ul>
+        <p><strong>جایگزین معماری:</strong> فقط روی یک سرور (یا یک کانتینر worker اختصاصی) cron را فعال کنید؛ ساده ولی single point of failure. یا وظیفه سنگین را به یک Job با <code>ShouldBeUnique</code> تبدیل و فقط dispatch آن را زمان‌بندی کنید تا پردازش بین workerها پخش شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-14">
+      <summary>Gate و Policy را تعریف و مقایسه کنید. نقش متد before چیست و در Laravel 11 مجوز را در کنترلر چگونه اعمال می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>Gate:</strong> یک closure با نام ability که کاربر (و آرگومان‌های اختیاری) را می‌گیرد و bool یا <code>Response</code> برمی‌گرداند؛ برای مجوزهای <strong>غیرمرتبط با مدل خاص</strong> (دسترسی به پنل، گزارش مالی).</p>
+        <p><strong>Policy:</strong> کلاسی که مجوزهای مربوط به <strong>یک مدل</strong> را گروه‌بندی می‌کند (<code>view</code>، <code>update</code>، <code>delete</code>…). با قرارداد نام‌گذاری به‌طور خودکار کشف می‌شود و منظم‌تر و تست‌پذیرتر است.</p>
+        <p><strong>before:</strong> قبل از هر بررسی اجرا می‌شود؛ <code>true</code> یعنی اجازه قطعی، <code>false</code> یعنی رد قطعی، <code>null</code> یعنی ادامه بررسی عادی. کاربرد کلاسیک: سوپرادمین. <code>Gate::before</code> سراسری و متد <code>before</code> در Policy مخصوص همان مدل است.</p>
+        <pre><code class="language-php">Gate::define('view-reports', fn (User $u) =&gt; $u-&gt;hasRole('finance'));
+Gate::before(fn (User $u, string $ability) =&gt; $u-&gt;isSuperAdmin() ? true : null);
+
+class PostPolicy
+{
+    public function update(User $user, Post $post): bool
+    {
+        return $user-&gt;id === $post-&gt;user_id;
+    }
+}
+
+// Laravel 11: کنترلر پایه AuthorizesRequests ندارد
+public function update(UpdatePostRequest $request, Post $post)
+{
+    Gate::authorize('update', $post);   // AuthorizationException ← 403
+    $post-&gt;update($request-&gt;validated());
+}
+
+// یا در route
+Route::put('/posts/{post}', [PostController::class, 'update'])-&gt;can('update', 'post');</code></pre>
+        <p><strong>نقاط دیگر:</strong> <code>$user-&gt;can()</code>، متد <code>authorize()</code> در Form Request، <code>@can</code> در Blade (فقط برای UI، نه امنیت). <code>Response::denyAsNotFound()</code> برای پنهان کردن وجود منبع. در Laravel ≤10 از <code>$this-&gt;authorize()</code> و <code>authorizeResource</code> و ثبت در <code>AuthServiceProvider</code> استفاده می‌شد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-15">
+      <summary>حالت‌های SPA و API Token در Sanctum را توضیح دهید و بگویید چه زمانی به‌جای Sanctum باید از Passport استفاده کرد.</summary>
+      <div class="answer">
+        <p><strong>Sanctum – API Token:</strong> کاربر با <code>$user-&gt;createToken('iphone', ['orders:read'])</code> یک توکن دریافت می‌کند که فقط یک بار به‌صورت متن کامل نمایش داده و در DB به‌صورت <strong>hash</strong> ذخیره می‌شود. کلاینت آن را در هدر <code>Authorization: Bearer</code> می‌فرستد. abilities، انقضا و ابطال per-device دارد. مناسب <strong>اپ موبایل</strong>، CLI و integrationهای ساده.</p>
+        <p><strong>Sanctum – SPA:</strong> بدون توکن؛ از همان <strong>session cookie</strong> و CSRF Laravel استفاده می‌کند. SPA اول <code>/sanctum/csrf-cookie</code> را صدا می‌زند، سپس login می‌کند و درخواست‌های بعدی با کوکی HttpOnly احراز می‌شوند. شرط: SPA و API روی <strong>یک دامنه سطح بالا</strong>، تنظیم <code>SANCTUM_STATEFUL_DOMAINS</code>، CORS با credentials و <code>statefulApi()</code>. امن‌تر از نگه‌داری توکن در localStorage، چون JavaScript به کوکی دسترسی ندارد (کاهش اثر XSS).</p>
+        <pre><code class="language-php">Route::middleware(['auth:sanctum', 'abilities:orders:write'])
+    -&gt;post('/orders', [OrderController::class, 'store']);
+
+$request-&gt;user()-&gt;currentAccessToken()-&gt;delete();   // logout این دستگاه</code></pre>
+        <p><strong>Passport:</strong> یک <strong>OAuth2 Authorization Server</strong> کامل: ثبت client، Authorization Code + PKCE، Client Credentials، refresh token و scopes. زمانی لازم است که:</p>
+        <ul>
+          <li><strong>برنامه‌های شخص ثالث</strong> باید از طرف کاربران شما به API دسترسی بگیرند (صفحه رضایت، «ورود با حساب ما»)؛</li>
+          <li>ارتباط ماشین به ماشین با client credentials استاندارد لازم است؛</li>
+          <li>قرارداد یا SSO صراحتاً OAuth2 می‌خواهد.</li>
+        </ul>
+        <p><strong>جمع‌بندی:</strong> برای کلاینت‌های <strong>خودی</strong> Sanctum (ساده، سبک، کم‌هزینه)، برای <strong>اکوسیستم OAuth</strong> Passport. انتخاب Passport بدون نیاز واقعی، پیچیدگی (کلیدها، clientها، grantها) اضافه می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-16">
+      <summary>برای API یک فروشگاه، محدودیت نرخ این‌طور خواسته شده: کاربران لاگین‌شده ۱۲۰ درخواست در دقیقه، مهمان‌ها ۳۰ درخواست به ازای IP، و endpoint لاگین ۵ تلاش در دقیقه به ازای ایمیل و IP. پیاده‌سازی کنید.</summary>
+      <div class="answer">
+        <p><strong>رویکرد:</strong> limiterهای نام‌دار با <code>RateLimiter::for</code> در <code>AppServiceProvider::boot</code>؛ هر limiter بر اساس درخواست یک یا چند <code>Limit</code> با <strong>کلید</strong> (<code>by</code>) برمی‌گرداند؛ سپس middleware <code>throttle:name</code> روی routeها.</p>
+        <pre><code class="language-php">use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Support\Facades\RateLimiter;
+
+public function boot(): void
+{
+    RateLimiter::for('api', function (Request $request) {
+        return $request-&gt;user()
+            ? Limit::perMinute(120)-&gt;by('user:'.$request-&gt;user()-&gt;id)
+            : Limit::perMinute(30)-&gt;by('ip:'.$request-&gt;ip());
+    });
+
+    RateLimiter::for('login', function (Request $request) {
+        $email = Str::lower((string) $request-&gt;input('email'));
+        return [
+            Limit::perMinute(5)-&gt;by($email.'|'.$request-&gt;ip()),
+            Limit::perMinute(50)-&gt;by('login-ip:'.$request-&gt;ip()),  // جلوگیری از امتحان ایمیل‌های زیاد از یک IP
+        ];
+    });
+}
+
+// routes/api.php
+Route::post('/login', LoginController::class)-&gt;middleware('throttle:login');
+Route::middleware('throttle:api')-&gt;group(function () {
+    Route::apiResource('products', ProductController::class)-&gt;only(['index', 'show']);
+    Route::middleware('auth:sanctum')-&gt;apiResource('orders', OrderController::class);
+});</code></pre>
+        <ul>
+          <li>پاسخ رد شده <strong>429</strong> با هدر <code>Retry-After</code>؛ با <code>-&gt;response(fn ...)</code> قابل سفارشی‌سازی.</li>
+          <li>شمارنده‌ها در <strong>cache</strong> نگه داشته می‌شوند؛ روی چند سرور باید Redis مشترک باشد (و <code>throttleWithRedis()</code> برای کارایی).</li>
+          <li>پیشوند در کلید (<code>user:</code>، <code>ip:</code>) از تداخل شمارنده‌ها جلوگیری می‌کند.</li>
+          <li>پشت load balancer یا CDN، <strong>TrustProxies</strong> را درست تنظیم کنید؛ وگرنه <code>$request-&gt;ip()</code> آدرس پروکسی است و همه کاربران یک سهمیه مشترک می‌گیرند.</li>
+          <li>برای منطق خاص (OTP) از <code>RateLimiter::attempt/hit/tooManyAttempts</code> دستی استفاده کنید.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-17">
+      <summary>کلاس Pipeline در Laravel چیست و چه ارتباطی با Middleware دارد؟ یک مثال کاربردی خارج از HTTP بزنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> <code>Illuminate\Pipeline\Pipeline</code> پیاده‌سازی الگوی <strong>Pipeline / Chain of Responsibility</strong> است: یک شیء (<code>send</code>) از میان مجموعه‌ای از مراحل (<code>through</code>) عبور می‌کند؛ هر مرحله امضای <code>handle($passable, Closure $next)</code> دارد و می‌تواند شیء را تغییر دهد، با exception متوقف کند یا با <code>$next</code> ادامه دهد. در انتها <code>then($destination)</code> اجرا می‌شود.</p>
+        <p><strong>ارتباط با Middleware:</strong> HTTP Kernel دقیقاً همین را انجام می‌دهد: درخواست را با Pipeline از middlewareهای global به Router می‌فرستد و Router همین کار را با middlewareهای route تا رسیدن به controller تکرار می‌کند. پیاده‌سازی با <code>array_reduce</code> روی آرایه <strong>معکوس</strong> pipeها یک «پیاز» از closureها می‌سازد؛ برای همین کد قبل از <code>$next</code> از بیرون به داخل و کد بعد از آن از داخل به بیرون اجرا می‌شود (before/after middleware).</p>
+        <pre><code class="language-php">// فیلتر جستجوی محصولات؛ هر فیلتر یک کلاس کوچک و قابل تست
+class FilterByCategory
+{
+    public function handle(Builder $query, Closure $next)
+    {
+        if (request()-&gt;filled('category')) {
+            $query-&gt;where('category_id', request('category'));
+        }
+        return $next($query);
+    }
+}
+
+$products = Pipeline::send(Product::query())
+    -&gt;through([FilterByCategory::class, FilterByPriceRange::class, SortProducts::class])
+    -&gt;thenReturn()
+    -&gt;paginate(20);</code></pre>
+        <p><strong>مزایا:</strong> رعایت Single Responsibility و Open/Closed (مرحله جدید = کلاس جدید)، ترتیب صریح، تست جداگانه هر مرحله، و resolve شدن pipeها از کانتینر (DI). <strong>معایب:</strong> برای منطق خیلی ساده overkill است و ردیابی جریان کمی غیرمستقیم می‌شود. کاربردهای دیگر: فرایند checkout، پردازش چندمرحله‌ای فایل یا داده ورودی.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-18">
+      <summary>کد زیر در ساعات شلوغ باعث از دسترس خارج شدن کل سایت می‌شود. مشکلات را توضیح دهید و بازنویسی کنید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">public function store(Request $request)
+{
+    $order = Order::create($request-&gt;all());
+    $res = Http::post('https://sms.example.com/send', ['to' =&gt; $order-&gt;phone, 'text' =&gt; 'ثبت شد']);
+    $tracking = Http::post('https://shipping.example.com/create', ['order' =&gt; $order-&gt;id])-&gt;json();
+    $order-&gt;update(['tracking' =&gt; $tracking['code']]);
+    return $order;
+}</code></pre>
+        <p><strong>مشکلات:</strong></p>
+        <ul>
+          <li><strong>بدون timeout:</strong> پیش‌فرض ۳۰ ثانیه است؛ اگر سرویس SMS کند شود، هر درخواست یک worker PHP-FPM را قفل می‌کند و با چند ده درخواست همزمان، <strong>pool کامل پر</strong> می‌شود و همه صفحات سایت (حتی بی‌ربط) از کار می‌افتند.</li>
+          <li>کارهای <strong>غیرفوری</strong> (SMS) همزمان در مسیر پاسخ کاربر.</li>
+          <li>بررسی نکردن خطا: <code>$tracking['code']</code> در پاسخ 500 خطا می‌دهد و سفارش بدون tracking می‌ماند.</li>
+          <li><code>$request-&gt;all()</code>: خطر mass assignment و نبود validation.</li>
+          <li>برگرداندن مدل خام به‌جای API Resource.</li>
+        </ul>
+        <pre><code class="language-php">public function store(StoreOrderRequest $request)
+{
+    $order = DB::transaction(fn () =&gt; $request-&gt;user()-&gt;orders()-&gt;create($request-&gt;validated()));
+
+    SendOrderSms::dispatch($order)-&gt;afterCommit();
+    CreateShipment::dispatch($order)-&gt;afterCommit();
+
+    return OrderResource::make($order)-&gt;response()-&gt;setStatusCode(201);
+}
+
+class CreateShipment implements ShouldQueue
+{
+    use Queueable;
+    public int $tries = 5;
+    public array $backoff = [10, 60, 300];
+
+    public function handle(): void
+    {
+        $code = Http::timeout(5)-&gt;connectTimeout(2)
+            -&gt;retry(2, 200, fn ($e) =&gt; $e instanceof ConnectionException)
+            -&gt;post(config('services.shipping.url').'/create', ['order' =&gt; $this-&gt;order-&gt;id])
+            -&gt;throw()                      // 4xx/5xx ← exception ← retry صف
+            -&gt;json('code');
+
+        $this-&gt;order-&gt;update(['tracking' =&gt; $code]);
+    }
+}</code></pre>
+        <p><strong>نکات:</strong> timeout کوتاه، retry فقط روی خطاهای گذرا، انتقال I/O خارجی به صف، backoff، و idempotency (درخواست ساخت مرسوله با شناسه سفارش). اگر نتیجه API باید فوراً به کاربر برگردد، حداقل timeout کوتاه و <strong>circuit breaker</strong> یا fallback در نظر بگیرید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-19">
+      <summary>بعد از مهاجرت به Laravel Octane، گاهی کاربران اطلاعات سبد خرید یا زبان کاربر دیگری را می‌بینند. علت محتمل چیست؟ چند الگوی کد خطرناک و اصلاح آن‌ها را بنویسید.</summary>
+      <div class="answer">
+        <p><strong>علت:</strong> Octane برنامه را <strong>یک بار boot</strong> می‌کند و همان نمونه Application و همه singletonها و propertyهای static را برای درخواست‌های متوالی در یک worker نگه می‌دارد. هر state مربوط به درخواست که در این اشیای ماندگار ذخیره شود، به درخواست <strong>کاربر بعدی</strong> نشت می‌کند. در PHP-FPM این مشکل دیده نمی‌شد چون همه چیز بعد از هر درخواست دور ریخته می‌شد.</p>
+        <pre><code class="language-php">// ❌ ۱: تزریق Request به singleton
+$this-&gt;app-&gt;singleton(CartService::class, fn ($app) =&gt; new CartService($app['request']));
+// ✅
+$this-&gt;app-&gt;scoped(CartService::class, fn ($app) =&gt; new CartService($app['request']));
+
+// ❌ ۲: کش کردن کاربر جاری در property استاتیک
+class CurrentUser { private static ?User $user = null;
+    public static function get(): User { return self::$user ??= auth()-&gt;user(); } }
+// ✅ هر بار از auth() بخوانید یا از scoped binding استفاده کنید
+
+// ❌ ۳: تنظیم state سراسری در middleware بدون reset
+app()-&gt;setLocale($request-&gt;user()-&gt;locale);   // اگر درخواست بعدی مهمان باشد، locale قبلی می‌ماند
+// ✅ در middleware همیشه مقدار را صریح تنظیم کنید (پیش‌فرض برای مهمان)
+
+// ❌ ۴: آرایه static که رشد می‌کند ← نشت حافظه
+class AuditBuffer { public static array $rows = []; }</code></pre>
+        <p><strong>قواعد:</strong></p>
+        <ul>
+          <li>در constructor singletonها <code>Request</code>، <code>Application</code> یا config repository را نگه ندارید؛ از <code>scoped</code>، closure resolver یا پاس دادن داده به متد استفاده کنید.</li>
+          <li>از static و global برای state درخواست پرهیز کنید.</li>
+          <li><code>--max-requests</code> برای بازیافت workerها، <code>octane:reload</code> بعد از deploy.</li>
+          <li>پکیج‌های third-party را از نظر سازگاری با Octane بررسی کنید.</li>
+        </ul>
+        <p>همین ریسک‌ها برای <code>queue:work</code> هم وجود دارد و <code>scoped</code> در آنجا بین Jobها flush می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-deeper-20">
+      <summary>در یک پروژه Laravel 11 می‌خواهید همه خطاهای API در قالب JSON یکسان برگردند، خطاهای کسب‌وکار log نشوند و خطاهای پرداخت در کانال جداگانه ثبت شوند. چطور پیاده‌سازی می‌کنید؟ تفاوت با Laravel 10 چیست؟</summary>
+      <div class="answer">
+        <p><strong>مفهوم:</strong> exception handling دو بخش دارد: <strong>report</strong> (ثبت و ارسال به log، Sentry، Slack) و <strong>render</strong> (تبدیل به پاسخ HTTP). در Laravel 11 هر دو در <code>-&gt;withExceptions()</code> فایل <code>bootstrap/app.php</code> پیکربندی می‌شوند.</p>
+        <pre><code class="language-php">-&gt;withExceptions(function (Exceptions $exceptions) {
+    // ۱) API همیشه JSON
+    $exceptions-&gt;shouldRenderJsonWhen(fn (Request $r, Throwable $e) =&gt; $r-&gt;is('api/*') || $r-&gt;expectsJson());
+
+    // ۲) قالب یکسان برای خطاهای HTTP در API
+    $exceptions-&gt;render(function (HttpExceptionInterface $e, Request $r) {
+        if ($r-&gt;is('api/*')) {
+            return response()-&gt;json(['error' =&gt; [
+                'message' =&gt; $e-&gt;getMessage() ?: Response::$statusTexts[$e-&gt;getStatusCode()],
+                'status'  =&gt; $e-&gt;getStatusCode(),
+            ]], $e-&gt;getStatusCode());
+        }
+    });
+
+    // ۳) خطاهای کسب‌وکار log نشوند
+    $exceptions-&gt;dontReport([DomainRuleException::class]);
+
+    // ۴) کانال جدا برای پرداخت
+    $exceptions-&gt;report(function (PaymentFailedException $e) {
+        Log::channel('payments')-&gt;error($e-&gt;getMessage(), ['order_id' =&gt; $e-&gt;orderId]);
+    })-&gt;stop();
+})
+
+// خطای دامنه با render اختصاصی
+class DomainRuleException extends Exception
+{
+    public function render(Request $request): JsonResponse
+    {
+        return response()-&gt;json(['error' =&gt; ['message' =&gt; $this-&gt;getMessage(), 'status' =&gt; 422]], 422);
+    }
+}</code></pre>
+        <ul>
+          <li>ValidationException به‌طور پیش‌فرض برای API پاسخ 422 با کلید <code>errors</code> می‌دهد؛ اگر قالب متفاوتی می‌خواهید، آن را هم render کنید.</li>
+          <li><code>ModelNotFoundException</code> قبل از render به <code>NotFoundHttpException</code> تبدیل می‌شود.</li>
+          <li>در production <code>APP_DEBUG=false</code> تا stack trace به کلاینت نرسد.</li>
+        </ul>
+        <p><strong>تفاوت با Laravel ≤10:</strong> کلاس <code>App\Exceptions\Handler</code> با متد <code>register()</code> و فراخوانی <code>$this-&gt;reportable()</code> و <code>$this-&gt;renderable()</code> و property <code>$dontReport</code>. منطق یکی است و فقط محل پیکربندی عوض شده است.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>Container و Provider</h4>
+      <ul>
+        <li><code>bind</code> هر بار جدید؛ <code>singleton</code> یک بار؛ <code>scoped</code> یک بار در هر درخواست/Job؛ <code>instance</code> شیء آماده.</li>
+        <li>Autowiring با Reflection؛ خطا برای interface بدون binding و primitive بدون default.</li>
+        <li><code>when()-&gt;needs()-&gt;give()</code> و <code>giveConfig()</code>؛ <code>tag</code>/<code>tagged</code>؛ <code>extend</code> (decorator)؛ <code>resolving</code>.</li>
+        <li><code>App::call()</code> برای method injection.</li>
+        <li>register = فقط binding؛ boot = استفاده از سرویس‌ها. Providerها در <code>bootstrap/providers.php</code>.</li>
+        <li>Deferred: <code>DeferrableProvider</code> + <code>provides()</code>؛ فقط برای binding.</li>
+        <li>Auto-discovery: <code>extra.laravel.providers</code> در composer.json.</li>
+        <li>پکیج: <code>mergeConfigFrom</code> (register)، <code>publishes</code>، <code>loadRoutesFrom</code>، <code>loadViewsFrom</code>، <code>loadMigrationsFrom</code> (boot).</li>
+      </ul>
+      <h4>Facade</h4>
+      <ul>
+        <li><code>getFacadeAccessor()</code> ← کلید کانتینر؛ <code>__callStatic</code> ← <code>getFacadeRoot()</code> ← شیء واقعی.</li>
+        <li>Real-time: <code>use Facades\App\Services\X;</code></li>
+        <li>تست: <code>shouldReceive</code>، <code>spy</code>، و <code>fake()</code> برای Queue/Bus/Event/Mail/Notification/Storage/Http.</li>
+      </ul>
+      <h4>Queue</h4>
+      <ul>
+        <li>Job: <code>implements ShouldQueue</code> + <code>use Queueable</code> (L11).</li>
+        <li><code>dispatch</code>، <code>dispatchSync</code>، <code>dispatchAfterResponse</code>، <code>-&gt;afterCommit()</code>، <code>-&gt;onQueue()</code>، <code>-&gt;delay()</code>.</li>
+        <li><code>$tries</code>، <code>$maxExceptions</code>، <code>$backoff</code>، <code>$timeout</code>، <code>retryUntil()</code>، <code>failed()</code>، <code>release()</code>.</li>
+        <li><strong>timeout &lt; retry_after</strong> وگرنه اجرای دوباره.</li>
+        <li><code>$deleteWhenMissingModels</code> برای مدل حذف‌شده.</li>
+        <li><code>ShouldBeUnique</code> (dispatch) در برابر <code>WithoutOverlapping</code> (اجرا)؛ <code>RateLimited</code>، <code>ThrottlesExceptions</code>.</li>
+        <li><code>Bus::chain</code> ترتیبی؛ <code>Bus::batch</code> موازی + <code>Batchable</code> + <code>then/catch/finally</code>.</li>
+        <li><code>queue:work</code> (prod) در برابر <code>queue:listen</code> (dev)؛ <code>queue:restart</code> بعد از deploy.</li>
+        <li><code>queue:failed</code>، <code>queue:retry all</code>، <code>queue:forget</code>، <code>queue:flush</code>، <code>queue:prune-failed</code>.</li>
+        <li>Horizon فقط Redis؛ <code>horizon:terminate</code> در deploy؛ Gate <code>viewHorizon</code>.</li>
+      </ul>
+      <h4>Events / Broadcast / Notification</h4>
+      <ul>
+        <li>Event discovery در <code>app/Listeners</code> (L11)؛ <code>Event::listen</code>، <code>Event::subscribe</code>؛ <code>event:cache</code>.</li>
+        <li>Listener صف‌شده: <code>ShouldQueue</code>؛ بعد از commit: <code>ShouldHandleEventsAfterCommit</code> / <code>ShouldDispatchAfterCommit</code>.</li>
+        <li>Broadcast: <code>install:broadcasting</code>، Reverb، <code>ShouldBroadcast</code>، Channel / PrivateChannel / PresenceChannel، <code>routes/channels.php</code>، Echo.</li>
+        <li>Notification: <code>via()</code>، <code>toMail</code>، <code>toArray</code>؛ <code>$user-&gt;notify()</code>، <code>Notification::route()</code>.</li>
+        <li>Mailable: <code>envelope()</code>، <code>content()</code>، <code>attachments()</code>؛ <code>Mail::to()-&gt;queue()</code>.</li>
+      </ul>
+      <h4>Cache و Schedule</h4>
+      <ul>
+        <li><code>remember</code>، <code>rememberForever</code>، <code>add</code> (اتمیک)، <code>pull</code>، <code>flexible</code> (SWR).</li>
+        <li>Tags فقط redis/memcached/array.</li>
+        <li><code>Cache::lock($name, $sec)-&gt;get()</code> / <code>-&gt;block($wait, fn)</code> / <code>release()</code>.</li>
+        <li>Stampede: flexible، lock، jitter، pre-warm.</li>
+        <li>Cron: <code>* * * * * php artisan schedule:run</code>؛ تعریف در <code>routes/console.php</code>.</li>
+        <li><code>withoutOverlapping</code> (هم‌پوشانی)، <code>onOneServer</code> (چند سرور، cache مشترک)، <code>runInBackground</code>.</li>
+        <li>Command: <code>$signature = 'x:y {arg} {--opt=}'</code>، <code>handle()</code> با DI، <code>Command::SUCCESS</code>.</li>
+      </ul>
+      <h4>Auth و Rate Limit</h4>
+      <ul>
+        <li><code>Gate::define</code>، <code>Gate::before</code> (null = ادامه)، <code>Gate::authorize</code>، <code>Gate::inspect</code>.</li>
+        <li>Policy: <code>make:policy --model</code>؛ auto-discovery؛ <code>Response::denyAsNotFound()</code>.</li>
+        <li>L11: کنترلر پایه بدون <code>AuthorizesRequests</code> ← <code>Gate::authorize()</code>؛ route: <code>-&gt;can('update', 'post')</code>.</li>
+        <li>Sanctum token: <code>createToken(name, abilities)</code>، <code>auth:sanctum</code>، <code>tokenCan</code>.</li>
+        <li>Sanctum SPA: <code>/sanctum/csrf-cookie</code>، <code>statefulApi()</code>، stateful domains.</li>
+        <li>Passport: OAuth2 کامل برای third-party.</li>
+        <li><code>RateLimiter::for('api', fn ($r) =&gt; Limit::perMinute(60)-&gt;by(...))</code> + <code>throttle:api</code> ← 429.</li>
+      </ul>
+      <h4>ابزارها</h4>
+      <ul>
+        <li><code>Pipeline::send($x)-&gt;through([...])-&gt;then(fn)</code>؛ همان سازوکار middleware.</li>
+        <li><code>X::macro('name', fn)</code> روی Collection، Str، Request، Response، Builder.</li>
+        <li>LazyCollection = Generator، حافظه ثابت.</li>
+        <li><code>Http::timeout()-&gt;retry()-&gt;throw()</code>، <code>Http::pool</code>، <code>Http::fake</code>، <code>preventStrayRequests</code>.</li>
+        <li><code>Storage::disk('s3')-&gt;put/get/url/temporaryUrl</code>، <code>storage:link</code>، <code>Storage::fake</code>.</li>
+        <li><code>lang:publish</code>، <code>__()</code>، <code>trans_choice</code>، <code>App::setLocale</code>.</li>
+      </ul>
+      <h4>Exception و تست</h4>
+      <ul>
+        <li>L11: <code>withExceptions</code> ← <code>report()-&gt;stop()</code>، <code>render()</code>، <code>dontReport</code>، <code>level</code>، <code>context</code>، <code>shouldRenderJsonWhen</code>.</li>
+        <li>L10: <code>App\Exceptions\Handler::register()</code> با <code>reportable</code>/<code>renderable</code>.</li>
+        <li>کدها: 401 auth، 403 authz، 404 model، 419 CSRF، 422 validation، 429 throttle.</li>
+        <li>تست: <code>RefreshDatabase</code>، <code>actingAs</code>، <code>postJson</code>، <code>assertJsonValidationErrors</code>، <code>assertDatabaseHas</code>، <code>$this-&gt;mock()</code>، <code>travel</code>.</li>
+      </ul>
+      <h4>Octane و Deploy</h4>
+      <ul>
+        <li>Octane: FrankenPHP / Swoole / RoadRunner؛ یک boot؛ خطر نشت state در singleton و static.</li>
+        <li>اصلاح: <code>scoped</code>، resolver closure، داده به متد؛ <code>--max-requests</code>؛ <code>octane:reload</code>.</li>
+        <li><code>composer install --no-dev -o</code> ← <code>migrate --force</code> ← <code>optimize</code> ← <code>queue:restart</code>.</li>
+        <li><code>optimize</code> = config + route + view + event cache؛ <code>optimize:clear</code>.</li>
+        <li>بعد از <code>config:cache</code>، <code>env()</code> بیرون از config ← null.</li>
+        <li>امنیت: PDO binding، <code>{{ }}</code>، CSRF، fillable، Hash، signed URL، throttle، <code>session()-&gt;regenerate()</code>، <code>APP_DEBUG=false</code>.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

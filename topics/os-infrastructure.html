@@ -1,0 +1,1182 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OS &amp; Infrastructure — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="os-infrastructure">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>OS &amp; Infrastructure</h1>
+    <p class="lead">مفاهیم پایه‌ی سیستم‌عامل (فرایند، thread، حافظه، فایل‌سیستم، هم‌روندی) و زیرساخت عملی یک بک‌اند Laravel روی لینوکس: دسترسی‌ها، دستورات ضروری، systemd و Supervisor، شبکه و SSH، Nginx و PHP-FPM، TLS، کانتینر و ابر، IaC، دسترس‌پذیری بالا، بکاپ و چک‌لیست استقرار.</p>
+  </header>
+
+  <section class="lesson" id="os-basics" data-title="کرنل، فضای کاربر و System Call">
+    <h2>کرنل، فضای کاربر و System Call</h2>
+    <p><strong>سیستم‌عامل</strong> لایه‌ای است که سخت‌افزار (CPU، حافظه، دیسک، شبکه) را مدیریت و به‌صورت انتزاعی و امن در اختیار برنامه‌ها قرار می‌دهد. هسته‌ی آن <strong>Kernel</strong> است.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>Kernel space</h4><ul><li>کد هسته با بالاترین سطح دسترسی (ring 0) اجرا می‌شود.</li><li>دسترسی مستقیم به سخت‌افزار، مدیریت حافظه، زمان‌بندی فرایندها، درایورها، فایل‌سیستم و پشته‌ی شبکه.</li><li>خطا در این فضا می‌تواند کل سیستم را از کار بیندازد (kernel panic).</li></ul></div>
+      <div class="card"><h4>User space</h4><ul><li>برنامه‌های عادی (Nginx، PHP-FPM، MySQL، bash) با دسترسی محدود اجرا می‌شوند.</li><li>هر فرایند فضای حافظه‌ی ایزوله‌ی خودش را دارد.</li><li>برای هر کار سطح پایین باید از کرنل درخواست کنند.</li></ul></div>
+    </div>
+
+    <p><strong>System call</strong> رابط کنترل‌شده‌ی برنامه‌ی user space برای درخواست سرویس از کرنل است. CPU با یک دستور ویژه به حالت kernel می‌رود، کرنل کار را انجام می‌دهد و نتیجه را برمی‌گرداند. این جابه‌جایی هزینه دارد؛ به همین دلیل خواندن فایل با بافرهای بزرگ‌تر یا کاهش تعداد syscallها کارایی را بهتر می‌کند.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>دسته</th><th>نمونه syscallها</th><th>معادل در PHP</th></tr></thead>
+      <tbody>
+        <tr><td>فایل</td><td><code>open</code>، <code>read</code>، <code>write</code>، <code>close</code>، <code>stat</code></td><td><code>fopen</code>، <code>file_get_contents</code>، <code>file_exists</code></td></tr>
+        <tr><td>فرایند</td><td><code>fork</code>، <code>execve</code>، <code>wait</code>، <code>exit</code>، <code>kill</code></td><td><code>pcntl_fork</code>، <code>proc_open</code>، <code>posix_kill</code></td></tr>
+        <tr><td>شبکه</td><td><code>socket</code>، <code>connect</code>، <code>accept</code>، <code>send</code>، <code>recv</code></td><td>اتصال PDO، cURL، Redis</td></tr>
+        <tr><td>حافظه</td><td><code>mmap</code>، <code>brk</code></td><td>تخصیص حافظه توسط Zend engine</td></tr>
+      </tbody>
+    </table></div>
+
+    <pre class="diagram">  PHP-FPM worker (user space)
+        │  file_get_contents('/etc/hosts')
+        ▼
+  libc wrapper ──► syscall: openat / read / close
+        │                       ── مرز user/kernel ──
+        ▼
+  Kernel: VFS ─► ext4 ─► page cache / disk driver ─► دیسک</pre>
+
+    <div class="callout tip"><p>ابزار <code>strace -p &lt;PID&gt;</code> syscallهای یک فرایند را زنده نشان می‌دهد. برای فهمیدن اینکه یک worker گیرکرده منتظر چیست (مثلاً <code>connect</code> به سرویسی که پاسخ نمی‌دهد یا <code>read</code> از سوکت دیتابیس) بسیار کاربردی است.</p></div>
+
+    <div class="callout exam"><p>چرا جداسازی kernel/user space وجود دارد؟ <strong>امنیت و پایداری</strong>: یک برنامه‌ی معیوب نمی‌تواند حافظه‌ی برنامه‌های دیگر یا کرنل را خراب کند یا مستقیم به سخت‌افزار دسترسی پیدا کند؛ کرنل همه‌ی دسترسی‌ها را بر اساس مجوز بررسی می‌کند.</p></div>
+  </section>
+
+  <section class="lesson" id="processes-threads" data-title="فرایند، Thread و زمان‌بندی">
+    <h2>فرایند، Thread، Coroutine و زمان‌بندی</h2>
+    <dl class="terms">
+      <dt>Program</dt><dd>فایل اجرایی روی دیسک؛ موجودیتی منفعل.</dd>
+      <dt>Process</dt><dd>نمونه‌ی در حال اجرای یک برنامه با فضای آدرس حافظه‌ی مستقل، PID، file descriptorها، متغیرهای محیطی و حداقل یک thread.</dd>
+      <dt>Thread</dt><dd>واحد اجرای درون یک فرایند؛ threadهای یک فرایند حافظه (heap، کد، فایل‌های باز) را به اشتراک می‌گذارند اما هر کدام stack و رجیسترهای خودش را دارد.</dd>
+      <dt>Coroutine</dt><dd>واحد اجرای سبک در user space که به‌صورت <strong>همکارانه (cooperative)</strong> در نقاط مشخص (مثلاً انتظار I/O) کنترل را واگذار می‌کند؛ زمان‌بندی آن توسط runtime انجام می‌شود نه کرنل. نمونه‌ها: coroutineهای Swoole، Fiberها در PHP 8.1، async/await در JavaScript و Python.</dd>
+    </dl>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>Process</th><th>Thread</th><th>Coroutine</th></tr></thead>
+      <tbody>
+        <tr><td>حافظه</td><td>ایزوله</td><td>مشترک با threadهای هم‌فرایند</td><td>مشترک (در همان thread)</td></tr>
+        <tr><td>هزینه‌ی ایجاد</td><td>بالا (fork، page table)</td><td>متوسط</td><td>بسیار کم</td></tr>
+        <tr><td>هزینه‌ی جابه‌جایی</td><td>بالا (تعویض فضای آدرس، TLB)</td><td>کمتر</td><td>خیلی کم (بدون ورود به کرنل)</td></tr>
+        <tr><td>ایزولاسیون خطا</td><td>کرش یک فرایند بقیه را خراب نمی‌کند</td><td>کرش یک thread کل فرایند را می‌کشد</td><td>همانند thread</td></tr>
+        <tr><td>ارتباط</td><td>IPC: pipe، socket، shared memory</td><td>حافظه‌ی مشترک (نیاز به همگام‌سازی)</td><td>حافظه‌ی مشترک، channel</td></tr>
+        <tr><td>نمونه</td><td>workerهای PHP-FPM، Nginx workers</td><td>MySQL (thread per connection)، Java</td><td>Swoole، Go goroutine (مشابه)، Node.js async</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout note"><p>PHP-FPM مدل <strong>multi-process</strong> دارد: هر worker یک فرایند جدا با یک thread است و در هر لحظه یک درخواست را پردازش می‌کند. Nginx هم چند worker process دارد، اما هر worker با <strong>event loop</strong> (epoll) هزاران اتصال را به‌صورت non-blocking مدیریت می‌کند.</p></div>
+
+    <h3>حالت‌های فرایند</h3>
+    <pre class="diagram">        ┌────────┐  admit   ┌────────┐  dispatch  ┌─────────┐  exit  ┌────────────┐
+        │  New   │ ───────► │ Ready  │ ─────────► │ Running │ ─────► │ Terminated │
+        └────────┘          └────────┘ ◄───────── └─────────┘        └────────────┘
+                                ▲       preempt        │
+                                │                      │ منتظر I/O یا event
+                                │   I/O تمام شد    ┌─────────┐
+                                └───────────────── │ Waiting │
+                                                   └─────────┘</pre>
+    <p>در خروجی <code>ps</code> یا <code>top</code> ستون STAT/S این حالت‌ها را نشان می‌دهد:</p>
+    <ul>
+      <li><strong>R</strong>: Running یا Runnable (در صف اجرا).</li>
+      <li><strong>S</strong>: Interruptible sleep؛ منتظر رویداد (بیشتر فرایندها).</li>
+      <li><strong>D</strong>: Uninterruptible sleep؛ معمولاً منتظر دیسک یا NFS؛ با سیگنال هم متوقف نمی‌شود.</li>
+      <li><strong>T</strong>: Stopped (مثلاً با <kbd>Ctrl</kbd>+<kbd>Z</kbd> یا SIGSTOP).</li>
+      <li><strong>Z</strong>: Zombie؛ فرایند تمام شده اما والد هنوز وضعیت خروجش را با <code>wait()</code> نخوانده است. حافظه‌ای نمی‌گیرد اما ورودی جدول فرایندها را اشغال می‌کند. فرایند <strong>Orphan</strong> (والدش مرده) توسط PID 1 (systemd) پذیرفته و در نهایت پاک می‌شود.</li>
+    </ul>
+
+    <h3>Context switch</h3>
+    <p><strong>Context switch</strong> یعنی کرنل اجرای یک فرایند/thread را متوقف کند، وضعیت آن (رجیسترها، program counter، اشاره‌گر stack) را ذخیره و وضعیت دیگری را بارگذاری کند. علت‌ها: تمام شدن time slice، انتظار برای I/O، یا رسیدن کاری با اولویت بالاتر. سربار آن شامل خود ذخیره/بارگذاری و از دست رفتن گرمی cache و TLB است. تعداد بسیار زیاد فرایندهای فعال نسبت به هسته‌ها (مثلاً pm.max_children خیلی بزرگ روی کار CPU-bound) زمان CPU را در context switch هدر می‌دهد.</p>
+
+    <h3>زمان‌بندی (Scheduling)</h3>
+    <ul>
+      <li><strong>Preemptive</strong>: کرنل می‌تواند اجرای فرایند را در هر زمان قطع کند (لینوکس). <strong>Cooperative</strong>: کار خودش کنترل را واگذار می‌کند (coroutineها).</li>
+      <li>الگوریتم‌های کلاسیک: FCFS، Shortest Job First، Round Robin با time slice، Priority scheduling.</li>
+      <li>لینوکس سال‌ها از <strong>CFS (Completely Fair Scheduler)</strong> استفاده می‌کرد که سهم منصفانه‌ای از CPU به هر کار می‌دهد؛ از کرنل 6.6 زمان‌بند پیش‌فرض به <strong>EEVDF</strong> تغییر کرد که همان ایده‌ی انصاف را با توجه به latency پیاده می‌کند.</li>
+      <li>اولویت در فضای کاربر با <strong>nice</strong> (از ‎-20 بالاترین تا 19 پایین‌ترین) تنظیم می‌شود: <code>nice -n 10 php artisan report:build</code> یا <code>renice</code>.</li>
+      <li><strong>Load average</strong> (در <code>uptime</code> و <code>top</code>): میانگین تعداد فرایندهای در حالت R یا D در ۱، ۵ و ۱۵ دقیقه‌ی اخیر. باید با تعداد هسته‌ها (<code>nproc</code>) مقایسه شود: load برابر ۸ روی ۸ هسته یعنی تقریباً کامل مشغول.</li>
+    </ul>
+
+    <div class="callout exam"><p>تفاوت process و thread را با سه محور بنویسید: <strong>حافظه</strong> (ایزوله در برابر مشترک)، <strong>هزینه</strong> (ایجاد و context switch) و <strong>ایزولاسیون خطا</strong>. سپس مثال بزنید: PHP-FPM مدل process دارد پس state بین درخواست‌ها مشترک نیست و نیاز به lock داخلی ندارد، اما حافظه‌ی بیشتری مصرف می‌کند.</p></div>
+  </section>
+
+  <section class="lesson" id="concurrency" data-title="هم‌روندی، Race Condition و Deadlock">
+    <h2>هم‌روندی، Race Condition، Mutex، Semaphore و Deadlock</h2>
+    <div class="grid-2">
+      <div class="card"><h4>Concurrency (هم‌روندی)</h4><p>ساختار برنامه طوری است که چند کار در یک بازه‌ی زمانی <strong>پیشرفت</strong> می‌کنند؛ ممکن است با جابه‌جایی سریع روی یک هسته باشد. موضوع آن «مدیریت» چند کار است. مثال: event loop در Nginx یا Node.js.</p></div>
+      <div class="card"><h4>Parallelism (موازی‌سازی)</h4><p>چند کار واقعاً <strong>در یک لحظه</strong> روی چند هسته یا ماشین اجرا می‌شوند. موضوع آن «انجام» هم‌زمان است. مثال: ۸ queue worker روی سرور ۸ هسته‌ای.</p></div>
+    </div>
+    <p>جمله‌ی معروف Rob Pike: «Concurrency is about dealing with lots of things at once; parallelism is about doing lots of things at once.»</p>
+
+    <h3>Race condition</h3>
+    <p><strong>Race condition</strong> زمانی رخ می‌دهد که نتیجه‌ی برنامه به ترتیب یا زمان‌بندی اجرای چند کار هم‌زمان روی داده‌ی مشترک بستگی داشته باشد. حتی در PHP که هر درخواست فرایند جداست، داده‌ی مشترک (دیتابیس، Redis، فایل) باعث race می‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+// Race: دو درخواست هم‌زمان هر دو موجودی 100 را می‌خوانند و هر دو 80 می‌نویسند
+$wallet = Wallet::find($id);              // read
+if ($wallet-&gt;balance &gt;= 20) {             // check
+    $wallet-&gt;balance -= 20;               // modify
+    $wallet-&gt;save();                      // write  ← یکی از برداشت‌ها گم می‌شود
+}
+
+// راه‌حل ۱: قفل ردیف در تراکنش (pessimistic)
+DB::transaction(function () use ($id) {
+    $wallet = Wallet::whereKey($id)-&gt;lockForUpdate()-&gt;first();
+    if ($wallet-&gt;balance &lt; 20) {
+        throw new InsufficientFunds();
+    }
+    $wallet-&gt;decrement('balance', 20);
+});
+
+// راه‌حل ۲: عملیات اتمیک با شرط در خود UPDATE
+$affected = Wallet::whereKey($id)-&gt;where('balance', '&gt;=', 20)-&gt;decrement('balance', 20);
+// اگر $affected صفر بود یعنی موجودی کافی نبود
+
+// راه‌حل ۳: قفل توزیع‌شده برای بخش بحرانی غیر دیتابیسی
+Cache::lock("invoice:{$orderId}", 10)-&gt;block(5, function () use ($orderId) {
+    // فقط یک فرایند در هر لحظه
+});</code></pre>
+    <p>الگوی کلی خطر، <strong>check-then-act</strong> یا <strong>read-modify-write</strong> غیراتمیک است. راه‌حل: اتمیک کردن عملیات، قفل، یا optimistic locking (ستون version و <code>UPDATE ... WHERE version = ?</code>).</p>
+
+    <h3>ابزارهای همگام‌سازی</h3>
+    <dl class="terms">
+      <dt>Critical section</dt><dd>بخشی از کد که به منبع مشترک دسترسی دارد و نباید هم‌زمان توسط بیش از یک کار اجرا شود.</dd>
+      <dt>Mutex</dt><dd>قفل انحصاری (mutual exclusion): در هر لحظه فقط یک صاحب دارد و همان صاحب باید آن را آزاد کند.</dd>
+      <dt>Semaphore</dt><dd>شمارنده‌ای که اجازه می‌دهد حداکثر N کار هم‌زمان وارد شوند (عملیات wait/P و signal/V). semaphore با N=1 (binary) شبیه mutex است اما مفهوم «مالکیت» ندارد. مثال: محدود کردن به ۵ اتصال هم‌زمان به یک API.</dd>
+      <dt>Spinlock</dt><dd>قفلی که به جای خوابیدن در حلقه منتظر می‌ماند؛ فقط برای انتظارهای بسیار کوتاه (بیشتر در کرنل).</dd>
+      <dt>Atomic operation</dt><dd>عملیاتی که تقسیم‌ناپذیر است، مثل <code>INCR</code> در Redis یا <code>UPDATE x = x + 1</code>.</dd>
+    </dl>
+
+    <h3>Deadlock و چهار شرط Coffman</h3>
+    <p><strong>Deadlock</strong> وضعیتی است که دو یا چند کار هر کدام منتظر منبعی هستند که در اختیار دیگری است و هیچ‌کدام پیش نمی‌روند. Deadlock فقط وقتی ممکن است که <strong>هر چهار شرط</strong> هم‌زمان برقرار باشند:</p>
+    <ol>
+      <li><strong>Mutual exclusion:</strong> منبع در هر لحظه فقط در اختیار یک کار است.</li>
+      <li><strong>Hold and wait:</strong> کار، منبعی را نگه داشته و منتظر منبع دیگری است.</li>
+      <li><strong>No preemption:</strong> نمی‌توان منبع را به زور از صاحبش گرفت.</li>
+      <li><strong>Circular wait:</strong> زنجیره‌ی چرخه‌ای انتظار وجود دارد (A منتظر B، B منتظر A).</li>
+    </ol>
+    <pre class="diagram">  Transaction 1: lock(row A) ─► منتظر lock(row B)
+                     ▲                     │
+                     │                     ▼
+  Transaction 2: منتظر lock(row A) ◄─ lock(row B)</pre>
+    <p><strong>پیشگیری</strong> با شکستن یکی از شرط‌ها: گرفتن قفل‌ها با <strong>ترتیب ثابت</strong> (مثلاً همیشه بر اساس id صعودی؛ شکستن circular wait)، گرفتن همه‌ی قفل‌ها یکجا، timeout روی قفل (<code>innodb_lock_wait_timeout</code>، <code>block(5)</code>) و کوتاه نگه داشتن تراکنش‌ها. InnoDB خودش deadlock را تشخیص می‌دهد و یکی از تراکنش‌ها را rollback می‌کند؛ اپلیکیشن باید آماده‌ی retry باشد (<code>DB::transaction($callback, attempts: 3)</code>).</p>
+    <div class="callout exam"><p>تفاوت <strong>Deadlock</strong> و <strong>Livelock</strong> و <strong>Starvation</strong>: در deadlock همه متوقف‌اند؛ در livelock کارها مدام وضعیت تغییر می‌دهند (مثلاً پی‌درپی عقب‌نشینی و تلاش مجدد) اما پیشرفتی ندارند؛ در starvation یک کار به دلیل اولویت پایین یا بی‌انصافی زمان‌بند هرگز منبع را به دست نمی‌آورد.</p></div>
+  </section>
+
+  <section class="lesson" id="memory" data-title="مدیریت حافظه">
+    <h2>مدیریت حافظه: Virtual Memory، Paging، Swap و OOM</h2>
+    <p><strong>Virtual memory</strong> به هر فرایند این توهم را می‌دهد که یک فضای آدرس پیوسته و اختصاصی دارد. آدرس‌های مجازی توسط <strong>MMU</strong> و با کمک <strong>page table</strong> (که کرنل برای هر فرایند نگه می‌دارد) به آدرس فیزیکی RAM ترجمه می‌شوند. <strong>TLB</strong> کش ترجمه‌های اخیر است.</p>
+    <ul>
+      <li><strong>Page:</strong> حافظه در واحدهای ثابت (معمولاً ۴KB) مدیریت می‌شود.</li>
+      <li><strong>Page fault:</strong> وقتی فرایند به صفحه‌ای دسترسی پیدا می‌کند که در RAM نگاشت نشده است. <em>minor</em>: صفحه در حافظه هست ولی نگاشت نشده (مثلاً shared library)؛ <em>major</em>: باید از دیسک (فایل یا swap) خوانده شود که بسیار کند است.</li>
+      <li><strong>مزایا:</strong> ایزولاسیون فرایندها، استفاده‌ی مشترک از کتابخانه‌ها، copy-on-write بعد از <code>fork</code> (فرایند فرزند تا وقتی چیزی را تغییر نداده، صفحات والد را به اشتراک می‌گذارد؛ PHP-FPM از این بهره می‌برد)، و امکان استفاده از حافظه‌ی بیشتر از RAM با swap.</li>
+    </ul>
+
+    <h3>Swap</h3>
+    <p><strong>Swap</strong> فضایی روی دیسک است که صفحات کم‌استفاده‌ی RAM به آن منتقل می‌شوند. کمی swap به عنوان سپر اطمینان مفید است، اما اگر سرور مدام در حال swap in/out باشد (<strong>thrashing</strong>) کارایی به‌شدت سقوط می‌کند، چون دیسک چند مرتبه کندتر از RAM است. پارامتر <code>vm.swappiness</code> میزان تمایل کرنل به swap را تعیین می‌کند. در <code>vmstat 1</code> ستون‌های <code>si</code>/<code>so</code> فعالیت swap را نشان می‌دهند.</p>
+
+    <h3>Stack در برابر Heap</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>Stack</th><th>Heap</th></tr></thead>
+      <tbody>
+        <tr><td>محتوا</td><td>frameهای فراخوانی تابع، متغیرهای محلی، آدرس بازگشت</td><td>داده‌هایی که به‌صورت پویا تخصیص می‌یابند و طول عمرشان به یک تابع وابسته نیست</td></tr>
+        <tr><td>مدیریت</td><td>خودکار، LIFO، با بازگشت تابع آزاد می‌شود</td><td>دستی (C: malloc/free) یا با garbage collector/ref counting</td></tr>
+        <tr><td>سرعت تخصیص</td><td>بسیار سریع (جابه‌جایی اشاره‌گر)</td><td>کندتر، احتمال fragmentation</td></tr>
+        <tr><td>اندازه</td><td>محدود و ثابت برای هر thread (مثلاً ۸MB)</td><td>بزرگ، تا سقف حافظه‌ی مجازی</td></tr>
+        <tr><td>خطای رایج</td><td>Stack overflow (بازگشت بی‌پایان)</td><td>Memory leak، use-after-free</td></tr>
+      </tbody>
+    </table></div>
+    <p>در PHP، متغیرها (zval) و آرایه‌ها و اشیاء در heap مدیریت‌شده‌ی Zend قرار می‌گیرند و <code>memory_limit</code> سقف آن را برای هر درخواست تعیین می‌کند.</p>
+
+    <h3>RSS و VSZ و دستور free</h3>
+    <ul>
+      <li><strong>VSZ</strong>: کل فضای آدرس مجازی فرایند (شامل بخش‌های نگاشت‌شده‌ای که واقعاً استفاده نشده‌اند)؛ معمولاً گمراه‌کننده است.</li>
+      <li><strong>RSS</strong>: مقدار RAM فیزیکی که فرایند واقعاً اشغال کرده (صفحات مشترک هم در آن شمرده می‌شوند؛ برای همین مجموع RSS فرایندهای FPM کمی بیشتر از مصرف واقعی است).</li>
+      <li>در <code>free -h</code> ستون <strong>available</strong> معیار درست حافظه‌ی قابل استفاده است؛ <strong>buff/cache</strong> (page cache فایل‌ها) در صورت نیاز آزاد می‌شود. «حافظه‌ی free کم» به‌تنهایی نشانه‌ی مشکل نیست.</li>
+    </ul>
+
+    <h3>OOM Killer</h3>
+    <p>وقتی حافظه (RAM + swap) تمام شود و کرنل نتواند صفحه‌ای آزاد کند، <strong>OOM killer</strong> بر اساس امتیاز (<code>/proc/&lt;pid&gt;/oom_score</code>، که بیشتر به مصرف حافظه وابسته است) یک فرایند را با SIGKILL می‌کشد؛ اغلب بزرگ‌ترین مصرف‌کننده مثل MySQL. با <code>oom_score_adj</code> می‌توان احتمال کشته شدن یک سرویس را کم یا زیاد کرد.</p>
+    <pre><code class="language-bash"># آیا OOM killer فرایندی را کشته است؟
+sudo dmesg -T | grep -i -E "out of memory|killed process"
+sudo journalctl -k | grep -i oom</code></pre>
+    <div class="callout exam"><p>سناریوی رایج: «MySQL ناگهان ری‌استارت شده و در لاگ خودش خطایی نیست.» پاسخ: بررسی <code>dmesg</code>/<code>journalctl -k</code> برای پیام OOM killer؛ علت معمولاً <code>pm.max_children</code> بیش از حد، queue workerهایی با نشت حافظه یا buffer pool بزرگ‌تر از RAM است. راه‌حل: محاسبه‌ی بودجه‌ی حافظه برای هر سرویس، محدود کردن workerها و مانیتورینگ.</p></div>
+  </section>
+
+  <section class="lesson" id="filesystem" data-title="فایل‌سیستم، inode و File Descriptor">
+    <h2>فایل‌سیستم، inode و File Descriptor</h2>
+    <p><strong>فایل‌سیستم</strong> (ext4، XFS، Btrfs…) نحوه‌ی ذخیره و سازمان‌دهی داده روی دیسک را تعیین می‌کند. در لینوکس همه‌چیز در یک درخت واحد از ریشه‌ی <code>/</code> قرار دارد و دیسک‌ها و پارتیشن‌ها در نقاطی از این درخت <strong>mount</strong> می‌شوند.</p>
+
+    <h3>ساختار پوشه‌های مهم</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>مسیر</th><th>محتوا</th></tr></thead>
+      <tbody>
+        <tr><td><code>/etc</code></td><td>فایل‌های پیکربندی سیستم و سرویس‌ها (nginx، php، systemd)</td></tr>
+        <tr><td><code>/var/log</code></td><td>لاگ‌ها</td></tr>
+        <tr><td><code>/var/www</code> یا <code>/srv</code></td><td>محل رایج کد وب‌سایت‌ها</td></tr>
+        <tr><td><code>/home</code></td><td>پوشه‌ی کاربران</td></tr>
+        <tr><td><code>/tmp</code></td><td>فایل‌های موقت (ممکن است در reboot پاک شود)</td></tr>
+        <tr><td><code>/proc</code>، <code>/sys</code></td><td>فایل‌سیستم‌های مجازی برای اطلاعات کرنل و فرایندها</td></tr>
+        <tr><td><code>/dev</code></td><td>فایل‌های دستگاه (دیسک، <code>/dev/null</code>)</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>inode</h3>
+    <p><strong>inode</strong> ساختاری است که <strong>متادیتای</strong> یک فایل را نگه می‌دارد: نوع فایل، مالک و گروه، مجوزها، اندازه، زمان‌ها (atime، mtime، ctime)، تعداد hard linkها و اشاره‌گر به بلوک‌های داده. <strong>نام فایل در inode نیست</strong>؛ نام در «ورودی دایرکتوری» (directory entry) ذخیره می‌شود که نام را به شماره‌ی inode نگاشت می‌کند. <code>ls -i</code> شماره‌ی inode را نشان می‌دهد.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>Hard link</h4><ul><li>یک نام دیگر برای همان inode (<code>ln a b</code>).</li><li>حذف یکی، داده را پاک نمی‌کند؛ داده وقتی پاک می‌شود که شمارنده‌ی link صفر شود و هیچ فرایندی فایل را باز نکرده باشد.</li><li>نمی‌تواند بین فایل‌سیستم‌ها باشد و برای دایرکتوری مجاز نیست.</li></ul></div>
+      <div class="card"><h4>Symbolic (soft) link</h4><ul><li>فایلی جدا با inode خودش که حاوی <strong>مسیر</strong> مقصد است (<code>ln -s target link</code>).</li><li>می‌تواند به دایرکتوری و فایل‌سیستم دیگر اشاره کند.</li><li>با حذف مقصد «شکسته» (dangling) می‌شود.</li><li>کاربرد: <code>php artisan storage:link</code>، پوشه‌ی <code>current</code> در deploy.</li></ul></div>
+    </div>
+
+    <div class="callout warn"><p>دو مشکل کلاسیک «دیسک پر است»: ۱) <strong>تمام شدن inodeها</strong> با میلیون‌ها فایل کوچک (مثلاً sessionهای فایلی یا کش فایلی)؛ <code>df -h</code> فضای آزاد نشان می‌دهد اما <code>df -i</code> صددرصد است. ۲) <strong>فایل حذف‌شده‌ای که هنوز باز است</strong>: لاگ بزرگی را با <code>rm</code> پاک کرده‌اید اما فرایند هنوز آن را باز نگه داشته، پس فضا آزاد نمی‌شود. با <code>lsof +L1</code> پیدا کنید و سرویس را reload کنید، یا از ابتدا به جای rm فایل را truncate کنید (<code>: &gt; file.log</code>).</p></div>
+
+    <h3>File Descriptor</h3>
+    <p><strong>File descriptor (FD)</strong> یک عدد صحیح است که کرنل هنگام باز کردن فایل، سوکت، pipe یا هر منبع I/O به فرایند می‌دهد و فرایند با آن عملیات read/write انجام می‌دهد. در لینوکس «تقریباً همه‌چیز فایل است» و سوکت‌های شبکه هم FD هستند.</p>
+    <ul>
+      <li>سه FD استاندارد: <code>0</code> = stdin، <code>1</code> = stdout، <code>2</code> = stderr.</li>
+      <li>لیست FDهای یک فرایند: <code>ls -l /proc/&lt;PID&gt;/fd</code> یا <code>lsof -p &lt;PID&gt;</code>.</li>
+      <li>هر فرایند سقف تعداد FD دارد (<code>ulimit -n</code>، معمولاً 1024 به‌صورت پیش‌فرض برای shell). سرورهای پراتصال (Nginx، MySQL، Redis، Octane) به سقف بالاتری نیاز دارند؛ در غیر این صورت خطای <strong>Too many open files</strong> (EMFILE) می‌گیرید.</li>
+      <li>برای سرویس‌های systemd سقف با <code>LimitNOFILE=</code> در unit تنظیم می‌شود؛ برای Nginx هم <code>worker_rlimit_nofile</code> و <code>worker_connections</code>.</li>
+      <li>نشت FD (باز کردن فایل یا اتصال بدون بستن) در پروسه‌های طولانی‌مدت مثل queue worker به این خطا می‌رسد.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="permissions" data-title="کاربران و دسترسی‌ها">
+    <h2>کاربران، گروه‌ها و دسترسی‌های فایل</h2>
+    <p>هر فایل یک <strong>مالک (user)</strong> و یک <strong>گروه (group)</strong> دارد و مجوزها برای سه دسته تعریف می‌شوند: <strong>u</strong> (مالک)، <strong>g</strong> (اعضای گروه)، <strong>o</strong> (بقیه).</p>
+    <pre><code class="language-plaintext">-rw-r--r--  1 deploy www-data  1820 Nov  7 10:00 .env
+drwxrwxr-x  5 deploy www-data  4096 Nov  7 10:00 storage
+│└┬┘└┬┘└┬┘     │      │
+│ u  g  o     owner  group
+└ نوع: - فایل، d دایرکتوری، l لینک</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>بیت</th><th>عدد</th><th>روی فایل</th><th>روی دایرکتوری</th></tr></thead>
+      <tbody>
+        <tr><td><code>r</code></td><td>4</td><td>خواندن محتوا</td><td>لیست کردن نام فایل‌ها</td></tr>
+        <tr><td><code>w</code></td><td>2</td><td>تغییر محتوا</td><td>ایجاد، حذف و تغییر نام فایل‌ها (همراه x)</td></tr>
+        <tr><td><code>x</code></td><td>1</td><td>اجرا</td><td>ورود (<code>cd</code>) و دسترسی به فایل‌های داخل</td></tr>
+      </tbody>
+    </table></div>
+    <p>نمایش octal مجموع بیت‌هاست: <code>755</code> = rwxr-xr-x، <code>644</code> = rw-r--r--، <code>640</code> = rw-r-----، <code>600</code> = rw-------، <code>775</code> = rwxrwxr-x.</p>
+    <div class="callout note"><p>نکته‌ی ظریف: توانایی <strong>حذف</strong> یک فایل به مجوز <code>w</code> روی <strong>دایرکتوری</strong> والد بستگی دارد، نه به مجوز خود فایل.</p></div>
+
+    <pre><code class="language-bash">chmod 640 .env                    # octal
+chmod u+x deploy.sh               # symbolic: افزودن اجرا برای مالک
+chmod -R g+w storage              # بازگشتی
+chown deploy:www-data file        # تغییر مالک و گروه
+chown -R deploy:www-data /var/www/app
+chgrp www-data file
+find storage -type d -exec chmod 775 {} +   # فقط دایرکتوری‌ها
+find storage -type f -exec chmod 664 {} +   # فقط فایل‌ها</code></pre>
+
+    <h3>بیت‌های ویژه و umask</h3>
+    <dl class="terms">
+      <dt>setuid (4xxx)</dt><dd>فایل اجرایی با هویت <strong>مالک فایل</strong> اجرا می‌شود نه کاربر اجراکننده؛ مثال <code>/usr/bin/passwd</code> که باید <code>/etc/shadow</code> را تغییر دهد. ریسک امنیتی بالایی دارد.</dd>
+      <dt>setgid (2xxx)</dt><dd>روی فایل اجرایی: اجرا با گروه فایل. روی <strong>دایرکتوری</strong>: فایل‌های جدید گروه دایرکتوری را به ارث می‌برند؛ برای پوشه‌ی <code>storage</code> مشترک بین کاربر deploy و www-data بسیار مفید است.</dd>
+      <dt>sticky bit (1xxx)</dt><dd>روی دایرکتوری: فقط مالک فایل می‌تواند آن را حذف کند، حتی اگر همه حق نوشتن داشته باشند؛ مثل <code>/tmp</code> (مجوز <code>1777</code>).</dd>
+      <dt>umask</dt><dd>ماسکی که بیت‌هایش از مجوز پیش‌فرض فایل‌های جدید <strong>حذف</strong> می‌شوند. پیش‌فرض فایل 666 و دایرکتوری 777؛ با umask <code>022</code> نتیجه 644 و 755؛ با <code>002</code> نتیجه 664 و 775 (مناسب کار گروهی).</dd>
+    </dl>
+
+    <h3>کاربران و sudo</h3>
+    <ul>
+      <li><strong>root</strong> (UID 0) هیچ محدودیتی ندارد؛ کار روزمره با root یعنی هر اشتباه یا نفوذ، کل سیستم را در اختیار می‌گذارد.</li>
+      <li>کاربر عادی با عضویت در گروه <code>sudo</code> (اوبونتو) می‌تواند دستورات مدیریتی را با <code>sudo</code> اجرا کند؛ هر استفاده لاگ می‌شود.</li>
+      <li>تنظیمات در <code>/etc/sudoers</code> و <code>/etc/sudoers.d/</code>، فقط با <code>visudo</code> ویرایش شود (بررسی syntax). می‌توان به کاربر deploy فقط اجازه‌ی reload سرویس خاص بدون رمز داد:</li>
+    </ul>
+    <pre><code class="language-plaintext"># /etc/sudoers.d/deploy
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl reload php8.3-fpm, /usr/bin/systemctl reload nginx</code></pre>
+    <pre><code class="language-bash">sudo adduser deploy
+sudo usermod -aG www-data deploy     # -a مهم است؛ بدون آن گروه‌های قبلی حذف می‌شوند
+id deploy                            # نمایش UID و گروه‌ها
+sudo -u www-data php artisan cache:clear   # اجرای دستور با هویت کاربر وب‌سرور</code></pre>
+
+    <h3>دسترسی‌های پروژه‌ی Laravel</h3>
+    <p>اصل <strong>حداقل دسترسی (least privilege)</strong>: کاربر وب‌سرور (<code>www-data</code> که PHP-FPM با آن اجرا می‌شود) فقط باید جایی بنویسد که لازم است: <code>storage</code> (لاگ، کش فایل، session، viewهای کامپایل‌شده، آپلودها) و <code>bootstrap/cache</code> (کش config، routes، services، packages).</p>
+    <pre><code class="language-bash">cd /var/www/app
+sudo chown -R deploy:www-data .
+sudo find . -type f -exec chmod 644 {} +
+sudo find . -type d -exec chmod 755 {} +
+sudo chmod -R ug+rwX storage bootstrap/cache        # X بزرگ: x فقط برای دایرکتوری‌ها
+sudo find storage bootstrap/cache -type d -exec chmod g+s {} +   # ارث بردن گروه
+chmod 640 .env                                      # خواندن فقط برای مالک و گروه www-data</code></pre>
+    <div class="callout warn"><p><strong>هرگز <code>chmod -R 777</code></strong> نکنید. یعنی هر کاربر و هر فرایند روی سرور (از جمله یک اسکریپت آلوده‌ی آپلودشده) می‌تواند کد شما را تغییر دهد. همچنین کل پروژه نباید متعلق به www-data و قابل نوشتن برای آن باشد؛ اگر PHP آسیب‌پذیری داشته باشد، مهاجم می‌تواند فایل‌های PHP را بازنویسی کند. خطای رایج دیگر: اجرای <code>php artisan</code> با root که فایل‌های لاگ یا کش را با مالک root می‌سازد و سپس www-data نمی‌تواند در آن‌ها بنویسد (<code>Permission denied</code> در <code>laravel.log</code>).</p></div>
+    <div class="callout exam"><p>در پاسخ سوال «دسترسی‌های پوشه‌های Laravel را چگونه تنظیم می‌کنید؟» به این‌ها اشاره کنید: مالک = کاربر deploy، گروه = www-data، فایل‌ها 644 و دایرکتوری‌ها 755، <code>storage</code> و <code>bootstrap/cache</code> قابل نوشتن برای گروه (775/664)، setgid برای ارث گروه، umask 002 برای فرایندهای مشترک، <code>.env</code> با 640، document root فقط پوشه‌ی <code>public</code>، و پرهیز از 777 و اجرای artisan با root.</p></div>
+  </section>
+
+  <section class="lesson" id="linux-commands" data-title="دستورات ضروری و سیگنال‌ها">
+    <h2>دستورات ضروری لینوکس و سیگنال‌ها</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دستور</th><th>کاربرد</th><th>نمونه</th></tr></thead>
+      <tbody>
+        <tr><td><code>ps</code></td><td>لیست فرایندها</td><td><code>ps aux --sort=-%mem | head</code>، <code>ps -ef | grep php-fpm</code></td></tr>
+        <tr><td><code>top</code> / <code>htop</code></td><td>مانیتور زنده‌ی CPU، حافظه، load</td><td>در top: <kbd>M</kbd> مرتب‌سازی با حافظه، <kbd>P</kbd> با CPU، <kbd>1</kbd> نمایش هر هسته</td></tr>
+        <tr><td><code>free -h</code></td><td>وضعیت RAM و swap</td><td>به ستون available نگاه کنید</td></tr>
+        <tr><td><code>df -h</code> / <code>df -i</code></td><td>فضای آزاد فایل‌سیستم‌ها / inodeها</td><td><code>df -h /var</code></td></tr>
+        <tr><td><code>du</code></td><td>حجم پوشه‌ها</td><td><code>du -sh /var/log/* | sort -h | tail</code></td></tr>
+        <tr><td><code>lsof</code></td><td>فایل‌ها و سوکت‌های باز</td><td><code>lsof -i :80</code>، <code>lsof +L1</code> (حذف‌شده ولی باز)</td></tr>
+        <tr><td><code>ss</code> (جایگزین netstat)</td><td>سوکت‌ها و پورت‌های در حال گوش دادن</td><td><code>ss -tulpn</code>، <code>ss -s</code></td></tr>
+        <tr><td><code>journalctl</code></td><td>لاگ‌های systemd</td><td><code>journalctl -u nginx -f</code>، <code>--since "1 hour ago"</code>، <code>-p err</code></td></tr>
+        <tr><td><code>systemctl</code></td><td>مدیریت سرویس‌ها</td><td><code>status</code>، <code>start</code>، <code>stop</code>، <code>restart</code>، <code>reload</code>، <code>enable --now</code>، <code>--failed</code></td></tr>
+        <tr><td><code>uptime</code> / <code>nproc</code></td><td>load average / تعداد هسته</td><td>مقایسه‌ی load با تعداد هسته</td></tr>
+        <tr><td><code>vmstat 1</code> / <code>iostat -x 1</code></td><td>وضعیت CPU، swap، انتظار I/O / دیسک</td><td>ستون <code>wa</code> بالا یعنی انتظار دیسک</td></tr>
+        <tr><td><code>tail -f</code> / <code>less +F</code></td><td>دنبال کردن لاگ</td><td><code>tail -f storage/logs/laravel.log</code></td></tr>
+        <tr><td><code>curl</code></td><td>تست HTTP</td><td><code>curl -I https://example.com</code>، <code>curl -v</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout note"><p>دستور <code>netstat</code> بخشی از بسته‌ی قدیمی net-tools است و در توزیع‌های جدید به‌طور پیش‌فرض نصب نیست؛ <code>ss</code> (از iproute2) جایگزین مدرن و سریع‌تر آن است. گزینه‌های <code>-tulpn</code>: t=TCP، u=UDP، l=listening، p=process، n=عددی (بدون resolve نام).</p></div>
+
+    <h3>سیگنال‌ها</h3>
+    <p><strong>Signal</strong> یک اعلان ناهم‌زمان است که کرنل یا فرایند دیگری به فرایند می‌فرستد. فرایند می‌تواند بیشتر سیگنال‌ها را <strong>catch</strong> کند و رفتار خود را تعریف کند (مثلاً تمیزکاری)، به جز <code>SIGKILL</code> و <code>SIGSTOP</code>.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>سیگنال</th><th>شماره</th><th>معنا</th><th>قابل catch</th></tr></thead>
+      <tbody>
+        <tr><td><code>SIGTERM</code></td><td>15</td><td>درخواست مؤدبانه‌ی خاتمه؛ پیش‌فرض <code>kill</code> و <code>systemctl stop</code>. فرایند می‌تواند کار جاری را تمام و منابع را آزاد کند.</td><td>بله</td></tr>
+        <tr><td><code>SIGKILL</code></td><td>9</td><td>کشتن فوری توسط کرنل؛ بدون فرصت تمیزکاری (فایل‌های موقت، lockها و تراکنش‌های نیمه‌کاره می‌مانند).</td><td>خیر</td></tr>
+        <tr><td><code>SIGHUP</code></td><td>1</td><td>در اصل «قطع ترمینال»؛ بسیاری از daemonها (مثل Nginx) آن را به معنای <strong>بارگذاری مجدد config</strong> تفسیر می‌کنند.</td><td>بله</td></tr>
+        <tr><td><code>SIGINT</code></td><td>2</td><td>وقفه از ترمینال (<kbd>Ctrl</kbd>+<kbd>C</kbd>).</td><td>بله</td></tr>
+        <tr><td><code>SIGQUIT</code></td><td>3</td><td>خروج با core dump؛ در Nginx و PHP-FPM به معنای خاموشی graceful.</td><td>بله</td></tr>
+        <tr><td><code>SIGUSR1/2</code></td><td>10/12</td><td>تعریف‌شده توسط برنامه؛ مثلاً PHP-FPM با <code>SIGUSR2</code> به‌صورت graceful reload می‌شود و Nginx با <code>SIGUSR1</code> فایل‌های لاگ را دوباره باز می‌کند.</td><td>بله</td></tr>
+        <tr><td><code>SIGSTOP</code> / <code>SIGCONT</code></td><td>19/18</td><td>توقف و ادامه‌ی فرایند.</td><td>SIGSTOP خیر</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-bash">kill 1234            # SIGTERM
+kill -HUP 1234       # reload
+kill -9 1234         # آخرین راه‌حل
+pkill -f "queue:work"
+killall php-fpm8.3
+sudo systemctl reload nginx     # معادل امن ارسال سیگنال reload</code></pre>
+    <div class="callout exam"><p>چرا اول SIGTERM و بعد SIGKILL؟ چون SIGTERM به فرایند فرصت خاموشی graceful می‌دهد: queue worker لاراول با دریافت SIGTERM (نیاز به افزونه‌ی <code>pcntl</code>) job جاری را تمام و بعد خارج می‌شود. SIGKILL ممکن است job را نیمه‌کاره رها کند و داده را ناسازگار کند. systemd و Supervisor هم همین الگو را دارند: SIGTERM، انتظار به اندازه‌ی timeout (<code>TimeoutStopSec</code> / <code>stopwaitsecs</code>)، سپس SIGKILL.</p></div>
+  </section>
+
+  <section class="lesson" id="services" data-title="systemd و Supervisor">
+    <h2>مدیریت سرویس‌ها: systemd و Supervisor برای Queue Worker</h2>
+    <p><strong>systemd</strong> سیستم init و مدیر سرویس در بیشتر توزیع‌های مدرن لینوکس است (PID 1). سرویس‌ها با فایل‌های <strong>unit</strong> تعریف می‌شوند و systemd وظیفه‌ی شروع در boot، ری‌استارت پس از کرش، مدیریت وابستگی‌ها، محدودیت منابع و جمع‌آوری لاگ (journald) را بر عهده دارد.</p>
+
+    <h3>Queue worker با systemd</h3>
+    <pre><code class="language-ini"># /etc/systemd/system/laravel-worker@.service
+[Unit]
+Description=Laravel queue worker %i
+After=network.target mysql.service redis-server.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/app/current
+ExecStart=/usr/bin/php artisan queue:work redis --queue=high,default --sleep=3 --tries=3 --max-time=3600
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=120
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+    <pre><code class="language-bash">sudo systemctl daemon-reload                       # بعد از هر تغییر در unit
+sudo systemctl enable --now laravel-worker@{1..4}  # چهار نمونه با template unit
+systemctl status laravel-worker@1
+journalctl -u 'laravel-worker@*' -f</code></pre>
+
+    <h3>Queue worker با Supervisor</h3>
+    <p><strong>Supervisor</strong> یک process control system مستقل است که در مستندات Laravel برای queue workerها پیشنهاد شده است؛ تعریف چند نمونه با <code>numprocs</code> ساده است.</p>
+    <pre><code class="language-ini">; /etc/supervisor/conf.d/laravel-worker.conf
+[program:laravel-worker]
+process_name=%(program_name)s_%(process_num)02d
+command=php /var/www/app/current/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+user=www-data
+numprocs=4
+redirect_stderr=true
+stdout_logfile=/var/www/app/shared/storage/logs/worker.log
+stopwaitsecs=3600</code></pre>
+    <pre><code class="language-bash">sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start "laravel-worker:*"
+sudo supervisorctl status</code></pre>
+
+    <ul>
+      <li><code>stopwaitsecs</code> (یا <code>TimeoutStopSec</code>) باید از طولانی‌ترین job بیشتر باشد تا هنگام stop، job نیمه‌کاره kill نشود.</li>
+      <li><code>queue:work</code> یک پروسه‌ی طولانی‌مدت است و کد را یک‌بار load می‌کند؛ بعد از هر deploy باید <code>php artisan queue:restart</code> اجرا شود تا workerها پس از job جاری خارج شوند و مدیر سرویس آن‌ها را با کد جدید بالا بیاورد.</li>
+      <li><code>--max-time</code> و <code>--max-jobs</code> و <code>--memory</code> worker را دوره‌ای بازیافت می‌کنند تا نشت حافظه انباشته نشود.</li>
+      <li>برای Laravel Horizon (صف Redis) به جای چند worker فقط یک پروسه‌ی <code>php artisan horizon</code> تعریف می‌شود و در deploy <code>horizon:terminate</code> اجرا می‌شود.</li>
+    </ul>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>systemd</th><th>Supervisor</th></tr></thead>
+      <tbody>
+        <tr><td>نصب</td><td>از قبل روی سیستم</td><td>بسته‌ی جدا (<code>apt install supervisor</code>)</td></tr>
+        <tr><td>چند نمونه</td><td>template unit (<code>@</code>)</td><td><code>numprocs</code></td></tr>
+        <tr><td>لاگ</td><td>journald</td><td>فایل</td></tr>
+        <tr><td>محدودیت منابع</td><td>cgroups: <code>MemoryMax</code>، <code>CPUQuota</code>، <code>LimitNOFILE</code></td><td>محدود</td></tr>
+        <tr><td>وابستگی‌ها</td><td><code>After</code>، <code>Requires</code></td><td>اولویت ساده</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Scheduler</h3>
+    <p>برای scheduler لاراول کافی است یک cron هر دقیقه <code>php artisan schedule:run</code> را اجرا کند (یا یک systemd timer). روی چند سرور، تسک‌ها با <code>onOneServer()</code> فقط روی یکی اجرا می‌شوند (نیاز به cache مشترک مثل Redis).</p>
+    <pre><code class="language-plaintext">* * * * * cd /var/www/app/current &amp;&amp; php artisan schedule:run &gt;&gt; /dev/null 2&gt;&amp;1</code></pre>
+  </section>
+
+  <section class="lesson" id="networking" data-title="شبکه، فایروال و SSH">
+    <h2>شبکه‌ی سرور، فایروال و امن‌سازی SSH</h2>
+    <h3>مفاهیم پایه</h3>
+    <ul>
+      <li><strong>IP address</strong> مشخص‌کننده‌ی میزبان و <strong>port</strong> (۰ تا ۶۵۵۳۵) مشخص‌کننده‌ی سرویس روی آن است؛ ترکیب پروتکل + IP + port یک socket را مشخص می‌کند.</li>
+      <li>پورت‌های زیر ۱۰۲۴ (privileged) فقط با root قابل bind هستند؛ به همین دلیل master Nginx با root اجرا می‌شود و workerها با کاربر کم‌دسترسی.</li>
+      <li><strong>TCP</strong>: اتصال‌گرا، تضمین ترتیب و تحویل (HTTP/1.1، HTTP/2، MySQL، SSH). <strong>UDP</strong>: بدون اتصال، سبک (DNS، QUIC/HTTP/3).</li>
+      <li>گوش دادن روی <code>127.0.0.1</code> یعنی فقط از خود سرور قابل دسترسی است؛ <code>0.0.0.0</code> یعنی روی همه‌ی اینترفیس‌ها. MySQL و Redis نباید روی اینترفیس عمومی گوش دهند.</li>
+      <li><strong>DNS</strong> نام دامنه را به IP تبدیل می‌کند: رکورد A (IPv4)، AAAA (IPv6)، CNAME (نام مستعار)، MX (ایمیل)، TXT (تأیید دامنه، SPF).</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>پورت</th><th>سرویس</th><th>پورت</th><th>سرویس</th></tr></thead>
+      <tbody>
+        <tr><td>22</td><td>SSH</td><td>3306</td><td>MySQL/MariaDB</td></tr>
+        <tr><td>80</td><td>HTTP</td><td>5432</td><td>PostgreSQL</td></tr>
+        <tr><td>443</td><td>HTTPS</td><td>6379</td><td>Redis</td></tr>
+        <tr><td>25 / 587</td><td>SMTP / Submission</td><td>9000</td><td>PHP-FPM روی TCP (رایج)</td></tr>
+        <tr><td>53</td><td>DNS</td><td>11211</td><td>Memcached</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>فایروال: ufw و iptables</h3>
+    <p>لینوکس فیلتر بسته‌ها را در کرنل با <strong>netfilter</strong> انجام می‌دهد؛ <code>iptables</code> (و جانشین مدرنش <code>nftables</code>) رابط سطح پایین آن است و <code>ufw</code> (Uncomplicated Firewall) رابط ساده‌ی اوبونتو روی آن. سیاست درست: <strong>همه چیز ورودی بسته، فقط موارد لازم باز</strong>.</p>
+    <pre><code class="language-bash">sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow OpenSSH                 # قبل از enable! وگرنه خودتان را بیرون می‌اندازید
+sudo ufw allow 80,443/tcp
+sudo ufw allow from 10.0.0.5 to any port 3306 proto tcp   # فقط سرور اپ به دیتابیس
+sudo ufw limit OpenSSH                 # محدودیت نرخ اتصال برای مقابله با brute-force
+sudo ufw enable
+sudo ufw status verbose</code></pre>
+    <pre><code class="language-bash"># معادل تقریبی با iptables
+sudo iptables -A INPUT -i lo -j ACCEPT
+sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+sudo iptables -A INPUT -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+sudo iptables -P INPUT DROP</code></pre>
+    <div class="callout warn"><p>Docker برای publish کردن پورت‌ها (<code>-p 3306:3306</code>) قوانین iptables خودش را مستقیماً اضافه می‌کند و این قوانین می‌توانند ufw را دور بزنند؛ یعنی ممکن است فکر کنید پورت بسته است در حالی که از اینترنت باز است. پورت‌های داخلی را فقط روی <code>127.0.0.1</code> publish کنید (<code>-p 127.0.0.1:3306:3306</code>) یا اصلاً publish نکنید.</p></div>
+
+    <h3>SSH: کلید و امن‌سازی</h3>
+    <p>احراز هویت با <strong>کلید عمومی/خصوصی</strong>: کلید خصوصی نزد شما می‌ماند و کلید عمومی در <code>~/.ssh/authorized_keys</code> سرور قرار می‌گیرد. سرور با یک challenge ثابت می‌کند که شما کلید خصوصی را دارید، بدون اینکه کلید یا رمزی از شبکه عبور کند. در برابر brute-force رمز عبور مقاوم است.</p>
+    <pre><code class="language-bash">ssh-keygen -t ed25519 -C "ali@laptop"      # ساخت جفت کلید (با passphrase)
+ssh-copy-id deploy@203.0.113.10             # کپی کلید عمومی به سرور
+chmod 700 ~/.ssh &amp;&amp; chmod 600 ~/.ssh/authorized_keys   # SSH با دسترسی باز کلید را رد می‌کند</code></pre>
+    <pre><code class="language-plaintext"># /etc/ssh/sshd_config (یا فایلی در /etc/ssh/sshd_config.d/)
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AllowUsers deploy ali
+MaxAuthTries 3</code></pre>
+    <pre><code class="language-bash">sudo sshd -t                 # بررسی syntax قبل از اعمال
+sudo systemctl reload ssh    # نشست فعلی را باز نگه دارید و از ترمینال دوم تست کنید</code></pre>
+    <ul>
+      <li><strong>fail2ban</strong> لاگ‌ها را بررسی و IPهایی را که تلاش ناموفق مکرر دارند موقتاً مسدود می‌کند.</li>
+      <li>تغییر پورت SSH حجم اسکن‌های خودکار را کم می‌کند اما امنیت واقعی نیست (security through obscurity).</li>
+      <li>برای دسترسی به سرورهای داخلی از <strong>bastion/jump host</strong> (<code>ssh -J</code>) یا VPN استفاده کنید و سرورهای دیتابیس SSH عمومی نداشته باشند.</li>
+      <li>به‌روزرسانی امنیتی خودکار: <code>unattended-upgrades</code>.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="nginx-fpm" data-title="Nginx، PHP-FPM و Load Balancer">
+    <h2>Nginx + PHP-FPM، Reverse Proxy و Load Balancer</h2>
+    <h3>مسیر یک درخواست</h3>
+    <pre class="diagram">Browser ──HTTPS──► Nginx (443)
+                     │  TLS termination، فایل ثابت از public/ مستقیم سرو می‌شود
+                     │  location ~ \.php$  ──►  FastCGI
+                     ▼
+              unix:/run/php/php8.3-fpm.sock
+                     │
+                     ▼
+              PHP-FPM master ──► یک worker آزاد
+                                    │ public/index.php ← bootstrap لاراول
+                                    │ Router → Middleware → Controller → DB/Redis
+                                    ▼
+              پاسخ ◄── FastCGI ◄── worker ؛ Nginx پاسخ را به کاربر می‌فرستد</pre>
+    <ul>
+      <li>Nginx خودش PHP اجرا نمی‌کند؛ درخواست را با پروتکل <strong>FastCGI</strong> به PHP-FPM می‌دهد.</li>
+      <li>ارتباط از طریق <strong>Unix socket</strong> (روی همان سرور، کمی سریع‌تر و بدون پورت شبکه) یا <strong>TCP</strong> (<code>127.0.0.1:9000</code> یا سرور دیگر).</li>
+      <li>کاربر Nginx (<code>www-data</code>) باید اجازه‌ی خواندن/نوشتن روی سوکت را داشته باشد: <code>listen.owner</code> و <code>listen.group</code> در pool FPM.</li>
+      <li>خطای <strong>502 Bad Gateway</strong>: Nginx نتوانسته به FPM وصل شود یا FPM پاسخ نامعتبر داده (سرویس خاموش، مسیر سوکت اشتباه، مجوز سوکت، کرش worker). <strong>504 Gateway Timeout</strong>: FPM در زمان <code>fastcgi_read_timeout</code> پاسخ نداده (کوئری یا API کند).</li>
+    </ul>
+
+    <h3>پیکربندی Nginx برای Laravel</h3>
+    <pre><code class="language-nginx">server {
+    listen 80;
+    listen [::]:80;
+    server_name example.com www.example.com;
+    return 301 https://example.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;                                   # در نسخه‌های قدیمی‌تر: listen 443 ssl http2;
+    server_name example.com;
+
+    root /var/www/app/current/public;           # فقط public؛ هرگز ریشه‌ی پروژه
+    index index.php;
+    charset utf-8;
+
+    ssl_certificate     /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    client_max_body_size 20m;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ ^/index\.php(/|$) {
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param DOCUMENT_ROOT $realpath_root;
+        include fastcgi_params;
+        fastcgi_hide_header X-Powered-By;
+        fastcgi_read_timeout 60s;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;                               # جلوگیری از دسترسی به .env، .git و ...
+    }
+}</code></pre>
+    <pre><code class="language-bash">sudo nginx -t &amp;&amp; sudo systemctl reload nginx   # همیشه قبل از reload تست کنید</code></pre>
+    <div class="callout tip"><p><code>$realpath_root</code> به جای <code>$document_root</code> وقتی مهم است که <code>current</code> یک symlink به پوشه‌ی release باشد: مسیر واقعی resolve می‌شود و OPcache بعد از تعویض symlink، فایل‌های release جدید را با کلید مسیر جدید کش می‌کند.</p></div>
+
+    <h3>Reverse proxy</h3>
+    <p><strong>Reverse proxy</strong> سروری است که جلوی سرورهای اپلیکیشن می‌نشیند و درخواست‌های کلاینت را از طرف آن‌ها دریافت و به backend می‌فرستد (در مقابل <strong>forward proxy</strong> که از طرف کلاینت به اینترنت می‌رود). وظایف: TLS termination، سرو فایل ثابت، فشرده‌سازی، کش، rate limiting، پنهان کردن ساختار داخلی و load balancing.</p>
+
+    <h3>Load balancer</h3>
+    <pre><code class="language-nginx">upstream app_servers {
+    least_conn;                       # یا پیش‌فرض round robin، یا ip_hash
+    server 10.0.0.11:80 max_fails=3 fail_timeout=30s;
+    server 10.0.0.12:80 max_fails=3 fail_timeout=30s;
+    server 10.0.0.13:80 backup;
+}
+
+server {
+    listen 443 ssl;
+    server_name example.com;
+    location / {
+        proxy_pass http://app_servers;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>الگوریتم</th><th>رفتار</th><th>مناسب برای</th></tr></thead>
+      <tbody>
+        <tr><td>Round robin</td><td>نوبتی بین سرورها (با امکان وزن‌دهی)</td><td>سرورهای هم‌توان و درخواست‌های مشابه</td></tr>
+        <tr><td>Least connections</td><td>سروری که اتصال فعال کمتری دارد</td><td>درخواست‌هایی با زمان پردازش متفاوت</td></tr>
+        <tr><td>IP hash</td><td>یک IP همیشه به یک سرور</td><td>sticky session (ولی توزیع ناهموار)</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>L4 load balancer</strong> در سطح TCP/UDP و بدون دیدن محتوای HTTP کار می‌کند (سریع). <strong>L7</strong> محتوای HTTP (مسیر، header، cookie) را می‌بیند و می‌تواند بر اساس آن مسیریابی کند.</li>
+      <li><strong>Health check</strong>: سرور ناسالم از چرخه خارج شود. Laravel 11 به‌صورت پیش‌فرض route سلامت <code>/up</code> دارد.</li>
+      <li><strong>Stateless بودن اپ</strong> پیش‌شرط scale افقی است: session و cache در Redis یا دیتابیس، فایل‌های آپلودی در object storage (S3)، نه دیسک محلی؛ در غیر این صورت به sticky session نیاز دارید.</li>
+      <li>پشت proxy، Laravel باید به هدرهای <code>X-Forwarded-*</code> اعتماد کند تا IP واقعی کاربر و HTTPS را تشخیص دهد؛ در Laravel 11 با <code>$middleware-&gt;trustProxies(at: [...])</code> در <code>bootstrap/app.php</code>. بدون آن URLها با http ساخته می‌شوند و rate limit همه‌ی کاربران را یک IP می‌بیند.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="tls" data-title="TLS و Let's Encrypt">
+    <h2>TLS و گواهی‌های Let's Encrypt</h2>
+    <p><strong>TLS</strong> (جانشین SSL) سه چیز فراهم می‌کند: <strong>محرمانگی</strong> (رمزنگاری ترافیک)، <strong>یکپارچگی</strong> (تشخیص دستکاری) و <strong>احراز هویت سرور</strong> (با گواهی امضاشده توسط یک CA مورد اعتماد). HTTPS یعنی HTTP روی TLS.</p>
+    <h3>Handshake به زبان ساده (TLS 1.3)</h3>
+    <ol>
+      <li>کلاینت <em>ClientHello</em> می‌فرستد: نسخه‌ها و cipherهای پشتیبانی‌شده، سهم کلید (key share) و نام دامنه (SNI).</li>
+      <li>سرور <em>ServerHello</em> با سهم کلید خودش، و <strong>گواهی</strong> به همراه زنجیره‌ی گواهی‌های میانی را می‌فرستد و با کلید خصوصی ثابت می‌کند مالک گواهی است.</li>
+      <li>کلاینت زنجیره را تا یک root CA مورد اعتماد، نام دامنه و تاریخ انقضا را بررسی می‌کند.</li>
+      <li>دو طرف با تبادل کلید (ECDHE) یک کلید متقارن مشترک می‌سازند و بقیه‌ی ارتباط با رمزنگاری متقارن (سریع) انجام می‌شود. TLS 1.3 این کار را در یک round-trip انجام می‌دهد.</li>
+    </ol>
+    <div class="callout note"><p>رمزنگاری نامتقارن (کلید عمومی/خصوصی) فقط برای احراز هویت و توافق کلید است؛ داده‌ی اصلی با رمزنگاری متقارن (مثل AES-GCM یا ChaCha20) رمز می‌شود چون بسیار سریع‌تر است. <strong>Forward secrecy</strong> به لطف کلیدهای موقت ECDHE یعنی حتی اگر کلید خصوصی سرور بعداً لو برود، ترافیک ضبط‌شده‌ی قبلی قابل رمزگشایی نیست.</p></div>
+
+    <h3>Let's Encrypt و Certbot</h3>
+    <p><strong>Let's Encrypt</strong> یک CA رایگان و خودکار است که با پروتکل <strong>ACME</strong> مالکیت دامنه را تأیید می‌کند. گواهی‌ها عمر کوتاه دارند (۹۰ روز) تا تمدید خودکار اجباری شود و آسیب کلید لورفته محدود بماند.</p>
+    <pre><code class="language-bash">sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d example.com -d www.example.com   # گرفتن گواهی و ویرایش خودکار config
+sudo certbot renew --dry-run                             # تست تمدید
+systemctl list-timers | grep certbot                     # تمدید خودکار با systemd timer</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Challenge</th><th>روش</th><th>محدودیت</th></tr></thead>
+      <tbody>
+        <tr><td>HTTP-01</td><td>قرار دادن فایل در <code>/.well-known/acme-challenge/</code> روی پورت 80</td><td>پورت 80 باید باز باشد؛ wildcard پشتیبانی نمی‌شود</td></tr>
+        <tr><td>DNS-01</td><td>ایجاد رکورد TXT در DNS</td><td>لازم برای <strong>wildcard</strong> (<code>*.example.com</code>) و سرورهای داخلی؛ نیاز به API یا دسترسی DNS</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>HSTS</strong> (<code>Strict-Transport-Security</code>) به مرورگر می‌گوید تا مدت مشخصی فقط با HTTPS به دامنه وصل شود؛ جلوی حمله‌ی SSL stripping را می‌گیرد.</li>
+      <li>فقط TLS 1.2 و 1.3 را فعال نگه دارید؛ نسخه‌های قدیمی (SSL 3، TLS 1.0 و 1.1) ناامن و منسوخ‌اند.</li>
+      <li>در پشت load balancer، TLS معمولاً روی LB خاتمه می‌یابد (TLS termination) و ترافیک داخلی در شبکه‌ی خصوصی است؛ در محیط‌های حساس ترافیک داخلی هم رمز می‌شود.</li>
+      <li>خطای رایج: نصب نکردن زنجیره‌ی گواهی میانی (استفاده از <code>cert.pem</code> به جای <code>fullchain.pem</code>) که در برخی کلاینت‌ها خطای اعتماد می‌دهد.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="cloud" data-title="محیط‌ها، کانتینر، ابر و IaC">
+    <h2>محیط‌ها، VM در برابر Container، مدل‌های ابری و IaC</h2>
+    <h3>محیط‌ها (Environments)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>محیط</th><th>هدف</th><th>ویژگی‌ها</th></tr></thead>
+      <tbody>
+        <tr><td>Development / Local</td><td>توسعه روی سیستم برنامه‌نویس</td><td><code>APP_DEBUG=true</code>، داده‌ی نمونه، ابزارهای دیباگ (Sail، Debugbar)</td></tr>
+        <tr><td>Testing / CI</td><td>اجرای خودکار تست‌ها</td><td>دیتابیس موقت، ایزوله و تکرارپذیر</td></tr>
+        <tr><td>Staging</td><td>آخرین بررسی قبل از production</td><td>تا حد امکان <strong>مشابه production</strong> (نسخه‌ها، config، زیرساخت)، اما با داده‌ی غیرواقعی یا ناشناس‌شده</td></tr>
+        <tr><td>Production</td><td>سرویس به کاربران واقعی</td><td><code>APP_DEBUG=false</code>، مانیتورینگ، بکاپ، دسترسی محدود</td></tr>
+      </tbody>
+    </table></div>
+    <p>اصل <strong>parity</strong> (از 12-Factor App): فاصله‌ی محیط‌ها را کم نگه دارید تا «روی سیستم من کار می‌کرد» رخ ندهد. config وابسته به محیط از طریق <strong>متغیرهای محیطی</strong> (<code>.env</code>) تزریق شود نه کد، و secrets هرگز در git نباشند.</p>
+
+    <h3>VM در برابر Container</h3>
+    <pre class="diagram">  Virtual Machines                         Containers
+ ┌───────┐ ┌───────┐ ┌───────┐         ┌───────┐ ┌───────┐ ┌───────┐
+ │ App A │ │ App B │ │ App C │         │ App A │ │ App B │ │ App C │
+ │ Libs  │ │ Libs  │ │ Libs  │         │ Libs  │ │ Libs  │ │ Libs  │
+ │Guest OS│ │Guest OS│ │Guest OS│      └───────┘ └───────┘ └───────┘
+ └───────┘ └───────┘ └───────┘          Container runtime (Docker/containerd)
+        Hypervisor                         Host OS kernel (مشترک)
+        Hardware                           Hardware</pre>
+    <div class="grid-2">
+      <div class="card"><h4>Virtual Machine</h4><ul><li>مجازی‌سازی سخت‌افزار توسط <strong>hypervisor</strong> (KVM، VMware، Hyper-V)؛ هر VM کرنل و OS کامل خودش را دارد.</li><li>ایزولاسیون قوی‌تر (مرز امنیتی سخت‌افزاری).</li><li>حجم گیگابایتی، boot در حد ده‌ها ثانیه تا دقیقه.</li><li>امکان اجرای OS متفاوت (ویندوز روی میزبان لینوکس).</li></ul></div>
+      <div class="card"><h4>Container</h4><ul><li>ایزوله‌سازی در سطح سیستم‌عامل با <strong>namespaces</strong> (دید جدای PID، شبکه، mount، user) و <strong>cgroups</strong> (محدودیت CPU و حافظه)؛ <strong>کرنل میزبان مشترک</strong> است.</li><li>حجم مگابایتی، شروع در حد ثانیه یا کمتر، تراکم بالا.</li><li>Image تغییرناپذیر و قابل‌حمل: «همان image در همه‌ی محیط‌ها».</li><li>ایزولاسیون ضعیف‌تر از VM؛ داده‌ی پایدار نیاز به volume دارد.</li></ul></div>
+    </div>
+    <p>در عمل این دو رقیب نیستند: کانتینرها معمولاً روی VMهای ابری اجرا می‌شوند. <strong>Orchestration</strong> (Kubernetes، Docker Swarm، ECS) زمان‌بندی کانتینرها روی چند ماشین، scale، self-healing و rolling update را مدیریت می‌کند.</p>
+
+    <h3>مدل‌های سرویس ابری</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>مدل</th><th>شما مدیریت می‌کنید</th><th>ارائه‌دهنده مدیریت می‌کند</th><th>نمونه</th></tr></thead>
+      <tbody>
+        <tr><td><strong>On-premise</strong></td><td>همه‌چیز از سخت‌افزار تا اپ</td><td>هیچ</td><td>دیتاسنتر شرکت</td></tr>
+        <tr><td><strong>IaaS</strong></td><td>OS، runtime، middleware، اپ، داده</td><td>سخت‌افزار، شبکه، مجازی‌سازی</td><td>AWS EC2، DigitalOcean Droplet، VPS</td></tr>
+        <tr><td><strong>PaaS</strong></td><td>کد و داده و تنظیمات اپ</td><td>OS، runtime، scale، patch</td><td>Heroku، AWS Elastic Beanstalk، Google App Engine</td></tr>
+        <tr><td><strong>SaaS</strong></td><td>فقط استفاده و تنظیمات کاربری</td><td>کل نرم‌افزار</td><td>Gmail، Slack، Jira</td></tr>
+        <tr><td><strong>Serverless / FaaS</strong></td><td>فقط توابع/کد</td><td>همه‌ی زیرساخت؛ اجرا بر اساس رویداد، scale خودکار تا صفر، پرداخت به ازای اجرا</td><td>AWS Lambda (برای Laravel: Laravel Vapor یا Bref)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout note"><p>Trade-off کلی: هرچه به سمت SaaS می‌رویم، <strong>کنترل و انعطاف کمتر</strong> و <strong>بار عملیاتی کمتر</strong> می‌شود. Serverless برای ترافیک نامنظم مقرون‌به‌صرفه است اما cold start، محدودیت زمان اجرا، وابستگی به ارائه‌دهنده (vendor lock-in) و دشواری دیباگ دارد.</p></div>
+
+    <h3>Infrastructure as Code (IaC)</h3>
+    <p><strong>IaC</strong> یعنی تعریف زیرساخت (سرورها، شبکه، دیتابیس، DNS، پیکربندی) در فایل‌های متنی نسخه‌دار به جای کلیک در پنل یا اجرای دستی دستورات. مزایا: <strong>تکرارپذیری</strong> (ساخت staging مشابه production)، <strong>بازبینی در code review</strong>، تاریخچه در git، حذف <strong>configuration drift</strong> (تفاوت تدریجی سرورها)، و بازسازی سریع در فاجعه.</p>
+    <div class="grid-2">
+      <div class="card"><h4>Terraform (Provisioning)</h4><ul><li>ساخت منابع زیرساخت در ابر (VM، VPC، load balancer، دیتابیس مدیریت‌شده، DNS).</li><li><strong>Declarative</strong>: وضعیت مطلوب را با HCL توصیف می‌کنید؛ Terraform تفاوت با وضعیت فعلی را محاسبه می‌کند.</li><li><strong>State file</strong> نگاشت منابع واقعی را نگه می‌دارد؛ باید به‌صورت remote و با lock ذخیره شود.</li><li>جریان کار: <code>terraform init</code> ← <code>plan</code> (پیش‌نمایش تغییرات) ← <code>apply</code>.</li><li>Providerها برای AWS، GCP، Azure، Cloudflare و…</li></ul></div>
+      <div class="card"><h4>Ansible (Configuration management)</h4><ul><li>پیکربندی سرورهای موجود: نصب بسته‌ها، فایل‌های config، کاربران، سرویس‌ها، deploy.</li><li><strong>Agentless</strong>: از طریق SSH اجرا می‌شود؛ نیازی به نصب agent روی سرور نیست.</li><li><strong>Playbook</strong>های YAML با taskهایی که از ماژول‌ها استفاده می‌کنند.</li><li>ماژول‌ها <strong>idempotent</strong> هستند: اجرای چندباره همان نتیجه را می‌دهد و فقط تغییرات لازم اعمال می‌شود.</li></ul></div>
+    </div>
+    <pre><code class="language-yaml"># playbook.yml — نمونه‌ی ساده‌ی Ansible
+- hosts: web
+  become: true
+  tasks:
+    - name: Install packages
+      ansible.builtin.apt:
+        name: [nginx, php8.3-fpm, php8.3-mysql, php8.3-redis, supervisor]
+        state: present
+        update_cache: true
+
+    - name: Deploy nginx site config
+      ansible.builtin.template:
+        src: templates/app.conf.j2
+        dest: /etc/nginx/sites-available/app.conf
+      notify: Reload nginx
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded</code></pre>
+    <div class="callout exam"><p><strong>Mutable در برابر Immutable infrastructure:</strong> در مدل mutable سرورها در جا به‌روزرسانی می‌شوند (Ansible روی سرور موجود)؛ در مدل immutable برای هر تغییر یک image جدید (Docker image یا AMI) ساخته و سرور/کانتینر قدیمی جایگزین می‌شود. مدل immutable drift ندارد و rollback آن ساده است (برگشت به image قبلی).</p></div>
+  </section>
+
+  <section class="lesson" id="ha-dr" data-title="دسترس‌پذیری بالا، بکاپ و بازیابی">
+    <h2>دسترس‌پذیری بالا، بکاپ و بازیابی از فاجعه</h2>
+    <h3>High Availability</h3>
+    <p><strong>High Availability (HA)</strong> یعنی سیستم با وجود خرابی اجزای منفرد به کار ادامه دهد. معیار آن درصد uptime است:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Availability</th><th>Downtime مجاز در سال</th><th>در ماه (تقریبی)</th></tr></thead>
+      <tbody>
+        <tr><td>99% (two nines)</td><td>حدود ۳.۶۵ روز</td><td>حدود ۷.۲ ساعت</td></tr>
+        <tr><td>99.9%</td><td>حدود ۸.۷۶ ساعت</td><td>حدود ۴۳ دقیقه</td></tr>
+        <tr><td>99.99%</td><td>حدود ۵۲.۶ دقیقه</td><td>حدود ۴.۳ دقیقه</td></tr>
+        <tr><td>99.999%</td><td>حدود ۵.۳ دقیقه</td><td>حدود ۲۶ ثانیه</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>حذف Single Point of Failure (SPOF):</strong> هر جزئی که خرابی‌اش کل سیستم را از کار بیندازد (یک سرور اپ، یک دیتابیس، یک load balancer، یک دیتاسنتر).</li>
+      <li><strong>Redundancy:</strong> چند سرور اپ stateless پشت load balancer، چند availability zone.</li>
+      <li><strong>Replication دیتابیس:</strong> primary-replica؛ replicaها برای خواندن و failover. Laravel از جداسازی <code>read</code>/<code>write</code> در config دیتابیس و گزینه‌ی <code>sticky</code> پشتیبانی می‌کند.</li>
+      <li><strong>Failover:</strong> active-passive (نسخه‌ی آماده به کار، با تأخیر سوییچ) یا active-active (همه در حال سرویس).</li>
+      <li><strong>Health check و self-healing:</strong> خارج کردن خودکار نمونه‌ی ناسالم و جایگزینی آن.</li>
+      <li><strong>Graceful degradation:</strong> اگر سرویس جانبی (مثل توصیه‌گر) از دست رفت، صفحه‌ی اصلی همچنان کار کند؛ timeout و circuit breaker برای وابستگی‌های خارجی.</li>
+      <li><strong>Zero-downtime deploy:</strong> rolling update یا blue-green، و migrationهای سازگار با نسخه‌ی قبل (expand/contract).</li>
+    </ul>
+
+    <h3>Backup و Disaster Recovery</h3>
+    <dl class="terms">
+      <dt>RPO</dt><dd><strong>Recovery Point Objective</strong>: حداکثر مقدار داده‌ای (بر حسب زمان) که از دست رفتنش قابل قبول است. RPO یک ساعت یعنی بکاپ یا replication حداقل هر ساعت.</dd>
+      <dt>RTO</dt><dd><strong>Recovery Time Objective</strong>: حداکثر زمان قابل قبول تا بازگشت سرویس پس از فاجعه. RTO پانزده دقیقه یعنی باید فرایند بازیابی خودکار و تمرین‌شده باشد.</dd>
+      <dt>Full / Incremental / Differential</dt><dd>کامل؛ فقط تغییرات از آخرین بکاپ (هر نوع)؛ تغییرات از آخرین بکاپ کامل.</dd>
+      <dt>Point-in-time recovery</dt><dd>بازیابی به یک لحظه‌ی دلخواه با بکاپ کامل + binary log (MySQL) یا WAL (PostgreSQL).</dd>
+    </dl>
+    <pre class="diagram">   آخرین بکاپ سالم          فاجعه                     سرویس برگشت
+        │◄────── RPO ──────►│◄─────────── RTO ───────────►│
+   ─────●───────────────────✖──────────────────────────────●────► زمان
+            داده‌ی از دست رفته        زمان قطعی سرویس</pre>
+    <ul>
+      <li><strong>قاعده‌ی 3-2-1:</strong> حداقل ۳ نسخه از داده، روی ۲ نوع رسانه‌ی متفاوت، ۱ نسخه خارج از سایت (مثلاً object storage در region دیگر).</li>
+      <li><strong>Replication بکاپ نیست:</strong> یک <code>DELETE</code> اشتباه یا ransomware فوراً روی replica هم اعمال می‌شود. بکاپ نسخه‌دار و ترجیحاً تغییرناپذیر (immutable) لازم است.</li>
+      <li><strong>بکاپی که restore آن تست نشده، بکاپ نیست.</strong> بازیابی را دوره‌ای روی محیط جدا تمرین و زمانش را اندازه بگیرید (برای سنجش RTO).</li>
+      <li>چه چیزهایی: دیتابیس، فایل‌های آپلودی (<code>storage/app</code> یا S3)، فایل <code>.env</code> و secrets (در vault امن)، کد زیرساخت. کد اپلیکیشن در git است.</li>
+      <li>بکاپ‌ها را رمزنگاری کنید و دسترسی به آن‌ها را محدود؛ بکاپ نشت‌کرده یعنی نشت کل دیتابیس.</li>
+      <li>برای MySQL با InnoDB از <code>mysqldump --single-transaction</code> برای بکاپ سازگار بدون قفل کردن جدول‌ها استفاده کنید؛ برای دیتابیس‌های بزرگ ابزارهای فیزیکی مثل Percona XtraBackup یا snapshot مدیریت‌شده.</li>
+    </ul>
+    <div class="callout exam"><p>RPO و RTO را با هم اشتباه نگیرید: <strong>RPO به گذشته نگاه می‌کند</strong> (چقدر داده از دست می‌رود؛ تعیین‌کننده‌ی تناوب بکاپ/replication) و <strong>RTO به آینده</strong> (چقدر طول می‌کشد سرویس برگردد؛ تعیین‌کننده‌ی میزان خودکارسازی و آماده‌به‌کار بودن زیرساخت). هر چه هر دو کوچک‌تر، هزینه بیشتر.</p></div>
+  </section>
+
+  <section class="lesson" id="deploy-checklist" data-title="چک‌لیست استقرار Laravel">
+    <h2>چک‌لیست استقرار Laravel در Production</h2>
+    <h3>سرور و امنیت</h3>
+    <ul>
+      <li>کاربر غیر root برای deploy، SSH فقط با کلید، <code>PermitRootLogin no</code>، fail2ban، به‌روزرسانی امنیتی خودکار.</li>
+      <li>فایروال: فقط 22 (ترجیحاً محدود به IPهای مشخص)، 80 و 443 باز؛ MySQL و Redis فقط در شبکه‌ی خصوصی یا localhost؛ Redis با رمز.</li>
+      <li>نسخه‌ی پشتیبانی‌شده‌ی PHP و افزونه‌های لازم (<code>php -m</code>)، OPcache فعال، Xdebug غیرفعال.</li>
+      <li>HTTPS با Let's Encrypt و تمدید خودکار، ریدایرکت 80 به 443، HSTS.</li>
+      <li>document root فقط <code>public/</code>؛ دسترسی به dotfileها مسدود.</li>
+    </ul>
+    <h3>اپلیکیشن</h3>
+    <ul>
+      <li><code>.env</code>: <code>APP_ENV=production</code>، <code>APP_DEBUG=false</code> (در غیر این صورت stack trace و متغیرهای محیطی لو می‌رود)، <code>APP_KEY</code> تنظیم‌شده و ثابت (تغییرش sessionها و داده‌های رمزشده را باطل می‌کند)، <code>APP_URL</code> درست، driverهای cache/session/queue روی Redis.</li>
+      <li><code>composer install --no-dev --optimize-autoloader --no-interaction</code></li>
+      <li><code>npm ci &amp;&amp; npm run build</code> (یا ساخت assets در CI)</li>
+      <li><code>php artisan migrate --force</code> (با بکاپ قبل از migrationهای پرریسک)</li>
+      <li><code>php artisan optimize</code> (config، routes، views، events)</li>
+      <li><code>php artisan storage:link</code></li>
+      <li>دسترسی‌های <code>storage</code> و <code>bootstrap/cache</code>؛ <code>.env</code> با 640.</li>
+      <li>reload PHP-FPM برای پاک شدن OPcache؛ <code>php artisan queue:restart</code> (یا <code>horizon:terminate</code>).</li>
+    </ul>
+    <h3>پروسه‌های پس‌زمینه</h3>
+    <ul>
+      <li>queue workerها زیر Supervisor یا systemd با <code>--max-time</code> و stop timeout مناسب.</li>
+      <li>cron برای <code>schedule:run</code> هر دقیقه.</li>
+    </ul>
+    <h3>عملیات</h3>
+    <ul>
+      <li>لاگ: channel مناسب (مثلاً <code>daily</code> با نگهداری محدود یا ارسال به سرویس متمرکز)، logrotate برای لاگ‌های Nginx.</li>
+      <li>مانیتورینگ و هشدار: uptime (health route <code>/up</code>)، خطاها (Sentry و…)، منابع سرور، طول صف، failed jobs.</li>
+      <li>بکاپ خودکار دیتابیس و فایل‌ها، خارج از سرور، با restore تست‌شده.</li>
+      <li>استراتژی deploy بدون downtime (releases + symlink یا ابزارهایی مثل Deployer/Envoyer) و برنامه‌ی rollback.</li>
+      <li>تست smoke بعد از deploy (صفحه‌ی اصلی، login، یک endpoint کلیدی).</li>
+    </ul>
+    <pre class="diagram">/var/www/app
+├── current  ──► releases/20261107-1030   (symlink؛ Nginx به current/public اشاره می‌کند)
+├── releases/
+│   ├── 20261106-1800
+│   └── 20261107-1030
+└── shared/
+    ├── .env                 (به هر release لینک می‌شود)
+    └── storage/             (لاگ، آپلود، session؛ بین releaseها مشترک)</pre>
+    <div class="callout tip"><p>مزیت ساختار releases + symlink: آماده‌سازی کامل release جدید (composer، build، کش‌ها) قبل از سوییچ انجام می‌شود و سوییچ یک تعویض اتمیک symlink است؛ rollback هم یعنی برگرداندن symlink به release قبلی و reload کردن FPM.</p></div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-os-infrastructure-1">
+      <summary>تفاوت Process، Thread و Coroutine را توضیح دهید. مدل اجرای PHP-FPM و Nginx کدام است و چه پیامدی دارد؟</summary>
+      <div class="answer">
+        <p><strong>Process:</strong> نمونه‌ی در حال اجرای یک برنامه با فضای آدرس حافظه‌ی ایزوله، PID، FDها و حداقل یک thread. ایجاد و context switch آن پرهزینه است (تعویض page table و TLB)، اما کرش یک فرایند بقیه را خراب نمی‌کند. ارتباط با IPC (pipe، socket).</p>
+        <p><strong>Thread:</strong> واحد اجرا درون فرایند؛ heap و کد و فایل‌ها را با threadهای دیگر به اشتراک می‌گذارد اما stack و رجیسترهای خودش را دارد. سبک‌تر است ولی دسترسی مشترک به حافظه نیاز به همگام‌سازی (mutex) دارد و کرش یک thread کل فرایند را می‌کشد.</p>
+        <p><strong>Coroutine:</strong> واحد اجرای بسیار سبک در user space با زمان‌بندی <strong>همکارانه</strong>؛ در نقطه‌ی انتظار (مثلاً I/O) کنترل را واگذار می‌کند. بدون ورود به کرنل جابه‌جا می‌شود، پس هزاران یا میلیون‌ها coroutine ممکن است. نمونه: Swoole، Fiberهای PHP 8.1، async/await.</p>
+        <p><strong>PHP-FPM:</strong> مدل multi-process؛ هر worker یک درخواست در هر لحظه. پیامدها:</p>
+        <ul>
+          <li>state بین درخواست‌ها مشترک نیست؛ امن و ساده، بدون نیاز به lock درون حافظه.</li>
+          <li>هم‌زمانی محدود به <code>pm.max_children</code> و مصرف حافظه‌ی بیشتر (هر worker ده‌ها مگابایت).</li>
+          <li>داده‌ی مشترک فقط از طریق دیتابیس/Redis؛ race condition آنجا رخ می‌دهد.</li>
+        </ul>
+        <p><strong>Nginx:</strong> چند worker process، هر کدام با <strong>event loop</strong> non-blocking (epoll) که هزاران اتصال را هم‌زمان مدیریت می‌کند؛ به همین دلیل با حافظه‌ی کم تعداد زیادی اتصال (مثلاً keep-alive و کلاینت‌های کند) را نگه می‌دارد و PHP-FPM را از آن‌ها محافظت می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-2">
+      <summary>Race condition چیست؟ یک مثال واقعی در یک اپلیکیشن Laravel بزنید و حداقل دو راه برای جلوگیری از آن ارائه دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> وضعیتی که نتیجه‌ی برنامه به ترتیب زمانی اجرای چند کار هم‌زمان روی داده‌ی مشترک وابسته است و ترتیب نامناسب نتیجه‌ی نادرست می‌دهد. الگوی رایج آن <strong>read-modify-write</strong> یا <strong>check-then-act</strong> غیراتمیک است.</p>
+        <p><strong>مثال:</strong> فروش آخرین بلیت: دو درخواست هم‌زمان <code>stock = 1</code> را می‌خوانند، هر دو شرط <code>stock &gt; 0</code> را برقرار می‌بینند و هر دو سفارش ثبت می‌کنند؛ نتیجه فروش دو بلیت با یک موجودی. حتی با فرایندهای جدای FPM، داده‌ی مشترک دیتابیس باعث این مشکل است.</p>
+        <p><strong>راه‌حل‌ها:</strong></p>
+        <ol>
+          <li><strong>عملیات اتمیک شرطی:</strong> شرط و تغییر در یک دستور SQL.
+            <pre><code class="language-php">&lt;?php
+$ok = Ticket::whereKey($id)-&gt;where('stock', '&gt;', 0)-&gt;decrement('stock');
+if (! $ok) { abort(409, 'Sold out'); }</code></pre></li>
+          <li><strong>Pessimistic lock:</strong> <code>lockForUpdate()</code> داخل <code>DB::transaction</code>؛ درخواست دوم تا commit اولی منتظر می‌ماند و مقدار به‌روز را می‌خواند.</li>
+          <li><strong>Optimistic lock:</strong> ستون <code>version</code> و <code>UPDATE ... WHERE id = ? AND version = ?</code>؛ اگر ردیفی تغییر نکرد یعنی کس دیگری زودتر نوشته و باید retry کرد. برای رقابت کم مناسب است.</li>
+          <li><strong>قفل توزیع‌شده:</strong> <code>Cache::lock('key', 10)</code> روی Redis برای بخش‌های بحرانی غیر دیتابیسی (مثل فراخوانی API پرداخت یک‌باره).</li>
+          <li><strong>Unique constraint:</strong> برای جلوگیری از رکورد تکراری (مثلاً دوبار ثبت یک پرداخت) محدودیت یکتا در دیتابیس آخرین خط دفاع است.</li>
+        </ol>
+        <p><strong>Trade-off:</strong> قفل pessimistic ساده و مطمئن است ولی throughput را کم می‌کند و احتمال deadlock دارد؛ optimistic در رقابت زیاد retry زیادی دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-3">
+      <summary>Deadlock را تعریف کنید، چهار شرط لازم برای وقوع آن را بنویسید و بگویید در یک اپلیکیشن مبتنی بر MySQL چگونه از آن جلوگیری یا آن را مدیریت می‌کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> وضعیتی که مجموعه‌ای از کارها (فرایند، thread یا تراکنش) هر کدام منتظر منبعی هستند که در اختیار دیگری است و هیچ‌کدام نمی‌توانند پیش بروند.</p>
+        <p><strong>شرایط Coffman (هر چهار شرط لازم است):</strong></p>
+        <ol>
+          <li><strong>Mutual exclusion:</strong> منبع انحصاری است.</li>
+          <li><strong>Hold and wait:</strong> نگه داشتن یک منبع و انتظار برای دیگری.</li>
+          <li><strong>No preemption:</strong> منبع را نمی‌توان به زور گرفت.</li>
+          <li><strong>Circular wait:</strong> زنجیره‌ی چرخه‌ای انتظار.</li>
+        </ol>
+        <p><strong>مثال MySQL:</strong> تراکنش ۱ ردیف حساب A را قفل می‌کند و سپس B را می‌خواهد؛ تراکنش ۲ هم‌زمان B را قفل کرده و A را می‌خواهد (انتقال پول دوطرفه).</p>
+        <p><strong>پیشگیری (شکستن یکی از شرط‌ها):</strong></p>
+        <ul>
+          <li><strong>ترتیب ثابت قفل‌ها:</strong> همیشه ردیف‌ها را به ترتیب id صعودی قفل کنید؛ circular wait حذف می‌شود.
+            <pre><code class="language-php">&lt;?php
+DB::transaction(function () use ($fromId, $toId, $amount) {
+    $accounts = Account::whereIn('id', [$fromId, $toId])
+        -&gt;orderBy('id')-&gt;lockForUpdate()-&gt;get()-&gt;keyBy('id');
+    // ...
+}, attempts: 3);</code></pre></li>
+          <li>تراکنش‌های کوتاه؛ بدون فراخوانی API خارجی داخل تراکنش.</li>
+          <li>ایندکس مناسب تا InnoDB ردیف‌های کمتری را قفل کند (بدون ایندکس، قفل‌ها گسترده‌تر می‌شوند).</li>
+        </ul>
+        <p><strong>مدیریت:</strong> InnoDB deadlock را تشخیص می‌دهد و یکی از تراکنش‌ها را rollback می‌کند (خطای 1213)؛ اپلیکیشن باید retry کند (پارامتر <code>attempts</code> در <code>DB::transaction</code>). برای تحلیل از <code>SHOW ENGINE INNODB STATUS</code> (بخش LATEST DETECTED DEADLOCK) استفاده می‌کنم. <code>innodb_lock_wait_timeout</code> هم جلوی انتظار بی‌پایان روی قفل را می‌گیرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-4">
+      <summary>Virtual memory چیست و چه مزایایی دارد؟ Swap و OOM killer را توضیح دهید. اگر MySQL روی سرور شما به‌طور ناگهانی kill شود چگونه علت را بررسی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>Virtual memory:</strong> هر فرایند یک فضای آدرس مجازی اختصاصی می‌بیند که توسط MMU و page table به حافظه‌ی فیزیکی (در صفحات ۴KB) نگاشت می‌شود.</p>
+        <p><strong>مزایا:</strong></p>
+        <ul>
+          <li><strong>ایزولاسیون:</strong> فرایندها حافظه‌ی هم را نمی‌بینند.</li>
+          <li><strong>اشتراک کارآمد:</strong> کتابخانه‌های مشترک یک‌بار در RAM؛ copy-on-write پس از <code>fork</code> (که PHP-FPM از آن سود می‌برد).</li>
+          <li>امکان استفاده از فضای بیشتر از RAM با swap و memory-mapped files.</li>
+        </ul>
+        <p><strong>Swap:</strong> فضای دیسک برای صفحات کم‌استفاده. کمی swap سپر اطمینان است؛ اما swap مداوم (thrashing) چون دیسک بسیار کندتر از RAM است، کارایی را نابود می‌کند. با <code>vmstat 1</code> (ستون‌های si/so) بررسی می‌شود.</p>
+        <p><strong>OOM killer:</strong> وقتی RAM و swap تمام شود، کرنل بر اساس <code>oom_score</code> (عمدتاً حجم حافظه) فرایندی را با SIGKILL می‌کشد؛ اغلب MySQL چون بزرگ‌ترین مصرف‌کننده است.</p>
+        <p><strong>بررسی:</strong></p>
+        <ol>
+          <li><code>dmesg -T | grep -i "killed process"</code> یا <code>journalctl -k</code> برای پیام OOM و نام فرایند.</li>
+          <li><code>free -h</code> و مانیتورینگ تاریخی حافظه برای دیدن الگوی رشد.</li>
+          <li>بررسی مصرف‌کنندگان: <code>ps aux --sort=-rss | head</code>؛ تعداد workerهای FPM × RSS هر کدام، queue workerها، <code>innodb_buffer_pool_size</code>.</li>
+        </ol>
+        <p><strong>راه‌حل:</strong> بودجه‌بندی حافظه (buffer pool + max_children × RSS + سایر سرویس‌ها کمتر از RAM)، کاهش <code>pm.max_children</code>، بازیافت workerها با <code>--max-jobs</code>/<code>--memory</code>، کاهش <code>oom_score_adj</code> برای MySQL، جدا کردن دیتابیس از سرور اپ یا افزایش RAM.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-5">
+      <summary>inode چیست؟ تفاوت hard link و symbolic link را بنویسید. سناریو: df -h نشان می‌دهد دیسک ۴۰٪ خالی است اما اپلیکیشن خطای No space left on device می‌دهد. علت چیست؟</summary>
+      <div class="answer">
+        <p><strong>inode:</strong> ساختار داده‌ای در فایل‌سیستم که متادیتای فایل را نگه می‌دارد: نوع، مالک و گروه، مجوزها، اندازه، زمان‌ها، تعداد hard linkها و اشاره‌گر به بلوک‌های داده. <strong>نام فایل در inode نیست</strong>؛ در ورودی دایرکتوری ذخیره می‌شود که نام را به شماره‌ی inode وصل می‌کند.</p>
+        <p><strong>Hard link:</strong> نام دیگری برای همان inode؛ همه‌ی نام‌ها هم‌ارزند و داده تا وقتی آخرین link حذف نشده (و فایل باز نیست) باقی می‌ماند. بین فایل‌سیستم‌ها و برای دایرکتوری ممکن نیست.</p>
+        <p><strong>Symbolic link:</strong> فایلی جدا با inode خود که مسیر مقصد را نگه می‌دارد؛ می‌تواند به دایرکتوری یا فایل‌سیستم دیگر اشاره کند و با حذف مقصد شکسته می‌شود. نمونه: <code>public/storage</code> با <code>storage:link</code> یا <code>current</code> در deploy.</p>
+        <p><strong>سناریو، علت اول: تمام شدن inodeها.</strong> هر فایل یک inode می‌گیرد و تعداد inodeها هنگام ساخت فایل‌سیستم ext4 ثابت است. میلیون‌ها فایل کوچک (session فایلی، کش فایلی، فایل‌های موقت) inodeها را تمام می‌کنند در حالی که فضای بلوک باقی است.</p>
+        <pre><code class="language-bash">df -i                                   # IUse% نزدیک 100%
+sudo find /var/www -xdev -type f | cut -d/ -f1-5 | sort | uniq -c | sort -rn | head</code></pre>
+        <p>راه‌حل: پاک کردن فایل‌های قدیمی (مثلاً sessionها)، انتقال session و cache به Redis، و job پاک‌سازی دوره‌ای.</p>
+        <p><strong>علت دوم ممکن:</strong> اگر <code>df -h</code> پر باشد اما <code>du</code> حجم کمی نشان دهد، فایل حذف‌شده‌ای هنوز توسط یک فرایند باز است (<code>lsof +L1</code>)؛ با reload/restart آن فرایند فضا آزاد می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-6">
+      <summary>سیستم دسترسی فایل‌ها در لینوکس را توضیح دهید و بگویید دسترسی‌های یک پروژه‌ی Laravel را در production چگونه تنظیم می‌کنید. چرا chmod 777 راه‌حل نیست؟</summary>
+      <div class="answer">
+        <p><strong>مدل دسترسی:</strong> هر فایل مالک و گروه دارد و برای سه دسته (user، group، others) سه بیت <strong>r (4)</strong>، <strong>w (2)</strong> و <strong>x (1)</strong> تعریف می‌شود. روی دایرکتوری، r یعنی لیست کردن، w یعنی ایجاد/حذف فایل و x یعنی ورود. بیت‌های ویژه: setuid، setgid (روی دایرکتوری: ارث بردن گروه)، sticky. umask بیت‌های حذف‌شده از مجوز پیش‌فرض فایل‌های جدید است.</p>
+        <p><strong>تنظیم Laravel:</strong></p>
+        <ul>
+          <li>مالک کد: کاربر <code>deploy</code>؛ گروه: <code>www-data</code> (کاربر PHP-FPM).</li>
+          <li>فایل‌ها <code>644</code>، دایرکتوری‌ها <code>755</code>؛ PHP فقط کد را می‌خواند.</li>
+          <li><code>storage</code> و <code>bootstrap/cache</code> قابل نوشتن برای گروه: دایرکتوری‌ها <code>775</code> و فایل‌ها <code>664</code>، به همراه <code>chmod g+s</code> روی دایرکتوری‌ها تا فایل‌های جدید گروه www-data را بگیرند.</li>
+          <li><code>.env</code> با <code>640</code>.</li>
+          <li>Nginx root فقط روی <code>public/</code>.</li>
+          <li>دستورات artisan را با همان کاربر اجرا کنید (<code>sudo -u www-data</code> یا deploy با umask 002) تا فایل‌هایی با مالک root ساخته نشود.</li>
+        </ul>
+        <pre><code class="language-bash">sudo chown -R deploy:www-data /var/www/app
+sudo chmod -R ug+rwX /var/www/app/storage /var/www/app/bootstrap/cache</code></pre>
+        <p><strong>چرا 777 نه:</strong> هر کاربر و هر فرایند روی سرور می‌تواند فایل‌ها را تغییر دهد؛ اگر مهاجم از طریق یک آسیب‌پذیری (مثلاً آپلود فایل) کد اجرا کند، می‌تواند کد اپ را بازنویسی و backdoor بگذارد. 777 علت مشکل (مالکیت اشتباه) را حل نمی‌کند و اصل least privilege را نقض می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-7">
+      <summary>تفاوت سیگنال‌های SIGTERM، SIGKILL و SIGHUP چیست؟ هنگام deploy، queue workerهای Laravel را چگونه به‌صورت ایمن ری‌استارت می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف سیگنال:</strong> اعلان ناهم‌زمانی که کرنل یا فرایند دیگر به یک فرایند می‌فرستد؛ فرایند می‌تواند برای بیشتر سیگنال‌ها handler تعریف کند.</p>
+        <ul>
+          <li><strong>SIGTERM (15):</strong> درخواست مؤدبانه‌ی خاتمه و پیش‌فرض <code>kill</code> و <code>systemctl stop</code>. قابل catch؛ فرایند می‌تواند کار جاری را تمام کند، اتصال‌ها را ببندد و تمیزکاری کند.</li>
+          <li><strong>SIGKILL (9):</strong> کشتن فوری توسط کرنل؛ قابل catch یا ignore نیست؛ هیچ تمیزکاری انجام نمی‌شود (job نیمه‌کاره، فایل موقت، lock آزادنشده). آخرین راه‌حل.</li>
+          <li><strong>SIGHUP (1):</strong> در اصل قطع ترمینال؛ قراردادی برای daemonها به معنای <strong>بارگذاری مجدد config</strong> بدون قطع سرویس (مثل Nginx).</li>
+        </ul>
+        <p><strong>Restart ایمن workerها:</strong></p>
+        <ol>
+          <li><code>queue:work</code> پروسه‌ی طولانی‌مدت است و کد قدیمی را در حافظه دارد؛ پس بعد از deploy باید ری‌استارت شود.</li>
+          <li><code>php artisan queue:restart</code> یک سیگنال در cache می‌گذارد؛ هر worker پس از اتمام job جاری به‌صورت graceful خارج می‌شود (Horizon: <code>horizon:terminate</code>).</li>
+          <li>Supervisor/systemd با <code>autorestart=true</code> یا <code>Restart=always</code> worker را با کد جدید بالا می‌آورد.</li>
+          <li><code>stopwaitsecs</code>/<code>TimeoutStopSec</code> بیشتر از طولانی‌ترین job، تا مدیر سرویس پس از SIGTERM زودتر از موعد SIGKILL نفرستد. افزونه‌ی <code>pcntl</code> برای مدیریت سیگنال در worker لازم است.</li>
+        </ol>
+        <p>و همچنین jobها idempotent باشند تا اگر در شرایط استثنایی kill شدند، اجرای مجدد آسیبی نزند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-8">
+      <summary>مسیر یک درخواست HTTP از مرورگر تا کد Laravel را روی سروری با Nginx و PHP-FPM شرح دهید. خطاهای 502 و 504 در این معماری معمولاً چه علتی دارند؟</summary>
+      <div class="answer">
+        <p><strong>مسیر:</strong></p>
+        <ol>
+          <li>مرورگر با DNS آدرس IP را پیدا و اتصال TCP و TLS handshake با Nginx روی پورت 443 برقرار می‌کند.</li>
+          <li>Nginx بر اساس <code>server_name</code> بلوک server را انتخاب می‌کند. <code>try_files $uri $uri/ /index.php?$query_string</code>: اگر فایل ثابت در <code>public/</code> وجود داشت مستقیم سرو می‌شود؛ در غیر این صورت به <code>index.php</code> می‌رود.</li>
+          <li>بلوک <code>location ~ \.php</code> درخواست را با پروتکل <strong>FastCGI</strong> از طریق Unix socket (یا TCP) به PHP-FPM می‌فرستد؛ <code>SCRIPT_FILENAME</code> مسیر اسکریپت را مشخص می‌کند.</li>
+          <li>PHP-FPM master درخواست را به یک worker آزاد می‌دهد (اگر آزاد نباشد، در صف می‌ماند).</li>
+          <li>worker فایل <code>public/index.php</code> را اجرا می‌کند (با OPcache): autoload، bootstrap اپ، Kernel، middlewareها، router، controller، دیتابیس و Redis، ساخت پاسخ.</li>
+          <li>پاسخ از FastCGI به Nginx برمی‌گردد و Nginx (با فشرده‌سازی) آن را به کاربر می‌فرستد.</li>
+        </ol>
+        <p><strong>502 Bad Gateway:</strong> Nginx نتوانسته پاسخ معتبری از upstream بگیرد: PHP-FPM اجرا نمی‌شود، مسیر سوکت در <code>fastcgi_pass</code> با <code>listen</code> در pool یکی نیست (مثلاً بعد از ارتقای نسخه‌ی PHP)، مجوز سوکت برای www-data نیست، یا worker حین پردازش کرش کرده (segfault). بررسی: <code>systemctl status php8.3-fpm</code>، error log Nginx و لاگ FPM.</p>
+        <p><strong>504 Gateway Timeout:</strong> FPM پاسخ را در زمان <code>fastcgi_read_timeout</code> نداده: کوئری کند، API خارجی بدون timeout، lock دیتابیس یا پر بودن همه‌ی workerها (<code>max_children reached</code>). راه‌حل اصلی رفع کندی یا انتقال کار به صف است، نه صرفاً افزایش timeout.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-9">
+      <summary>یک سرور Ubuntu تازه برای اجرای اپلیکیشن Laravel تحویل گرفته‌اید. برای امن‌سازی اولیه‌ی آن (SSH، فایروال، کاربران) چه اقداماتی انجام می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>۱. به‌روزرسانی:</strong> <code>apt update &amp;&amp; apt upgrade</code> و فعال کردن <code>unattended-upgrades</code> برای patchهای امنیتی.</p>
+        <p><strong>۲. کاربران:</strong> ساخت کاربر غیر root (<code>adduser deploy</code>)، افزودن به گروه sudo فقط در صورت نیاز، و برای کاربر deploy دسترسی sudo محدود (فقط reload سرویس‌های خاص) با <code>visudo</code>.</p>
+        <p><strong>۳. SSH:</strong></p>
+        <ul>
+          <li>کلید ed25519 با <code>ssh-keygen</code> و <code>ssh-copy-id</code>.</li>
+          <li>در <code>sshd_config</code>: <code>PermitRootLogin no</code>، <code>PasswordAuthentication no</code>، <code>AllowUsers deploy</code>.</li>
+          <li><code>sshd -t</code> و reload، در حالی که نشست فعلی باز است و از ترمینال دوم تست می‌کنم تا قفل بیرون نمانم.</li>
+          <li>fail2ban برای مسدود کردن brute-force.</li>
+        </ul>
+        <p><strong>۴. فایروال (ufw):</strong></p>
+        <pre><code class="language-bash">ufw default deny incoming
+ufw allow OpenSSH
+ufw allow 80,443/tcp
+ufw enable</code></pre>
+        <p>MySQL و Redis فقط روی <code>127.0.0.1</code> یا شبکه‌ی خصوصی bind شوند؛ Redis با رمز. اگر Docker استفاده می‌شود، مراقب دور زدن ufw توسط پورت‌های publish‌شده هستم.</p>
+        <p><strong>۵. سرویس‌ها:</strong> Nginx با root روی <code>public/</code>، مسدود کردن dotfileها، HTTPS با certbot، HSTS؛ PHP-FPM با کاربر www-data؛ <code>expose_php=Off</code>؛ <code>APP_DEBUG=false</code>.</p>
+        <p><strong>۶. فایل‌ها:</strong> مالکیت deploy:www-data، 644/755، فقط <code>storage</code> و <code>bootstrap/cache</code> قابل نوشتن، <code>.env</code> با 640.</p>
+        <p><strong>۷. پایش:</strong> لاگ‌ها (journald، auth.log)، مانیتورینگ منابع و uptime، بکاپ خارج از سرور.</p>
+        <p>بهتر است همه‌ی این مراحل با Ansible کدنویسی شوند تا برای سرورهای بعدی تکرارپذیر باشند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-10">
+      <summary>Virtual Machine و Container را از نظر معماری، ایزولاسیون، کارایی و کاربرد مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>VM:</strong> hypervisor (KVM، VMware، Hyper-V) سخت‌افزار را مجازی می‌کند و هر VM یک <strong>سیستم‌عامل کامل با کرنل خودش</strong> دارد.</p>
+        <p><strong>Container:</strong> فرایندهای ایزوله روی <strong>کرنل مشترک میزبان</strong>؛ ایزولاسیون با <strong>namespaces</strong> (PID، network، mount، user، UTS) و محدودیت منابع با <strong>cgroups</strong>. Image لایه‌لایه و تغییرناپذیر است.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>محور</th><th>VM</th><th>Container</th></tr></thead>
+          <tbody>
+            <tr><td>ایزولاسیون</td><td>قوی (مرز سخت‌افزاری مجازی)</td><td>ضعیف‌تر (کرنل مشترک؛ آسیب‌پذیری کرنل همه را تهدید می‌کند)</td></tr>
+            <tr><td>حجم</td><td>گیگابایت</td><td>مگابایت</td></tr>
+            <tr><td>زمان شروع</td><td>ده‌ها ثانیه تا دقیقه</td><td>ثانیه یا کمتر</td></tr>
+            <tr><td>سربار</td><td>OS کامل برای هر VM</td><td>نزدیک به اجرای native</td></tr>
+            <tr><td>OS متفاوت</td><td>ممکن</td><td>باید با کرنل میزبان سازگار باشد</td></tr>
+            <tr><td>تراکم</td><td>چند ده VM روی یک میزبان</td><td>صدها کانتینر</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>کاربرد:</strong> VM برای جداسازی قوی (multi-tenant، مشتریان مختلف)، اجرای OS متفاوت و زیرساخت پایه‌ی ابر. Container برای بسته‌بندی اپ با وابستگی‌ها، محیط یکسان dev تا prod، CI/CD، microservices و scale سریع با orchestrator مثل Kubernetes.</p>
+        <p><strong>نکته:</strong> این دو مکمل‌اند؛ در ابر معمولاً کانتینرها روی VMها اجرا می‌شوند. کانتینرها stateless طراحی می‌شوند و داده‌ی پایدار (دیتابیس، آپلود) در volume یا سرویس مدیریت‌شده قرار می‌گیرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-11">
+      <summary>مدل‌های IaaS، PaaS، SaaS و Serverless را تعریف و مقایسه کنید. برای یک استارتاپ با تیم کوچک که اپلیکیشن Laravel دارد کدام را پیشنهاد می‌کنید و چرا؟</summary>
+      <div class="answer">
+        <p><strong>تعاریف (بر اساس مرز مسئولیت):</strong></p>
+        <ul>
+          <li><strong>IaaS:</strong> ارائه‌دهنده سخت‌افزار، شبکه و مجازی‌سازی را می‌دهد؛ شما OS، patch، runtime، وب‌سرور و اپ را مدیریت می‌کنید. نمونه: EC2، Droplet. بیشترین کنترل و بیشترین بار عملیاتی.</li>
+          <li><strong>PaaS:</strong> شما فقط کد و config را تحویل می‌دهید؛ پلتفرم OS، runtime، scale و deploy را مدیریت می‌کند. نمونه: Heroku، Elastic Beanstalk.</li>
+          <li><strong>SaaS:</strong> نرم‌افزار آماده که فقط استفاده می‌شود (Gmail، Jira). برای بخش‌های جانبی (ایمیل تراکنشی، مانیتورینگ خطا) مناسب است.</li>
+          <li><strong>Serverless/FaaS:</strong> کد به‌صورت تابع در پاسخ به رویداد اجرا می‌شود، scale خودکار تا صفر و پرداخت به ازای اجرا (Lambda؛ برای Laravel: Vapor یا Bref). معایب: cold start، محدودیت زمان اجرا، vendor lock-in و محدودیت‌های فایل‌سیستم محلی.</li>
+        </ul>
+        <p><strong>Trade-off کلی:</strong> از IaaS به SaaS، کنترل و انعطاف کاهش و سرعت توسعه و سادگی عملیات افزایش می‌یابد؛ هزینه‌ی مستقیم معمولاً در PaaS بیشتر و هزینه‌ی نیروی انسانی کمتر است.</p>
+        <p><strong>پیشنهاد برای تیم کوچک:</strong> PaaS یا یک پلتفرم مدیریت‌شده‌ی مخصوص Laravel روی IaaS (ابزارهایی که سرور را provision و deploy را خودکار می‌کنند)، به همراه سرویس‌های مدیریت‌شده برای دیتابیس (RDS یا معادل) و Redis. دلایل:</p>
+        <ul>
+          <li>تیم کوچک باید روی محصول تمرکز کند نه patch سیستم‌عامل و تنظیم بکاپ.</li>
+          <li>بکاپ، failover و به‌روزرسانی دیتابیس توسط ارائه‌دهنده انجام می‌شود.</li>
+          <li>اگر ترافیک بسیار نامنظم است، serverless هم گزینه است، به شرط سازگاری کد (stateless، بدون نوشتن روی دیسک محلی).</li>
+        </ul>
+        <p>با رشد و نیاز به کنترل یا کاهش هزینه، می‌توان با IaC به IaaS یا Kubernetes مهاجرت کرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-12">
+      <summary>Infrastructure as Code چیست و چه مزایایی دارد؟ نقش Terraform و Ansible را مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> مدیریت و provisioning زیرساخت از طریق فایل‌های تعریف قابل‌خواندن توسط ماشین که در git نگهداری می‌شوند، به جای پیکربندی دستی در کنسول یا SSH.</p>
+        <p><strong>مزایا:</strong></p>
+        <ul>
+          <li><strong>تکرارپذیری:</strong> ساخت محیط staging یا region جدید با همان کد؛ parity بین محیط‌ها.</li>
+          <li><strong>نسخه‌گذاری و code review:</strong> هر تغییر قابل بازبینی، ردیابی و rollback است.</li>
+          <li><strong>حذف configuration drift و «snowflake server»</strong>: سرورهایی که با تغییرات دستی منحصربه‌فرد شده‌اند و کسی نمی‌داند چگونه بازسازی‌شان کند.</li>
+          <li><strong>بازیابی سریع</strong> در فاجعه (کاهش RTO) و مستندسازی زنده.</li>
+          <li>خودکارسازی در CI/CD.</li>
+        </ul>
+        <p><strong>Terraform:</strong> ابزار <strong>provisioning</strong>؛ منابع زیرساخت (VM، شبکه، LB، دیتابیس مدیریت‌شده، DNS) را با زبان declarative (HCL) تعریف می‌کند. <strong>State file</strong> نگاشت به منابع واقعی را نگه می‌دارد؛ <code>terraform plan</code> تفاوت وضعیت مطلوب و فعلی را نشان می‌دهد و <code>apply</code> اعمال می‌کند. چندابری با provider.</p>
+        <p><strong>Ansible:</strong> ابزار <strong>configuration management</strong>؛ داخل سرورهای موجود بسته نصب، فایل config قرار، سرویس مدیریت و اپ deploy می‌کند. <strong>Agentless</strong> روی SSH، playbookهای YAML، ماژول‌های <strong>idempotent</strong>.</p>
+        <p><strong>ترکیب رایج:</strong> Terraform سرورها و شبکه را می‌سازد، Ansible آن‌ها را پیکربندی می‌کند؛ یا در مدل immutable، image با Docker/Packer ساخته و Terraform آن را مستقر می‌کند.</p>
+        <p><strong>نکات:</strong> state فایل Terraform حاوی اطلاعات حساس است و باید remote، رمزنگاری‌شده و با lock نگهداری شود؛ secrets در کد قرار نگیرند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-13">
+      <summary>RPO و RTO را تعریف کنید. یک استراتژی بکاپ و Disaster Recovery برای اپلیکیشن Laravel با دیتابیس MySQL طراحی کنید.</summary>
+      <div class="answer">
+        <p><strong>RPO (Recovery Point Objective):</strong> حداکثر داده‌ای که از دست دادنش قابل قبول است، بر حسب زمان. RPO پنج دقیقه یعنی در بدترین حالت فقط داده‌ی پنج دقیقه‌ی آخر از دست برود. تناوب بکاپ/replication را تعیین می‌کند.</p>
+        <p><strong>RTO (Recovery Time Objective):</strong> حداکثر زمان قابل قبول قطعی تا بازگشت سرویس. میزان خودکارسازی و آماده بودن زیرساخت جایگزین را تعیین می‌کند.</p>
+        <p><strong>استراتژی (فرض: RPO پانزده دقیقه، RTO یک ساعت):</strong></p>
+        <ul>
+          <li><strong>دیتابیس:</strong> بکاپ کامل روزانه (<code>mysqldump --single-transaction</code> یا XtraBackup برای حجم بزرگ) + فعال بودن <strong>binary log</strong> و آرشیو آن هر چند دقیقه برای point-in-time recovery. یک replica برای failover سریع.</li>
+          <li><strong>فایل‌ها:</strong> آپلودها در object storage با versioning، یا sync دوره‌ای <code>storage/app</code>.</li>
+          <li><strong>Config و secrets:</strong> <code>.env</code> در secret manager؛ زیرساخت با IaC تا سرور جدید سریع ساخته شود.</li>
+          <li><strong>قاعده‌ی 3-2-1:</strong> نسخه‌ی خارج از سایت در region یا ارائه‌دهنده‌ی دیگر، رمزنگاری‌شده، با دسترسی محدود و ترجیحاً immutable (مقاوم در برابر ransomware یا حذف تصادفی).</li>
+          <li><strong>Retention:</strong> مثلاً ۷ روزانه، ۴ هفتگی، ۱۲ ماهانه؛ مطابق الزامات قانونی.</li>
+          <li><strong>تست restore:</strong> بازیابی ماهانه روی محیط جدا، بررسی یکپارچگی داده و اندازه‌گیری زمان (مقایسه با RTO).</li>
+          <li><strong>Runbook:</strong> مستند گام‌به‌گام بازیابی و مسئولان؛ مانیتورینگ و هشدار برای شکست بکاپ.</li>
+        </ul>
+        <p><strong>نکته‌ی کلیدی:</strong> replication جایگزین بکاپ نیست؛ <code>DROP TABLE</code> اشتباه فوراً روی replica هم اجرا می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-14">
+      <summary>سناریو: سرور production کند شده و کاربران از timeout شکایت دارند. با چه دستورات و ترتیبی مشکل را عیب‌یابی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>رویکرد:</strong> از کلی به جزئی؛ اول منبع محدودکننده (CPU، حافظه، دیسک، شبکه، وابستگی خارجی) را پیدا می‌کنم.</p>
+        <ol>
+          <li><strong>تصویر کلی:</strong> <code>uptime</code> (مقایسه‌ی load با <code>nproc</code>)، <code>top</code>/<code>htop</code>: کدام فرایند CPU یا RAM را گرفته؟ درصد <code>wa</code> (انتظار I/O) بالاست؟</li>
+          <li><strong>حافظه:</strong> <code>free -h</code> (available)، <code>vmstat 1</code> (swap si/so)، <code>dmesg -T | grep -i oom</code>.</li>
+          <li><strong>دیسک:</strong> <code>df -h</code> و <code>df -i</code> (پر بودن دیسک باعث شکست نوشتن لاگ و session می‌شود)، <code>iostat -x 1</code>.</li>
+          <li><strong>سرویس‌ها:</strong> <code>systemctl --failed</code>، <code>systemctl status php8.3-fpm nginx mysql</code>، <code>journalctl -u php8.3-fpm --since "30 min ago"</code>.</li>
+          <li><strong>PHP-FPM:</strong> لاگ برای <code>max_children reached</code>، slowlog برای stack trace درخواست‌های کند، صفحه‌ی status (listen queue).</li>
+          <li><strong>شبکه و اتصال‌ها:</strong> <code>ss -s</code> و <code>ss -tanp</code> (تعداد اتصال‌ها، TIME_WAIT زیاد، اتصال‌های معلق به سرویس خارجی).</li>
+          <li><strong>لاگ‌ها:</strong> error log Nginx (502/504)، <code>storage/logs/laravel.log</code>؛ مقایسه‌ی زمان شروع مشکل با آخرین deploy.</li>
+          <li><strong>دیتابیس:</strong> <code>SHOW PROCESSLIST</code> (کوئری‌های طولانی، قفل‌ها)، slow query log.</li>
+          <li><strong>فرایند مشکوک:</strong> <code>strace -p PID</code> یا <code>lsof -p PID</code> برای دیدن اینکه worker منتظر چیست.</li>
+        </ol>
+        <p><strong>اقدام:</strong> کاهش فوری اثر (rollback deploy اخیر، kill کوئری قفل‌کننده، افزایش موقت منابع، غیرفعال کردن قابلیت سنگین) و سپس رفع ریشه‌ای و postmortem. در ادامه هشدارهای مانیتورینگ را طوری تنظیم می‌کنم که دفعه‌ی بعد قبل از کاربران مطلع شویم.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-os-infrastructure-15">
+      <summary>Load balancer چیست و چه الگوریتم‌هایی دارد؟ برای اینکه یک اپلیکیشن Laravel بتواند پشت load balancer روی چند سرور اجرا شود چه تغییراتی لازم است؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> جزئی که ترافیک ورودی را بین چند سرور backend توزیع می‌کند تا ظرفیت (scale افقی) و دسترس‌پذیری بالا برود؛ سرورهای ناسالم با health check از چرخه خارج می‌شوند. نوعی reverse proxy است. <strong>L4</strong> در سطح TCP/UDP و <strong>L7</strong> در سطح HTTP (مسیریابی بر اساس مسیر، header یا cookie) کار می‌کند.</p>
+        <p><strong>الگوریتم‌ها:</strong> Round robin (نوبتی، با وزن)، Least connections (برای درخواست‌هایی با زمان متغیر)، IP hash (چسبندگی کلاینت به یک سرور)، و در برخی LBها least response time.</p>
+        <p><strong>تغییرات لازم در Laravel (stateless کردن):</strong></p>
+        <ul>
+          <li><strong>Session:</strong> driver از <code>file</code> به <code>redis</code> یا <code>database</code>؛ وگرنه کاربر با رفتن به سرور دیگر logout می‌شود (یا نیاز به sticky session که توزیع را ناهموار می‌کند).</li>
+          <li><strong>Cache و lockها:</strong> Redis مشترک تا <code>Cache::lock</code> و rate limiting بین سرورها معتبر باشد.</li>
+          <li><strong>فایل‌ها:</strong> آپلودها روی دیسک مشترک یا object storage (S3) با Laravel Filesystem.</li>
+          <li><strong>Queue:</strong> Redis/SQS/database مشترک؛ workerها روی هر سرور یا سرورهای مجزا.</li>
+          <li><strong>Scheduler:</strong> تسک‌ها با <code>onOneServer()</code> تا روی همه‌ی سرورها تکرار نشوند.</li>
+          <li><strong>Trusted proxies:</strong> تنظیم <code>trustProxies</code> تا IP واقعی کاربر و HTTPS از <code>X-Forwarded-*</code> تشخیص داده شود.</li>
+          <li><strong>APP_KEY یکسان</strong> روی همه‌ی سرورها (برای cookieها و داده‌ی رمزشده) و deploy هم‌زمان نسخه‌ی یکسان.</li>
+          <li>Health check endpoint (<code>/up</code>) و لاگ متمرکز (چون لاگ‌ها روی چند سرور پخش‌اند).</li>
+        </ul>
+        <p>خود load balancer هم نباید SPOF باشد: LB مدیریت‌شده‌ی ابری یا جفت LB با IP شناور.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>سیستم‌عامل</h4>
+      <ul>
+        <li>Kernel space: سخت‌افزار و دسترسی کامل؛ User space: ایزوله؛ ارتباط با syscall.</li>
+        <li>Process: حافظه‌ی ایزوله؛ Thread: حافظه‌ی مشترک، stack جدا؛ Coroutine: user space، cooperative.</li>
+        <li>حالت‌ها: New، Ready، Running، Waiting، Terminated؛ ps: R، S، D، T، Z.</li>
+        <li>Zombie: تمام‌شده، wait نشده؛ Orphan: والد مرده → PID 1.</li>
+        <li>Context switch: ذخیره/بارگذاری وضعیت؛ سربار + از دست رفتن cache.</li>
+        <li>Load average را با <code>nproc</code> مقایسه کن.</li>
+      </ul>
+      <h4>هم‌روندی</h4>
+      <ul>
+        <li>Concurrency = مدیریت چند کار؛ Parallelism = اجرای هم‌زمان واقعی.</li>
+        <li>Race: read-modify-write غیراتمیک → UPDATE شرطی، <code>lockForUpdate</code>، optimistic version، <code>Cache::lock</code>.</li>
+        <li>Mutex: یک صاحب؛ Semaphore: N مجوز.</li>
+        <li>Deadlock (Coffman): mutual exclusion، hold &amp; wait، no preemption، circular wait → ترتیب ثابت قفل، تراکنش کوتاه، retry.</li>
+      </ul>
+      <h4>حافظه و فایل</h4>
+      <ul>
+        <li>Virtual memory: page table، MMU، TLB؛ page fault minor/major.</li>
+        <li>Swap مداوم = thrashing؛ <code>vmstat</code> si/so.</li>
+        <li>OOM killer: SIGKILL بر اساس oom_score → <code>dmesg</code>.</li>
+        <li>free: ستون available؛ RSS واقعی، VSZ مجازی.</li>
+        <li>inode: متادیتا بدون نام؛ <code>df -i</code>.</li>
+        <li>Hard link: همان inode؛ Symlink: مسیر.</li>
+        <li>FD: 0 stdin، 1 stdout، 2 stderr؛ <code>ulimit -n</code>، <code>LimitNOFILE</code>.</li>
+        <li>حذف‌شده ولی باز: <code>lsof +L1</code>.</li>
+      </ul>
+      <h4>دسترسی</h4>
+      <ul>
+        <li>r=4، w=2، x=1؛ 755، 644، 640، 600.</li>
+        <li>setuid 4، setgid 2 (دایرکتوری: ارث گروه)، sticky 1 (/tmp).</li>
+        <li>umask 022 → 644/755؛ 002 → 664/775.</li>
+        <li>Laravel: deploy:www-data، storage و bootstrap/cache قابل نوشتن گروه؛ هرگز 777.</li>
+        <li><code>usermod -aG</code>؛ <code>visudo</code>؛ sudo محدود.</li>
+      </ul>
+      <h4>دستورات و سیگنال</h4>
+      <ul>
+        <li><code>ps aux</code>، <code>top</code>، <code>free -h</code>، <code>df -h/-i</code>، <code>du -sh</code>، <code>lsof -i :80</code>، <code>ss -tulpn</code>.</li>
+        <li><code>journalctl -u x -f</code>، <code>systemctl status/reload/enable --now</code>.</li>
+        <li>SIGTERM 15 مؤدبانه؛ SIGKILL 9 غیرقابل catch؛ SIGHUP 1 reload؛ SIGINT 2 Ctrl+C.</li>
+        <li>FPM: USR2 reload؛ Nginx: HUP reload، QUIT graceful.</li>
+      </ul>
+      <h4>سرویس‌ها</h4>
+      <ul>
+        <li>systemd unit: <code>Restart=always</code>، <code>TimeoutStopSec</code>؛ <code>daemon-reload</code>.</li>
+        <li>Supervisor: <code>numprocs</code>، <code>stopwaitsecs</code> &gt; طولانی‌ترین job؛ reread/update.</li>
+        <li>Deploy: <code>queue:restart</code>؛ cron هر دقیقه <code>schedule:run</code>.</li>
+      </ul>
+      <h4>شبکه و وب</h4>
+      <ul>
+        <li>ufw: deny incoming، allow OpenSSH قبل از enable، 80/443.</li>
+        <li>Docker می‌تواند ufw را دور بزند.</li>
+        <li>SSH: ed25519، no root، no password، fail2ban، <code>sshd -t</code>.</li>
+        <li>Nginx → FastCGI → FPM؛ root = public؛ <code>$realpath_root</code>.</li>
+        <li>502: FPM در دسترس نیست/سوکت؛ 504: FPM کند.</li>
+        <li>LB: round robin، least_conn، ip_hash؛ L4 در برابر L7؛ اپ stateless.</li>
+        <li>TLS: محرمانگی، یکپارچگی، احراز هویت؛ Let's Encrypt با ACME، ۹۰ روز، HTTP-01/DNS-01 (wildcard).</li>
+      </ul>
+      <h4>زیرساخت</h4>
+      <ul>
+        <li>dev / CI / staging (مشابه prod) / production.</li>
+        <li>VM: کرنل جدا، hypervisor؛ Container: namespaces + cgroups، کرنل مشترک.</li>
+        <li>IaaS → PaaS → SaaS: کنترل کمتر، بار عملیاتی کمتر؛ Serverless: cold start، lock-in.</li>
+        <li>Terraform: provisioning، declarative، state، plan/apply؛ Ansible: config، agentless SSH، idempotent.</li>
+        <li>HA: حذف SPOF، redundancy، replication، health check؛ 99.9% ≈ ۸.۷۶ ساعت/سال.</li>
+        <li>RPO: داده‌ی از دست رفته؛ RTO: زمان قطعی؛ 3-2-1؛ restore را تست کن؛ replication ≠ backup.</li>
+        <li>Deploy: <code>APP_DEBUG=false</code>، <code>--no-dev -o</code>، <code>migrate --force</code>، <code>optimize</code>، reload FPM، <code>queue:restart</code>.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

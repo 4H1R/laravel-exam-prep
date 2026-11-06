@@ -1,0 +1,1609 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Algorithms &amp; Problem-Solving — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="algorithms">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Algorithms &amp; Problem-Solving</h1>
+    <p class="lead">فرایند حل مسئله و تحلیل Big-O، همراه با الگوهای پرکاربرد (Hash Map، Two Pointers، Sliding Window، Prefix Sum، Stack، Binary Search)، مرتب‌سازی، درخت، Heap، گراف، Greedy و برنامه‌نویسی پویا؛ همه با پیاده‌سازی PHP و مسائل کلاسیک مصاحبه‌ای.</p>
+  </header>
+
+  <!-- ===================== 1 ===================== -->
+  <section class="lesson" id="problem-solving" data-title="فرایند حل مسئله">
+    <h2>فرایند حل مسئله</h2>
+    <p>در آزمون تشریحی یا مصاحبه، <strong>فرایند فکر کردن</strong> به اندازه‌ی جواب نهایی نمره دارد. یک چارچوب شش‌مرحله‌ای:</p>
+    <ol>
+      <li><strong>درک مسئله:</strong> ورودی و خروجی دقیقاً چیست؟ محدودیت‌ها (اندازه‌ی n، بازه‌ی مقادیر، منفی/تکراری، مرتب بودن)؟ سوال را با کلمات خودتان بازنویسی کنید.</li>
+      <li><strong>مثال‌ها:</strong> یک مثال عادی، یک مثال کوچک و حالت‌های مرزی (آرایه‌ی خالی، یک عنصر، همه یکسان، اعداد منفی، خیلی بزرگ).</li>
+      <li><strong>راه‌حل Brute Force:</strong> ساده‌ترین راه درست را بگویید و پیچیدگی‌اش را تحلیل کنید. این نقطه‌ی شروع مطمئن است.</li>
+      <li><strong>بهینه‌سازی:</strong> گلوگاه کجاست؟ کار تکراری؟ آیا ساختار داده‌ای (hash map، heap) یا الگویی (two pointers، sorting، binary search، DP) کمک می‌کند؟ معاوضه‌ی حافظه با زمان.</li>
+      <li><strong>پیاده‌سازی:</strong> کد تمیز با نام‌گذاری روشن، توابع کمکی، و رسیدگی به حالت‌های مرزی.</li>
+      <li><strong>تست و تحلیل:</strong> کد را روی مثال‌ها دستی اجرا کنید (dry run)، حالت‌های مرزی را چک کنید و پیچیدگی زمانی و حافظه‌ی نهایی را بیان کنید.</li>
+    </ol>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>نشانه در صورت مسئله</th><th>الگوی احتمالی</th></tr></thead>
+      <tbody>
+        <tr><td>«آیا وجود دارد؟»، «تکراری»، «جفت با مجموع X»</td><td>Hash Set / Hash Map</td></tr>
+        <tr><td>آرایه‌ی مرتب، جفت/سه‌تایی</td><td>Two Pointers، Binary Search</td></tr>
+        <tr><td>«زیررشته/زیرآرایه‌ی پیوسته‌ی بهینه»</td><td>Sliding Window، Prefix Sum، Kadane</td></tr>
+        <tr><td>جمع بازه‌ها به‌دفعات</td><td>Prefix Sum</td></tr>
+        <tr><td>پرانتز، undo، «بزرگ‌تر بعدی»</td><td>Stack / Monotonic Stack</td></tr>
+        <tr><td>k تای بزرگ‌تر/کوچک‌تر، ادغام k لیست</td><td>Heap</td></tr>
+        <tr><td>کوتاه‌ترین مسیر در گراف بی‌وزن، سطح به سطح</td><td>BFS</td></tr>
+        <tr><td>همه‌ی حالت‌ها/ترکیب‌ها</td><td>Backtracking (DFS)</td></tr>
+        <tr><td>«حداقل/حداکثر تعداد راه‌ها»، زیرمسئله‌های هم‌پوشان</td><td>Dynamic Programming</td></tr>
+        <tr><td>«حداقل مقداری که شرط برقرار شود» با شرط یکنوا</td><td>Binary Search on Answer</td></tr>
+        <tr><td>وابستگی بین کارها</td><td>Topological Sort</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p>در پاسخ کتبی، ساختار ثابت داشته باشید: <strong>ایده</strong> (یک یا دو جمله) ← <strong>الگوریتم</strong> (گام‌ها) ← <strong>کد</strong> ← <strong>پیچیدگی زمانی و حافظه</strong> ← <strong>حالت‌های مرزی</strong>. حتی اگر کد کامل نشد، ایده و تحلیل درست نمره می‌گیرد.</p></div>
+  </section>
+
+  <!-- ===================== 2 ===================== -->
+  <section class="lesson" id="big-o" data-title="Big-O: پیچیدگی زمانی و حافظه">
+    <h2>Big-O: پیچیدگی زمانی و حافظه</h2>
+    <p><strong>Big-O</strong> نرخ رشد هزینه‌ی الگوریتم (زمان یا حافظه) را نسبت به اندازه‌ی ورودی <code>n</code> در <strong>بدترین حالت</strong> و برای n بزرگ توصیف می‌کند. ضرایب ثابت و جملات کم‌اهمیت حذف می‌شوند: <code>3n² + 5n + 7 = O(n²)</code>.</p>
+    <dl class="terms">
+      <dt>O (Big-O)</dt><dd>کران بالا: رشد حداکثر به این سرعت.</dd>
+      <dt>Ω (Omega)</dt><dd>کران پایین.</dd>
+      <dt>Θ (Theta)</dt><dd>کران دقیق (هم بالا هم پایین).</dd>
+      <dt>Best / Average / Worst</dt><dd>مثلاً Quick Sort: میانگین <code>O(n log n)</code>، بدترین <code>O(n²)</code>.</dd>
+      <dt>Space Complexity</dt><dd>حافظه‌ی <strong>اضافی</strong> مصرفی (auxiliary)، شامل پشته‌ی فراخوانی بازگشتی.</dd>
+      <dt>Amortized</dt><dd>هزینه‌ی میانگین هر عملیات در یک دنباله‌ی طولانی، حتی اگر گاهی یک عملیات گران باشد.</dd>
+    </dl>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>پیچیدگی</th><th>نام</th><th>مثال</th><th>n = 10⁶ تقریباً</th></tr></thead>
+      <tbody>
+        <tr><td><code>O(1)</code></td><td>ثابت</td><td>دسترسی به آرایه با اندیس، lookup در hash map</td><td>۱</td></tr>
+        <tr><td><code>O(log n)</code></td><td>لگاریتمی</td><td>Binary search، عملیات heap، درخت متوازن</td><td>۲۰</td></tr>
+        <tr><td><code>O(n)</code></td><td>خطی</td><td>پیمایش آرایه، جست‌وجوی خطی</td><td>۱۰⁶</td></tr>
+        <tr><td><code>O(n log n)</code></td><td>خطی-لگاریتمی</td><td>Merge sort، Heap sort، مرتب‌سازی‌های مقایسه‌ای بهینه</td><td>۲×۱۰⁷</td></tr>
+        <tr><td><code>O(n²)</code></td><td>درجه‌ی دو</td><td>دو حلقه‌ی تودرتو، bubble sort</td><td>۱۰¹² ✗</td></tr>
+        <tr><td><code>O(2ⁿ)</code></td><td>نمایی</td><td>همه‌ی زیرمجموعه‌ها، فیبوناچی بازگشتی ساده</td><td>غیرممکن</td></tr>
+        <tr><td><code>O(n!)</code></td><td>فاکتوریل</td><td>همه‌ی جایگشت‌ها</td><td>غیرممکن</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>قواعد محاسبه</h3>
+    <ul>
+      <li>حلقه‌های <strong>پشت سر هم</strong> جمع می‌شوند: <code>O(n) + O(m) = O(n + m)</code>.</li>
+      <li>حلقه‌های <strong>تودرتو</strong> ضرب می‌شوند: <code>O(n × m)</code>.</li>
+      <li>نصف کردن مداوم فضای مسئله ⇒ <code>log n</code>.</li>
+      <li>بازگشت با دو شاخه و عمق n ⇒ حدود <code>O(2ⁿ)</code>؛ تقسیم به دو نیمه + کار خطی در هر سطح ⇒ <code>O(n log n)</code> (Master Theorem).</li>
+      <li>ورودی‌های مستقل را با متغیرهای جدا بنویسید (<code>O(V + E)</code>، <code>O(m × n)</code>).</li>
+    </ul>
+
+    <pre><code class="language-php">&lt;?php
+// O(n²) — همه‌ی جفت‌ها
+for ($i = 0; $i &lt; $n; $i++) {
+    for ($j = $i + 1; $j &lt; $n; $j++) { /* ... */ }      // n(n-1)/2 بار
+}
+
+// O(log n) — نصف کردن
+for ($i = $n; $i &gt; 1; $i = intdiv($i, 2)) { /* ... */ }
+
+// O(n log n) — حلقه‌ی خطی که درونش کار لگاریتمی است
+foreach ($items as $x) { $heap-&gt;insert($x); }</code></pre>
+
+    <h3>هزینه‌ی پنهان توابع PHP</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عملیات</th><th>پیچیدگی</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td><code>$a[$k]</code>، <code>isset($a[$k])</code>، <code>array_key_exists</code></td><td><code>O(1)</code> میانگین</td><td>آرایه‌ی PHP یک ordered hash map است</td></tr>
+        <tr><td><code>in_array</code>، <code>array_search</code></td><td><code>O(n)</code></td><td>جست‌وجوی خطی! در حلقه ⇒ <code>O(n²)</code></td></tr>
+        <tr><td><code>$a[] = $x</code>، <code>array_pop</code></td><td><code>O(1)</code> amortized</td><td>مناسب stack</td></tr>
+        <tr><td><code>array_shift</code>، <code>array_unshift</code></td><td><code>O(n)</code></td><td>اندیس‌ها بازشماری می‌شوند؛ برای صف از <code>SplQueue</code> استفاده کنید</td></tr>
+        <tr><td><code>sort</code>، <code>usort</code></td><td><code>O(n log n)</code></td><td>از PHP 8.0 مرتب‌سازی پایدار (stable) است</td></tr>
+        <tr><td><code>array_merge</code>، <code>array_slice</code></td><td><code>O(n)</code></td><td>کپی می‌کنند؛ در حلقه گران‌اند</td></tr>
+        <tr><td><code>strlen</code></td><td><code>O(1)</code></td><td>طول ذخیره شده است</td></tr>
+        <tr><td>الحاق رشته با <code>.=</code> در حلقه</td><td>معمولاً amortized خوب</td><td>برای تعداد خیلی زیاد، <code>implode</code> روی آرایه خواناتر است</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ===================== 3 ===================== -->
+  <section class="lesson" id="arrays-hashing" data-title="آرایه، رشته و Hash Map">
+    <h2>آرایه، رشته و Hash Map</h2>
+    <h3>آرایه</h3>
+    <ul>
+      <li>آرایه‌ی کلاسیک: بلوک پیوسته‌ی حافظه؛ دسترسی با اندیس <code>O(1)</code>، درج/حذف در وسط <code>O(n)</code> (جابه‌جایی عناصر).</li>
+      <li><strong>Dynamic Array</strong> (مثل vector یا ArrayList): وقتی پر شد، ظرفیت را (معمولاً) دو برابر و عناصر را کپی می‌کند؛ هزینه‌ی append به‌صورت <strong>amortized O(1)</strong>.</li>
+      <li>در PHP، <code>array</code> در واقع <strong>hash table مرتب</strong> است (کلید عددی یا رشته‌ای). برای آرایه‌ی «packed» با کلیدهای ۰..n-1 بهینه‌سازی دارد، ولی مفهوماً map است. <code>SplFixedArray</code> آرایه‌ی واقعی با اندازه‌ی ثابت است.</li>
+    </ul>
+
+    <h3>Hash Map و Hash Set</h3>
+    <p>Hash table با یک <strong>تابع hash</strong> کلید را به اندیس یک bucket نگاشت می‌کند؛ درج، حذف و جست‌وجو به‌طور میانگین <code>O(1)</code> و در بدترین حالت (برخورد زیاد) <code>O(n)</code> است.</p>
+    <pre class="diagram">key "apple" ──hash()──► 3      buckets:
+key "melon" ──hash()──► 3      [0] → ∅
+key "kiwi"  ──hash()──► 0      [1] → ∅
+                               [2] → ∅
+                               [3] → ("apple",5) → ("melon",2)   ◄── collision (chaining)</pre>
+    <h4>رسیدگی به برخورد (Collision)</h4>
+    <ul>
+      <li><strong>Separate Chaining:</strong> هر bucket یک لیست (یا درخت) از عناصر دارد. ساده؛ با load factor بالا هم کار می‌کند. (پیاده‌سازی hash table در PHP از این نوع است.)</li>
+      <li><strong>Open Addressing:</strong> همه‌ی عناصر در خود آرایه؛ در برخورد، خانه‌ی بعدی با <strong>Linear Probing</strong>، <strong>Quadratic Probing</strong> یا <strong>Double Hashing</strong> جست‌وجو می‌شود. cache-friendly ولی حساس به load factor و حذف (نیاز به tombstone).</li>
+      <li><strong>Load Factor</strong> = تعداد عناصر / تعداد bucketها. وقتی از آستانه گذشت، جدول بزرگ‌تر و همه‌ی کلیدها <strong>rehash</strong> می‌شوند (<code>O(n)</code> ولی amortized <code>O(1)</code>).</li>
+    </ul>
+    <div class="callout warn"><p><strong>Hash Flooding:</strong> اگر مهاجم بتواند کلیدهایی بسازد که همه در یک bucket بیفتند، هر عملیات <code>O(n)</code> و کل پردازش <code>O(n²)</code> می‌شود (حمله‌ی DoS). یکی از دلایل وجود تنظیم <code>max_input_vars</code> در PHP همین است. hash تصادفی‌شده (seeded) راه‌حل رایج زبان‌هاست.</p></div>
+    <div class="callout tip"><p>نکته‌ی PHP: کلیدهای رشته‌ای که عدد صحیح دهدهی معتبرند به int تبدیل می‌شوند (<code>"42"</code> → <code>42</code>)، و کلید float به int بریده می‌شود. برای set از <code>$set[$x] = true</code> و <code>isset($set[$x])</code> استفاده کنید، نه <code>in_array</code>. <code>array_flip</code> آرایه‌ی مقادیر را در <code>O(n)</code> به set تبدیل می‌کند.</p></div>
+
+    <pre><code class="language-php">&lt;?php
+// شمارش فراوانی کلمات — O(n)
+function wordFrequency(string $text): array
+{
+    $freq = [];
+    foreach (preg_split('/\s+/u', mb_strtolower(trim($text)), -1, PREG_SPLIT_NO_EMPTY) as $w) {
+        $freq[$w] = ($freq[$w] ?? 0) + 1;
+    }
+    arsort($freq);           // مرتب‌سازی نزولی بر اساس مقدار
+    return $freq;
+}
+
+// اولین کاراکتر غیرتکراری — دو گذر O(n)
+function firstUniqueChar(string $s): int
+{
+    $count = count_chars($s, 1);              // byte =&gt; تعداد
+    for ($i = 0, $n = strlen($s); $i &lt; $n; $i++) {
+        if ($count[ord($s[$i])] === 1) return $i;
+    }
+    return -1;
+}</code></pre>
+
+    <h3>رشته‌ها در PHP</h3>
+    <ul>
+      <li>رشته‌ی PHP آرایه‌ای از <strong>بایت</strong> است؛ <code>$s[$i]</code> و <code>strlen</code> بایت‌محورند. برای متن فارسی/UTF-8 از <code>mb_strlen</code>، <code>mb_substr</code> و <code>mb_str_split</code> استفاده کنید.</li>
+      <li>رشته‌ها copy-on-write هستند؛ ساختن رشته‌ی جدید در هر مرحله‌ی حلقه می‌تواند هزینه داشته باشد.</li>
+    </ul>
+  </section>
+
+  <!-- ===================== 4 ===================== -->
+  <section class="lesson" id="two-pointers-window" data-title="Two Pointers و Sliding Window">
+    <h2>Two Pointers و Sliding Window</h2>
+    <h3>Two Pointers</h3>
+    <p>دو اشاره‌گر که با هم یا در خلاف جهت حرکت می‌کنند و با استفاده از ساختار داده (معمولاً <strong>مرتب بودن</strong>) فضای جست‌وجو را در هر گام کوچک می‌کنند؛ <code>O(n²)</code> را به <code>O(n)</code> می‌رساند.</p>
+    <pre><code class="language-php">&lt;?php
+// جفت با مجموع target در آرایه‌ی مرتب — O(n) زمان، O(1) حافظه
+function pairSumSorted(array $a, int $target): ?array
+{
+    $l = 0;
+    $r = count($a) - 1;
+    while ($l &lt; $r) {
+        $sum = $a[$l] + $a[$r];
+        if ($sum === $target) return [$l, $r];
+        if ($sum &lt; $target) $l++;   // نیاز به مجموع بزرگ‌تر
+        else $r--;                    // نیاز به مجموع کوچک‌تر
+    }
+    return null;
+}
+
+// پالیندروم با نادیده گرفتن غیرحروف
+function isPalindrome(string $s): bool
+{
+    $s = strtolower(preg_replace('/[^a-z0-9]/i', '', $s));
+    for ($l = 0, $r = strlen($s) - 1; $l &lt; $r; $l++, $r--) {
+        if ($s[$l] !== $s[$r]) return false;
+    }
+    return true;
+}
+
+// حذف تکراری‌ها از آرایه‌ی مرتب در جا (slow/fast pointers)
+function removeDuplicates(array &amp;$a): int
+{
+    if ($a === []) return 0;
+    $slow = 0;
+    for ($fast = 1, $n = count($a); $fast &lt; $n; $fast++) {
+        if ($a[$fast] !== $a[$slow]) {
+            $a[++$slow] = $a[$fast];
+        }
+    }
+    return $slow + 1;   // طول بخش یکتا
+}</code></pre>
+
+    <h3>Sliding Window</h3>
+    <p>برای مسائل «زیرآرایه/زیررشته‌ی <strong>پیوسته</strong>» یک پنجره <code>[left, right]</code> نگه می‌داریم؛ right را جلو می‌بریم و هر وقت پنجره نامعتبر شد left را جلو می‌بریم. هر عنصر حداکثر یک بار وارد و یک بار خارج می‌شود ⇒ <code>O(n)</code>.</p>
+    <pre><code class="language-php">&lt;?php
+// پنجره‌ی ثابت: بیشترین مجموع k عنصر متوالی — O(n)
+function maxSumWindow(array $a, int $k): int
+{
+    $sum = array_sum(array_slice($a, 0, $k));
+    $best = $sum;
+    for ($i = $k, $n = count($a); $i &lt; $n; $i++) {
+        $sum += $a[$i] - $a[$i - $k];   // ورود یکی، خروج یکی
+        $best = max($best, $sum);
+    }
+    return $best;
+}
+
+// پنجره‌ی متغیر: کوتاه‌ترین زیرآرایه با مجموع &gt;= target (اعداد مثبت)
+function minSubArrayLen(int $target, array $a): int
+{
+    $left = 0; $sum = 0; $best = PHP_INT_MAX;
+    foreach ($a as $right =&gt; $x) {
+        $sum += $x;
+        while ($sum &gt;= $target) {               // تا وقتی معتبر است، کوچکش کن
+            $best = min($best, $right - $left + 1);
+            $sum -= $a[$left++];
+        }
+    }
+    return $best === PHP_INT_MAX ? 0 : $best;
+}</code></pre>
+    <div class="callout warn"><p>Sliding window با مجموع فقط وقتی درست کار می‌کند که اعداد <strong>نامنفی</strong> باشند (افزودن عنصر مجموع را کم نکند). با اعداد منفی از <strong>Prefix Sum + Hash Map</strong> استفاده کنید.</p></div>
+  </section>
+
+  <!-- ===================== 5 ===================== -->
+  <section class="lesson" id="prefix-sums" data-title="Prefix Sum">
+    <h2>Prefix Sum</h2>
+    <p>آرایه‌ی <code>prefix[i]</code> = مجموع <code>a[0..i-1]</code>. با یک پیش‌پردازش <code>O(n)</code>، مجموع هر بازه در <code>O(1)</code>: <code>sum(l..r) = prefix[r+1] - prefix[l]</code>.</p>
+    <pre class="diagram">a      =    [ 3,  1,  4,  1,  5 ]
+prefix = [ 0, 3,  4,  8,  9, 14 ]
+sum(1..3) = prefix[4] - prefix[1] = 9 - 3 = 6   (1 + 4 + 1)</pre>
+    <pre><code class="language-php">&lt;?php
+final class RangeSum
+{
+    private array $prefix = [0];
+
+    public function __construct(array $a)
+    {
+        foreach ($a as $i =&gt; $x) {
+            $this-&gt;prefix[$i + 1] = $this-&gt;prefix[$i] + $x;
+        }
+    }
+
+    public function sum(int $l, int $r): int      // شامل هر دو سر
+    {
+        return $this-&gt;prefix[$r + 1] - $this-&gt;prefix[$l];
+    }
+}
+
+// تعداد زیرآرایه‌های پیوسته با مجموع k (اعداد منفی هم مجازند) — O(n)
+function subarraySum(array $a, int $k): int
+{
+    $seen = [0 =&gt; 1];        // prefix sum =&gt; چند بار دیده شده
+    $sum = 0; $count = 0;
+    foreach ($a as $x) {
+        $sum += $x;
+        $count += $seen[$sum - $k] ?? 0;   // prefix قبلی که فاصله‌اش k است
+        $seen[$sum] = ($seen[$sum] ?? 0) + 1;
+    }
+    return $count;
+}</code></pre>
+    <div class="callout tip"><p>کاربرد واقعی: گزارش «جمع فروش بین دو تاریخ» روی داده‌ی تجمعی روزانه، یا جدول‌های cumulative در دیتابیس. نسخه‌ی دوبعدی هم برای مجموع زیرماتریس وجود دارد.</p></div>
+  </section>
+
+  <!-- ===================== 6 ===================== -->
+  <section class="lesson" id="stack-queue" data-title="Stack، Queue و Monotonic Stack">
+    <h2>Stack، Queue و Monotonic Stack</h2>
+    <div class="grid-2">
+      <div class="card"><h4>Stack (LIFO)</h4><ul>
+        <li>push / pop / peek در <code>O(1)</code>.</li>
+        <li>کاربرد: call stack، undo، پرانتزگذاری، DFS تکراری، ارزیابی عبارت.</li>
+        <li>PHP: آرایه با <code>$s[] = $x</code> و <code>array_pop</code>، یا <code>SplStack</code>.</li>
+      </ul></div>
+      <div class="card"><h4>Queue (FIFO)</h4><ul>
+        <li>enqueue / dequeue در <code>O(1)</code>.</li>
+        <li>کاربرد: BFS، صف کارها (Laravel Queue)، buffer، rate limiting.</li>
+        <li>PHP: <code>SplQueue</code> (لیست پیوندی دوطرفه). <code>array_shift</code> برای صف <code>O(n)</code> است.</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+$q = new SplQueue();
+$q-&gt;enqueue('a');
+$q-&gt;enqueue('b');
+echo $q-&gt;dequeue();        // a
+echo $q-&gt;isEmpty() ? 'empty' : 'not empty';
+
+// Deque با دو سر: SplDoublyLinkedList با push/pop/shift/unshift</code></pre>
+
+    <h3>Monotonic Stack</h3>
+    <p>پشته‌ای که عناصرش همیشه به‌صورت یکنوا (صعودی یا نزولی) مرتب‌اند. برای مسائل «<strong>عنصر بزرگ‌تر/کوچک‌تر بعدی</strong>» در <code>O(n)</code> به جای <code>O(n²)</code>. هر عنصر حداکثر یک بار push و یک بار pop می‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+// Daily Temperatures: چند روز تا روز گرم‌تر؟ — O(n)
+function dailyTemperatures(array $t): array
+{
+    $n = count($t);
+    $answer = array_fill(0, $n, 0);
+    $stack = [];                                   // اندیس‌ها؛ دما نزولی
+    for ($i = 0; $i &lt; $n; $i++) {
+        while ($stack !== [] &amp;&amp; $t[$i] &gt; $t[end($stack)]) {
+            $j = array_pop($stack);
+            $answer[$j] = $i - $j;                 // روز i اولین روز گرم‌تر برای j است
+        }
+        $stack[] = $i;
+    }
+    return $answer;
+}
+// [73,74,75,71,69,72,76,73] → [1,1,4,2,1,1,0,0]</code></pre>
+    <div class="callout note"><p>Monotonic Queue (deque یکنوا) هم برای «بیشینه‌ی هر پنجره‌ی لغزان به طول k» در <code>O(n)</code> کاربرد دارد.</p></div>
+  </section>
+
+  <!-- ===================== 7 ===================== -->
+  <section class="lesson" id="linked-list" data-title="Linked List">
+    <h2>Linked List</h2>
+    <p>هر گره مقدار و اشاره‌گر به گره بعدی (و در doubly linked list، قبلی) دارد. عناصر در حافظه پیوسته نیستند.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عملیات</th><th>Array</th><th>Linked List</th></tr></thead>
+      <tbody>
+        <tr><td>دسترسی با اندیس</td><td><code>O(1)</code></td><td><code>O(n)</code></td></tr>
+        <tr><td>درج/حذف در ابتدا</td><td><code>O(n)</code></td><td><code>O(1)</code></td></tr>
+        <tr><td>درج/حذف بعد از گره معلوم</td><td><code>O(n)</code></td><td><code>O(1)</code></td></tr>
+        <tr><td>جست‌وجو</td><td><code>O(n)</code> (مرتب: <code>O(log n)</code>)</td><td><code>O(n)</code></td></tr>
+        <tr><td>Cache locality</td><td>عالی</td><td>ضعیف</td></tr>
+        <tr><td>حافظه‌ی اضافه</td><td>کم</td><td>اشاره‌گر برای هر گره</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+final class ListNode
+{
+    public function __construct(
+        public int $val,
+        public ?ListNode $next = null,
+    ) {}
+}
+
+// پیدا کردن گره میانی: fast دو قدم، slow یک قدم — O(n)
+function middleNode(?ListNode $head): ?ListNode
+{
+    $slow = $fast = $head;
+    while ($fast !== null &amp;&amp; $fast-&gt;next !== null) {
+        $slow = $slow-&gt;next;
+        $fast = $fast-&gt;next-&gt;next;
+    }
+    return $slow;
+}
+
+// تشخیص حلقه (Floyd's Tortoise and Hare) — O(n) زمان، O(1) حافظه
+function hasCycle(?ListNode $head): bool
+{
+    $slow = $fast = $head;
+    while ($fast !== null &amp;&amp; $fast-&gt;next !== null) {
+        $slow = $slow-&gt;next;
+        $fast = $fast-&gt;next-&gt;next;
+        if ($slow === $fast) return true;     // مقایسه‌ی هویت شیء
+    }
+    return false;
+}
+
+// ادغام دو لیست مرتب با گره نگهبان (dummy)
+function mergeTwoLists(?ListNode $a, ?ListNode $b): ?ListNode
+{
+    $dummy = new ListNode(0);
+    $tail = $dummy;
+    while ($a !== null &amp;&amp; $b !== null) {
+        if ($a-&gt;val &lt;= $b-&gt;val) { $tail-&gt;next = $a; $a = $a-&gt;next; }
+        else                     { $tail-&gt;next = $b; $b = $b-&gt;next; }
+        $tail = $tail-&gt;next;
+    }
+    $tail-&gt;next = $a ?? $b;
+    return $dummy-&gt;next;
+}</code></pre>
+    <div class="callout tip"><p>ترفندهای linked list: <strong>dummy node</strong> برای حذف حالت خاص سر لیست، <strong>fast/slow pointers</strong> برای وسط و حلقه، و فاصله‌ی ثابت بین دو اشاره‌گر برای «k-امین گره از آخر».</p></div>
+  </section>
+
+  <!-- ===================== 8 ===================== -->
+  <section class="lesson" id="recursion" data-title="بازگشت (Recursion)">
+    <h2>بازگشت (Recursion)</h2>
+    <p>تابعی که خودش را با ورودی کوچک‌تر صدا می‌زند. دو جزء ضروری:</p>
+    <ul>
+      <li><strong>Base case:</strong> شرط توقف؛ بدون آن بازگشت بی‌پایان و stack overflow.</li>
+      <li><strong>Recursive case:</strong> کاهش مسئله به نمونه‌ی کوچک‌تر که به base case همگرا شود.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+function factorial(int $n): int
+{
+    if ($n &lt;= 1) return 1;            // base case
+    return $n * factorial($n - 1);    // recursive case
+}
+// زمان O(n)، حافظه O(n) به خاطر call stack
+
+// توان سریع: x^n با تقسیم و حل — O(log n)
+function power(float $x, int $n): float
+{
+    if ($n === 0) return 1.0;
+    if ($n &lt; 0) return 1 / power($x, -$n);
+    $half = power($x, intdiv($n, 2));
+    return $n % 2 === 0 ? $half * $half : $half * $half * $x;
+}
+
+// Backtracking: همه‌ی زیرمجموعه‌ها — O(n · 2ⁿ)
+function subsets(array $nums): array
+{
+    $result = [];
+    $current = [];
+    $dfs = function (int $start) use (&amp;$dfs, &amp;$result, &amp;$current, $nums): void {
+        $result[] = $current;
+        for ($i = $start, $n = count($nums); $i &lt; $n; $i++) {
+            $current[] = $nums[$i];       // انتخاب
+            $dfs($i + 1);                 // کاوش
+            array_pop($current);          // برگرداندن انتخاب (backtrack)
+        }
+    };
+    $dfs(0);
+    return $result;
+}</code></pre>
+    <div class="callout warn"><p>هر فراخوانی بازگشتی یک frame روی <strong>call stack</strong> می‌گذارد؛ پس حافظه‌ی بازگشت <code>O(عمق)</code> است. PHP بهینه‌سازی tail-call ندارد، و Xdebug هم محدودیت عمق فراخوانی دارد. برای عمق خیلی زیاد (لیست پیوندی میلیونی) نسخه‌ی تکراری با stack صریح بنویسید.</p></div>
+    <div class="callout exam"><p>بازگشت در برابر تکرار: بازگشت برای ساختارهای بازگشتی (درخت، گراف، تقسیم و حل، backtracking) کد خواناتری می‌دهد؛ تکرار حافظه‌ی stack مصرف نمی‌کند و معمولاً سریع‌تر است. هر بازگشتی را می‌توان با stack صریح به تکرار تبدیل کرد.</p></div>
+  </section>
+
+  <!-- ===================== 9 ===================== -->
+  <section class="lesson" id="binary-search" data-title="Binary Search">
+    <h2>Binary Search</h2>
+    <p>در آرایه‌ی <strong>مرتب</strong>، با مقایسه‌ی عنصر وسط نیمی از فضای جست‌وجو را در هر گام حذف می‌کنیم ⇒ <code>O(log n)</code>. شرط اصلی: یک خاصیت <strong>یکنوا (monotonic)</strong> که بازه را به «false…false true…true» تقسیم کند.</p>
+    <pre><code class="language-php">&lt;?php
+// نسخه‌ی کلاسیک: اندیس target یا -1
+function binarySearch(array $a, int $target): int
+{
+    $lo = 0;
+    $hi = count($a) - 1;
+    while ($lo &lt;= $hi) {
+        $mid = $lo + intdiv($hi - $lo, 2);   // جلوگیری از overflow در زبان‌های با int محدود
+        if ($a[$mid] === $target) return $mid;
+        if ($a[$mid] &lt; $target) $lo = $mid + 1;
+        else $hi = $mid - 1;
+    }
+    return -1;
+}
+
+// lower bound: اولین اندیسی که a[i] &gt;= x (یا count اگر نبود)
+function lowerBound(array $a, int $x): int
+{
+    $lo = 0;
+    $hi = count($a);                // بازه‌ی نیم‌باز [lo, hi)
+    while ($lo &lt; $hi) {
+        $mid = $lo + intdiv($hi - $lo, 2);
+        if ($a[$mid] &lt; $x) $lo = $mid + 1;
+        else $hi = $mid;
+    }
+    return $lo;
+}
+// اولین وقوع x:  $i = lowerBound($a, $x); return ($i &lt; count($a) &amp;&amp; $a[$i] === $x) ? $i : -1;
+// تعداد وقوع x:  lowerBound($a, $x + 1) - lowerBound($a, $x)</code></pre>
+    <div class="callout warn"><p>اشکالات رایج: حلقه‌ی بی‌نهایت وقتی <code>lo = mid</code> و mid پایین گرد شود؛ ناسازگاری بازه‌ی بسته <code>[lo, hi]</code> با شرط <code>lo &lt; hi</code>؛ off-by-one در مقدار اولیه‌ی hi. یک قرارداد (بسته یا نیم‌باز) انتخاب کنید و به آن پایبند بمانید.</p></div>
+
+    <h3>Binary Search on Answer</h3>
+    <p>وقتی جواب یک عدد در بازه‌ی <code>[lo, hi]</code> است و تابع «آیا با مقدار X ممکن است؟» یکنواست، روی <strong>خود جواب</strong> binary search می‌زنیم.</p>
+    <pre><code class="language-php">&lt;?php
+// حداقل ظرفیت کامیون برای ارسال همه‌ی بسته‌ها (به ترتیب) در days روز
+function shipWithinDays(array $weights, int $days): int
+{
+    $lo = max($weights);            // حداقل: سنگین‌ترین بسته
+    $hi = array_sum($weights);      // حداکثر: همه در یک روز
+    while ($lo &lt; $hi) {
+        $cap = $lo + intdiv($hi - $lo, 2);
+        if (canShip($weights, $days, $cap)) $hi = $cap;   // ممکن است → کمتر را امتحان کن
+        else $lo = $cap + 1;
+    }
+    return $lo;
+}
+
+function canShip(array $weights, int $days, int $cap): bool
+{
+    $need = 1; $load = 0;
+    foreach ($weights as $w) {
+        if ($load + $w &gt; $cap) { $need++; $load = 0; }
+        $load += $w;
+    }
+    return $need &lt;= $days;
+}
+// زمان: O(n · log(sum))</code></pre>
+  </section>
+
+  <!-- ===================== 10 ===================== -->
+  <section class="lesson" id="sorting" data-title="الگوریتم‌های مرتب‌سازی">
+    <h2>الگوریتم‌های مرتب‌سازی</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>الگوریتم</th><th>بهترین</th><th>میانگین</th><th>بدترین</th><th>حافظه</th><th>Stable</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td>Bubble</td><td><code>O(n)</code>*</td><td><code>O(n²)</code></td><td><code>O(n²)</code></td><td><code>O(1)</code></td><td>✓</td><td>*با توقف زودهنگام اگر جابه‌جایی نشد؛ فقط آموزشی</td></tr>
+        <tr><td>Selection</td><td><code>O(n²)</code></td><td><code>O(n²)</code></td><td><code>O(n²)</code></td><td><code>O(1)</code></td><td>✗</td><td>حداقل تعداد swap (n-1)</td></tr>
+        <tr><td>Insertion</td><td><code>O(n)</code></td><td><code>O(n²)</code></td><td><code>O(n²)</code></td><td><code>O(1)</code></td><td>✓</td><td>عالی برای n کوچک و داده‌ی تقریباً مرتب؛ online</td></tr>
+        <tr><td>Merge</td><td><code>O(n log n)</code></td><td><code>O(n log n)</code></td><td><code>O(n log n)</code></td><td><code>O(n)</code></td><td>✓</td><td>تضمین‌شده؛ مناسب linked list و external sort</td></tr>
+        <tr><td>Quick</td><td><code>O(n log n)</code></td><td><code>O(n log n)</code></td><td><code>O(n²)</code></td><td><code>O(log n)</code></td><td>✗</td><td>در عمل اغلب سریع‌ترین؛ pivot تصادفی/median-of-three</td></tr>
+        <tr><td>Heap</td><td><code>O(n log n)</code></td><td><code>O(n log n)</code></td><td><code>O(n log n)</code></td><td><code>O(1)</code></td><td>✗</td><td>تضمین‌شده و درجا؛ cache locality ضعیف</td></tr>
+        <tr><td>Counting</td><td><code>O(n + k)</code></td><td><code>O(n + k)</code></td><td><code>O(n + k)</code></td><td><code>O(n + k)</code></td><td>✓</td><td>غیرمقایسه‌ای؛ فقط کلید صحیح با بازه‌ی کوچک k</td></tr>
+      </tbody>
+    </table></div>
+    <dl class="terms">
+      <dt>Stable</dt><dd>عناصر با کلید برابر ترتیب نسبی اولیه‌شان را حفظ می‌کنند. مهم برای مرتب‌سازی چندمرحله‌ای (اول بر اساس نام، بعد بر اساس شهر).</dd>
+      <dt>In-place</dt><dd>حافظه‌ی اضافی <code>O(1)</code> یا <code>O(log n)</code>.</dd>
+      <dt>Comparison sort</dt><dd>فقط با مقایسه کار می‌کند؛ کران پایین اثبات‌شده‌ی <code>Ω(n log n)</code> دارد. Counting/Radix با فرض روی کلید از این کران عبور می‌کنند.</dd>
+    </dl>
+
+    <h3>Insertion Sort</h3>
+    <pre><code class="language-php">&lt;?php
+function insertionSort(array $a): array
+{
+    for ($i = 1, $n = count($a); $i &lt; $n; $i++) {
+        $key = $a[$i];
+        $j = $i - 1;
+        while ($j &gt;= 0 &amp;&amp; $a[$j] &gt; $key) {   // &gt; نه &gt;= تا stable بماند
+            $a[$j + 1] = $a[$j];
+            $j--;
+        }
+        $a[$j + 1] = $key;
+    }
+    return $a;
+}</code></pre>
+
+    <h3>Merge Sort (تقسیم و حل)</h3>
+    <pre><code class="language-php">&lt;?php
+function mergeSort(array $a): array
+{
+    $n = count($a);
+    if ($n &lt;= 1) return $a;
+    $mid = intdiv($n, 2);
+    return mergeSorted(mergeSort(array_slice($a, 0, $mid)), mergeSort(array_slice($a, $mid)));
+}
+
+function mergeSorted(array $l, array $r): array
+{
+    $out = [];
+    $i = $j = 0;
+    $nl = count($l); $nr = count($r);
+    while ($i &lt; $nl &amp;&amp; $j &lt; $nr) {
+        $out[] = $l[$i] &lt;= $r[$j] ? $l[$i++] : $r[$j++];   // &lt;= برای stable بودن
+    }
+    while ($i &lt; $nl) $out[] = $l[$i++];
+    while ($j &lt; $nr) $out[] = $r[$j++];
+    return $out;
+}
+// T(n) = 2T(n/2) + O(n) = O(n log n)</code></pre>
+
+    <h3>Quick Sort (Lomuto partition)</h3>
+    <pre><code class="language-php">&lt;?php
+function quickSort(array &amp;$a, int $lo = 0, ?int $hi = null): void
+{
+    $hi ??= count($a) - 1;
+    if ($lo &gt;= $hi) return;
+    $p = partition($a, $lo, $hi);
+    quickSort($a, $lo, $p - 1);
+    quickSort($a, $p + 1, $hi);
+}
+
+function partition(array &amp;$a, int $lo, int $hi): int
+{
+    $r = random_int($lo, $hi);                       // pivot تصادفی: جلوگیری از بدترین حالت روی ورودی مرتب
+    [$a[$r], $a[$hi]] = [$a[$hi], $a[$r]];
+    $pivot = $a[$hi];
+    $i = $lo;
+    for ($j = $lo; $j &lt; $hi; $j++) {
+        if ($a[$j] &lt; $pivot) {
+            [$a[$i], $a[$j]] = [$a[$j], $a[$i]];
+            $i++;
+        }
+    }
+    [$a[$i], $a[$hi]] = [$a[$hi], $a[$i]];
+    return $i;                                       // pivot در جای نهایی‌اش
+}</code></pre>
+
+    <h3>Counting Sort</h3>
+    <pre><code class="language-php">&lt;?php
+// نمرات 0 تا 20 — O(n + k)
+function countingSort(array $a, int $maxValue): array
+{
+    $count = array_fill(0, $maxValue + 1, 0);
+    foreach ($a as $x) $count[$x]++;
+    $out = [];
+    foreach ($count as $value =&gt; $c) {
+        for ($i = 0; $i &lt; $c; $i++) $out[] = $value;
+    }
+    return $out;
+}</code></pre>
+
+    <div class="callout tip"><p>در کد واقعی PHP از <code>sort</code>، <code>usort</code> و <code>array_multisort</code> استفاده کنید؛ پیاده‌سازی داخلی ترکیبی (hybrid) و بهینه است و از PHP 8.0 پایدار است. برای مرتب‌سازی چندکلیدی: <code>usort($users, fn($a, $b) =&gt; [$a['city'], $a['name']] &lt;=&gt; [$b['city'], $b['name']]);</code>. در Laravel: <code>$collection-&gt;sortBy([['city', 'asc'], ['name', 'asc']])</code>. و مهم‌تر: اگر داده از دیتابیس می‌آید، <code>ORDER BY</code> با ایندکس معمولاً بهتر از مرتب‌سازی در PHP است.</p></div>
+  </section>
+
+  <!-- ===================== 11 ===================== -->
+  <section class="lesson" id="trees" data-title="درخت، BST و پیمایش‌ها">
+    <h2>درخت، BST و پیمایش‌ها</h2>
+    <dl class="terms">
+      <dt>Tree</dt><dd>گراف همبند بدون دور با یک ریشه؛ n گره و n-1 یال.</dd>
+      <dt>Binary Tree</dt><dd>هر گره حداکثر دو فرزند (چپ و راست).</dd>
+      <dt>Height</dt><dd>طول طولانی‌ترین مسیر از ریشه تا برگ.</dd>
+      <dt>Balanced</dt><dd>ارتفاع <code>O(log n)</code>؛ مثل AVL، Red-Black.</dd>
+      <dt>BST</dt><dd>برای هر گره: همه‌ی مقادیر زیردرخت چپ کوچک‌تر و همه‌ی مقادیر زیردرخت راست بزرگ‌ترند.</dd>
+      <dt>B-Tree / B+Tree</dt><dd>درخت متوازن چندشاخه با گره‌های بزرگ، بهینه برای دیسک؛ ساختار ایندکس دیتابیس‌ها.</dd>
+    </dl>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عملیات BST</th><th>متوازن</th><th>بدترین (تبدیل به لیست)</th></tr></thead>
+      <tbody>
+        <tr><td>جست‌وجو / درج / حذف</td><td><code>O(log n)</code></td><td><code>O(n)</code> — مثلاً با درج داده‌ی مرتب</td></tr>
+        <tr><td>پیمایش in-order (خروجی مرتب)</td><td><code>O(n)</code></td><td><code>O(n)</code></td></tr>
+        <tr><td>min / max</td><td><code>O(log n)</code></td><td><code>O(n)</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>پیمایش‌ها</h3>
+    <pre class="diagram">        8
+      /   \
+     3     10
+    / \      \
+   1   6      14
+
+Pre-order  (Root, L, R):  8 3 1 6 10 14     ← کپی درخت، serialize
+In-order   (L, Root, R):  1 3 6 8 10 14     ← در BST خروجی مرتب
+Post-order (L, R, Root):  1 6 3 14 10 8     ← حذف درخت، محاسبه از پایین به بالا
+Level-order (BFS):        8 | 3 10 | 1 6 14 ← سطح به سطح، با صف</pre>
+
+    <pre><code class="language-php">&lt;?php
+final class TreeNode
+{
+    public function __construct(
+        public int $val,
+        public ?TreeNode $left = null,
+        public ?TreeNode $right = null,
+    ) {}
+}
+
+function inorder(?TreeNode $node, array &amp;$out): void
+{
+    if ($node === null) return;
+    inorder($node-&gt;left, $out);
+    $out[] = $node-&gt;val;
+    inorder($node-&gt;right, $out);
+}
+
+function maxDepth(?TreeNode $node): int
+{
+    return $node === null ? 0 : 1 + max(maxDepth($node-&gt;left), maxDepth($node-&gt;right));
+}
+
+function bstInsert(?TreeNode $node, int $val): TreeNode
+{
+    if ($node === null) return new TreeNode($val);
+    if ($val &lt; $node-&gt;val) $node-&gt;left = bstInsert($node-&gt;left, $val);
+    else                    $node-&gt;right = bstInsert($node-&gt;right, $val);
+    return $node;
+}
+
+// اعتبارسنجی BST: هر گره باید در بازه‌ی مجاز (min, max) باشد، نه فقط با فرزندانش مقایسه شود
+function isValidBst(?TreeNode $node, ?int $min = null, ?int $max = null): bool
+{
+    if ($node === null) return true;
+    if (($min !== null &amp;&amp; $node-&gt;val &lt;= $min) || ($max !== null &amp;&amp; $node-&gt;val &gt;= $max)) return false;
+    return isValidBst($node-&gt;left, $min, $node-&gt;val) &amp;&amp; isValidBst($node-&gt;right, $node-&gt;val, $max);
+}
+
+// Level-order با صف
+function levelOrder(?TreeNode $root): array
+{
+    if ($root === null) return [];
+    $levels = [];
+    $q = new SplQueue();
+    $q-&gt;enqueue($root);
+    while (!$q-&gt;isEmpty()) {
+        $level = [];
+        for ($i = $q-&gt;count(); $i &gt; 0; $i--) {      // اندازه‌ی سطح فعلی
+            $node = $q-&gt;dequeue();
+            $level[] = $node-&gt;val;
+            if ($node-&gt;left)  $q-&gt;enqueue($node-&gt;left);
+            if ($node-&gt;right) $q-&gt;enqueue($node-&gt;right);
+        }
+        $levels[] = $level;
+    }
+    return $levels;
+}</code></pre>
+    <div class="callout warn"><p>اشتباه کلاسیک در validate BST: فقط مقایسه‌ی گره با فرزندان مستقیم. درخت <code>5 → (left 4, right 6 → left 3)</code> این شرط محلی را دارد ولی 3 در زیردرخت راست 5 است ⇒ BST نیست. باید بازه‌ی مجاز را از بالا منتقل کرد (یا بررسی کرد in-order اکیداً صعودی است).</p></div>
+  </section>
+
+  <!-- ===================== 12 ===================== -->
+  <section class="lesson" id="heaps" data-title="Heap و Priority Queue">
+    <h2>Heap و Priority Queue</h2>
+    <p><strong>Binary Heap</strong> یک درخت دودویی کامل است که در آرایه ذخیره می‌شود و شرط heap را دارد: در <strong>Min-Heap</strong> هر والد ≤ فرزندانش (پس ریشه کمینه است). فرزندان گره <code>i</code> در اندیس‌های <code>2i+1</code> و <code>2i+2</code> و والدش در <code>⌊(i-1)/2⌋</code>.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عملیات</th><th>پیچیدگی</th></tr></thead>
+      <tbody>
+        <tr><td>peek (min/max)</td><td><code>O(1)</code></td></tr>
+        <tr><td>insert (sift up)</td><td><code>O(log n)</code></td></tr>
+        <tr><td>extract (sift down)</td><td><code>O(log n)</code></td></tr>
+        <tr><td>heapify از آرایه</td><td><code>O(n)</code></td></tr>
+        <tr><td>جست‌وجوی عنصر دلخواه</td><td><code>O(n)</code></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>Priority Queue</strong> نوع داده‌ی انتزاعی است («همیشه عنصر با بالاترین اولویت را بده») و heap رایج‌ترین پیاده‌سازی آن است. کاربردها: زمان‌بندی کارها، Dijkstra، ادغام k لیست مرتب، top-k، میانه‌ی جریان داده (دو heap).</p>
+    <pre><code class="language-php">&lt;?php
+$min = new SplMinHeap();
+foreach ([5, 1, 8, 3] as $x) $min-&gt;insert($x);
+echo $min-&gt;extract();   // 1
+
+// SplPriorityQueue: بیشترین priority اول خارج می‌شود
+$pq = new SplPriorityQueue();
+$pq-&gt;insert('low-job', 1);
+$pq-&gt;insert('urgent-job', 10);
+echo $pq-&gt;extract();    // urgent-job
+
+// k امین بزرگ‌ترین: min-heap با اندازه‌ی k — O(n log k) زمان، O(k) حافظه
+function kthLargest(array $nums, int $k): int
+{
+    $heap = new SplMinHeap();
+    foreach ($nums as $x) {
+        $heap-&gt;insert($x);
+        if ($heap-&gt;count() &gt; $k) $heap-&gt;extract();   // کوچک‌ترین را دور بریز
+    }
+    return $heap-&gt;top();                              // کوچک‌ترینِ k تای بزرگ
+}</code></pre>
+    <div class="callout exam"><p>چرا برای top-k از <strong>min-heap</strong> با اندازه‌ی k استفاده می‌کنیم و نه مرتب‌سازی؟ مرتب‌سازی <code>O(n log n)</code> است؛ heap اندازه‌ی k <code>O(n log k)</code> و حافظه‌ی <code>O(k)</code> دارد و روی جریان داده (stream) هم کار می‌کند. Quickselect میانگین <code>O(n)</code> ولی بدترین <code>O(n²)</code> دارد.</p></div>
+  </section>
+
+  <!-- ===================== 13 ===================== -->
+  <section class="lesson" id="graphs" data-title="گراف: BFS، DFS، Dijkstra، Topological Sort">
+    <h2>گراف: BFS، DFS، Dijkstra، Topological Sort</h2>
+    <p>گراف = مجموعه‌ی رأس‌ها (V) و یال‌ها (E). می‌تواند جهت‌دار/بی‌جهت، وزن‌دار/بی‌وزن، و دوری/بدون دور (DAG) باشد. شبکه‌ی اجتماعی، نقشه‌ی شهر، وابستگی پکیج‌ها، و microserviceها نمونه‌های گراف‌اند.</p>
+    <h3>نمایش</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نمایش</th><th>حافظه</th><th>بررسی یال u→v</th><th>پیمایش همسایه‌ها</th><th>مناسب برای</th></tr></thead>
+      <tbody>
+        <tr><td>Adjacency List</td><td><code>O(V + E)</code></td><td><code>O(deg)</code></td><td><code>O(deg)</code></td><td>گراف‌های خلوت (sparse) — اکثر موارد واقعی</td></tr>
+        <tr><td>Adjacency Matrix</td><td><code>O(V²)</code></td><td><code>O(1)</code></td><td><code>O(V)</code></td><td>گراف‌های متراکم یا V کوچک</td></tr>
+        <tr><td>Edge List</td><td><code>O(E)</code></td><td><code>O(E)</code></td><td>—</td><td>الگوریتم‌هایی مثل Kruskal</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+// adjacency list از لیست یال‌ها (بی‌جهت)
+$edges = [['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D'], ['D', 'E']];
+$graph = [];
+foreach ($edges as [$u, $v]) {
+    $graph[$u][] = $v;
+    $graph[$v][] = $u;
+}</code></pre>
+
+    <h3>BFS (Breadth-First Search)</h3>
+    <p>پیمایش سطح‌به‌سطح با <strong>صف</strong>. در گراف <strong>بی‌وزن</strong> کوتاه‌ترین مسیر (کمترین تعداد یال) را پیدا می‌کند. <code>O(V + E)</code>.</p>
+    <pre><code class="language-php">&lt;?php
+function shortestPathLength(array $graph, string $start, string $goal): int
+{
+    $dist = [$start =&gt; 0];
+    $q = new SplQueue();
+    $q-&gt;enqueue($start);
+    while (!$q-&gt;isEmpty()) {
+        $u = $q-&gt;dequeue();
+        if ($u === $goal) return $dist[$u];
+        foreach ($graph[$u] ?? [] as $v) {
+            if (!isset($dist[$v])) {             // علامت‌گذاری هنگام enqueue، نه dequeue
+                $dist[$v] = $dist[$u] + 1;
+                $q-&gt;enqueue($v);
+            }
+        }
+    }
+    return -1;
+}</code></pre>
+
+    <h3>DFS (Depth-First Search)</h3>
+    <p>تا جای ممکن عمیق می‌رود و سپس برمی‌گردد؛ با <strong>بازگشت</strong> یا stack صریح. کاربرد: همبندی، شمارش مؤلفه‌ها، تشخیص دور، topological sort، backtracking. <code>O(V + E)</code>.</p>
+    <pre><code class="language-php">&lt;?php
+// تعداد جزیره‌ها در شبکه‌ی '1' (خشکی) و '0' (آب) — O(rows × cols)
+function numIslands(array $grid): int
+{
+    $rows = count($grid);
+    $cols = $rows ? count($grid[0]) : 0;
+    $count = 0;
+    $sink = function (int $r, int $c) use (&amp;$sink, &amp;$grid, $rows, $cols): void {
+        if ($r &lt; 0 || $c &lt; 0 || $r &gt;= $rows || $c &gt;= $cols || $grid[$r][$c] !== '1') return;
+        $grid[$r][$c] = '0';                      // بازدیدشده
+        $sink($r + 1, $c); $sink($r - 1, $c); $sink($r, $c + 1); $sink($r, $c - 1);
+    };
+    for ($r = 0; $r &lt; $rows; $r++) {
+        for ($c = 0; $c &lt; $cols; $c++) {
+            if ($grid[$r][$c] === '1') { $count++; $sink($r, $c); }
+        }
+    }
+    return $count;
+}</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>BFS</th><th>DFS</th></tr></thead>
+      <tbody>
+        <tr><td>ساختار</td><td>Queue</td><td>Stack / بازگشت</td></tr>
+        <tr><td>کوتاه‌ترین مسیر بی‌وزن</td><td>✓</td><td>✗</td></tr>
+        <tr><td>حافظه</td><td>عرض گراف (ممکن است زیاد باشد)</td><td>عمق گراف</td></tr>
+        <tr><td>کاربرد شاخص</td><td>نزدیک‌ترین، سطح‌بندی، «دوستان درجه ۲»</td><td>دور، topological sort، همه‌ی مسیرها، backtracking</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Dijkstra (کوتاه‌ترین مسیر با وزن نامنفی)</h3>
+    <p>به‌صورت حریصانه، هر بار رأس با کمترین فاصله‌ی قطعی‌نشده را از priority queue برمی‌دارد و یال‌هایش را <strong>relax</strong> می‌کند. با binary heap: <code>O((V + E) log V)</code>. با وزن منفی درست کار نمی‌کند (برای آن Bellman-Ford).</p>
+    <pre><code class="language-php">&lt;?php
+// $graph[$u] = [[$v, $weight], ...]
+function dijkstra(array $graph, string $source): array
+{
+    $dist = [$source =&gt; 0];
+    $pq = new SplPriorityQueue();               // max-heap → priority منفی برای رفتار min
+    $pq-&gt;setExtractFlags(SplPriorityQueue::EXTR_BOTH);   // data و priority هر دو برگردند
+    $pq-&gt;insert($source, 0);
+    while (!$pq-&gt;isEmpty()) {
+        ['data' =&gt; $u, 'priority' =&gt; $negD] = $pq-&gt;extract();
+        if (-$negD &gt; $dist[$u]) continue;          // ورودی کهنه (lazy deletion)
+        foreach ($graph[$u] ?? [] as [$v, $w]) {
+            $nd = $dist[$u] + $w;
+            if (!isset($dist[$v]) || $nd &lt; $dist[$v]) {
+                $dist[$v] = $nd;
+                $pq-&gt;insert($v, -$nd);
+            }
+        }
+    }
+    return $dist;
+}</code></pre>
+
+    <h3>Topological Sort (Kahn)</h3>
+    <p>ترتیب خطی رأس‌های یک <strong>DAG</strong> به‌طوری که برای هر یال u→v، u قبل از v بیاید. کاربرد: ترتیب اجرای migrationها/jobهای وابسته، build system، ترتیب پیش‌نیاز درس‌ها، resolve وابستگی پکیج‌ها (Composer). اگر همه‌ی رأس‌ها خروجی نشوند، گراف <strong>دور</strong> دارد.</p>
+    <pre><code class="language-php">&lt;?php
+// $deps = ['b' =&gt; ['a'], 'c' =&gt; ['a', 'b']]  یعنی b به a وابسته است (a → b)
+function topoSort(array $nodes, array $deps): array
+{
+    $inDegree = array_fill_keys($nodes, 0);
+    $adj = [];
+    foreach ($deps as $node =&gt; $requires) {
+        foreach ($requires as $req) {
+            $adj[$req][] = $node;
+            $inDegree[$node]++;
+        }
+    }
+    $q = new SplQueue();
+    foreach ($inDegree as $n =&gt; $d) if ($d === 0) $q-&gt;enqueue($n);
+
+    $order = [];
+    while (!$q-&gt;isEmpty()) {
+        $u = $q-&gt;dequeue();
+        $order[] = $u;
+        foreach ($adj[$u] ?? [] as $v) {
+            if (--$inDegree[$v] === 0) $q-&gt;enqueue($v);
+        }
+    }
+    if (count($order) !== count($nodes)) {
+        throw new RuntimeException('Cycle detected');
+    }
+    return $order;
+}
+// O(V + E)</code></pre>
+  </section>
+
+  <!-- ===================== 14 ===================== -->
+  <section class="lesson" id="greedy-dp" data-title="Greedy و Dynamic Programming">
+    <h2>Greedy و Dynamic Programming</h2>
+    <h3>Greedy (حریصانه)</h3>
+    <p>در هر گام بهترین انتخاب محلی را انجام می‌دهد و هرگز به عقب برنمی‌گردد. فقط وقتی جواب بهینه می‌دهد که مسئله خاصیت <strong>greedy choice</strong> و <strong>optimal substructure</strong> داشته باشد؛ باید اثبات شود (معمولاً با استدلال exchange argument).</p>
+    <pre><code class="language-php">&lt;?php
+// Activity selection: بیشترین تعداد جلسه‌ی بدون تداخل — مرتب بر اساس زمان پایان
+function maxMeetings(array $meetings): int     // [[start, end], ...]
+{
+    usort($meetings, fn ($a, $b) =&gt; $a[1] &lt;=&gt; $b[1]);
+    $count = 0;
+    $lastEnd = PHP_INT_MIN;
+    foreach ($meetings as [$s, $e]) {
+        if ($s &gt;= $lastEnd) { $count++; $lastEnd = $e; }
+    }
+    return $count;
+}</code></pre>
+    <div class="callout warn"><p>مثال نقض greedy: خرد کردن پول با سکه‌های <code>{1, 3, 4}</code> برای مبلغ ۶. greedy: 4+1+1 (سه سکه)؛ بهینه: 3+3 (دو سکه). برای سکه‌های دلخواه باید از DP استفاده کرد.</p></div>
+
+    <h3>Dynamic Programming</h3>
+    <p>DP برای مسائلی است که دو ویژگی دارند:</p>
+    <ul>
+      <li><strong>Overlapping subproblems:</strong> زیرمسئله‌های یکسان بارها حل می‌شوند.</li>
+      <li><strong>Optimal substructure:</strong> جواب بهینه از جواب‌های بهینه‌ی زیرمسئله‌ها ساخته می‌شود.</li>
+    </ul>
+    <p>گام‌ها: (۱) تعریف <strong>state</strong> (<code>dp[i]</code> یعنی چه؟)، (۲) <strong>رابطه‌ی بازگشتی (transition)</strong>، (۳) <strong>base case</strong>، (۴) ترتیب محاسبه، (۵) بهینه‌سازی حافظه در صورت امکان.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>Memoization (Top-down)</h4><ul>
+        <li>بازگشت طبیعی + cache نتایج.</li>
+        <li>فقط زیرمسئله‌های لازم حل می‌شوند.</li>
+        <li>نوشتنش از روی رابطه‌ی بازگشتی ساده است.</li>
+        <li>هزینه‌ی call stack و خطر stack overflow در عمق زیاد.</li>
+      </ul></div>
+      <div class="card"><h4>Tabulation (Bottom-up)</h4><ul>
+        <li>پر کردن جدول از کوچک به بزرگ با حلقه.</li>
+        <li>بدون بازگشت؛ معمولاً سریع‌تر.</li>
+        <li>بهینه‌سازی حافظه آسان (نگه‌داشتن فقط چند سطر/مقدار آخر).</li>
+        <li>باید ترتیب درست محاسبه را بدانید؛ ممکن است زیرمسئله‌های غیرلازم را هم حل کند.</li>
+      </ul></div>
+    </div>
+
+    <pre><code class="language-php">&lt;?php
+// فیبوناچی ساده: O(2ⁿ) — fib(n-2) بارها دوباره محاسبه می‌شود
+function fibNaive(int $n): int { return $n &lt; 2 ? $n : fibNaive($n - 1) + fibNaive($n - 2); }
+
+// Memoization: O(n) زمان، O(n) حافظه
+function fibMemo(int $n, array &amp;$memo = []): int
+{
+    if ($n &lt; 2) return $n;
+    return $memo[$n] ??= fibMemo($n - 1, $memo) + fibMemo($n - 2, $memo);
+}
+
+// Tabulation با بهینه‌سازی حافظه: O(n) زمان، O(1) حافظه
+function fib(int $n): int
+{
+    [$a, $b] = [0, 1];
+    for ($i = 0; $i &lt; $n; $i++) [$a, $b] = [$b, $a + $b];
+    return $a;
+}
+
+// Climbing Stairs: به چند روش با گام‌های 1 یا 2 به پله‌ی n می‌رسیم؟
+// dp[i] = dp[i-1] + dp[i-2]   (آخرین گام 1 بوده یا 2)
+function climbStairs(int $n): int
+{
+    [$prev, $cur] = [1, 1];        // dp[0], dp[1]
+    for ($i = 2; $i &lt;= $n; $i++) [$prev, $cur] = [$cur, $prev + $cur];
+    return $cur;
+}
+
+// Coin Change: کمترین تعداد سکه — O(amount × coins)
+function coinChange(array $coins, int $amount): int
+{
+    $dp = array_fill(0, $amount + 1, PHP_INT_MAX);
+    $dp[0] = 0;
+    for ($x = 1; $x &lt;= $amount; $x++) {
+        foreach ($coins as $c) {
+            if ($c &lt;= $x &amp;&amp; $dp[$x - $c] !== PHP_INT_MAX) {
+                $dp[$x] = min($dp[$x], $dp[$x - $c] + 1);
+            }
+        }
+    }
+    return $dp[$amount] === PHP_INT_MAX ? -1 : $dp[$amount];
+}
+
+// Kadane: بیشترین مجموع زیرآرایه‌ی پیوسته — O(n)
+function maxSubArray(array $a): int
+{
+    $best = $cur = $a[0];
+    for ($i = 1, $n = count($a); $i &lt; $n; $i++) {
+        $cur = max($a[$i], $cur + $a[$i]);   // ادامه بده یا از نو شروع کن
+        $best = max($best, $cur);
+    }
+    return $best;
+}</code></pre>
+
+    <h3>0/1 Knapsack و LCS (ایده)</h3>
+    <ul>
+      <li><strong>0/1 Knapsack:</strong> n کالا با وزن <code>w[i]</code> و ارزش <code>v[i]</code>، ظرفیت W. state: <code>dp[i][c]</code> = بیشترین ارزش با i کالای اول و ظرفیت c. انتقال: <code>dp[i][c] = max(dp[i-1][c], dp[i-1][c-w[i]] + v[i])</code> (برنداشتن یا برداشتن). زمان <code>O(n·W)</code>؛ حافظه با یک آرایه‌ی یک‌بعدی و پیمایش c از بزرگ به کوچک <code>O(W)</code>.</li>
+      <li><strong>LCS (طولانی‌ترین زیردنباله‌ی مشترک):</strong> <code>dp[i][j]</code> = LCS پیشوندهای <code>a[0..i)</code> و <code>b[0..j)</code>. اگر <code>a[i-1] == b[j-1]</code> آنگاه <code>dp[i-1][j-1] + 1</code>، وگرنه <code>max(dp[i-1][j], dp[i][j-1])</code>. زمان و حافظه <code>O(m·n)</code>. کاربرد: diff (مثل git diff)، مقایسه‌ی DNA. Edit Distance (Levenshtein) هم الگوی مشابهی دارد.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+function lcs(string $a, string $b): int
+{
+    $m = strlen($a); $n = strlen($b);
+    $dp = array_fill(0, $m + 1, array_fill(0, $n + 1, 0));
+    for ($i = 1; $i &lt;= $m; $i++) {
+        for ($j = 1; $j &lt;= $n; $j++) {
+            $dp[$i][$j] = $a[$i - 1] === $b[$j - 1]
+                ? $dp[$i - 1][$j - 1] + 1
+                : max($dp[$i - 1][$j], $dp[$i][$j - 1]);
+        }
+    }
+    return $dp[$m][$n];
+}
+// lcs("ABCBDAB", "BDCABA") = 4</code></pre>
+    <div class="callout exam"><p>تفاوت DP و Divide &amp; Conquer: هر دو مسئله را به زیرمسئله می‌شکنند، ولی در Divide &amp; Conquer (مثل merge sort) زیرمسئله‌ها <strong>مستقل</strong>اند و تکرار نمی‌شوند؛ در DP <strong>هم‌پوشان</strong>اند و ذخیره‌ی نتایج سود دارد. تفاوت DP و Greedy: greedy یک انتخاب را بدون بررسی بقیه قطعی می‌کند؛ DP همه‌ی انتخاب‌ها را (به‌صورت کارآمد) بررسی می‌کند.</p></div>
+  </section>
+
+  <!-- ===================== QUESTIONS ===================== -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-algorithms-1">
+      <summary>Two Sum: آرایه‌ای از اعداد صحیح و عدد target داده شده است. اندیس دو عددی را که مجموعشان target است برگردانید. راه‌حل بهینه و پیچیدگی آن را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>Brute force:</strong> بررسی همه‌ی جفت‌ها با دو حلقه ⇒ <code>O(n²)</code> زمان، <code>O(1)</code> حافظه.</p>
+        <p><strong>ایده‌ی بهینه:</strong> برای هر عدد x، «مکمل» آن <code>target - x</code> است. با یک <strong>hash map</strong> از مقادیر دیده‌شده به اندیسشان، وجود مکمل را در <code>O(1)</code> چک می‌کنیم. یک گذر کافی است.</p>
+        <pre><code class="language-php">&lt;?php
+function twoSum(array $nums, int $target): ?array
+{
+    $seen = [];                                   // value =&gt; index
+    foreach ($nums as $i =&gt; $x) {
+        $need = $target - $x;
+        if (array_key_exists($need, $seen)) {
+            return [$seen[$need], $i];
+        }
+        $seen[$x] = $i;                           // بعد از چک، تا یک عنصر با خودش جفت نشود
+    }
+    return null;
+}
+// twoSum([2, 7, 11, 15], 9) → [0, 1]</code></pre>
+        <p><strong>پیچیدگی:</strong> زمان <code>O(n)</code>، حافظه <code>O(n)</code> — معاوضه‌ی کلاسیک حافظه با زمان.</p>
+        <p><strong>حالت‌های مرزی:</strong> عدد تکراری (<code>[3,3]</code>، target 6) درست کار می‌کند چون قبل از درج چک می‌کنیم؛ نبود جواب ⇒ null.</p>
+        <p><strong>نسخه‌ی مرتب:</strong> اگر آرایه مرتب باشد، two pointers با <code>O(1)</code> حافظه. اگر مرتب نیست و اندیس اصلی لازم است، sort + two pointers ⇒ <code>O(n log n)</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-2">
+      <summary>Valid Parentheses: تابعی بنویسید که بررسی کند رشته‌ای از <code>()[]{}</code> به‌درستی باز و بسته شده است.</summary>
+      <div class="answer">
+        <p><strong>ایده:</strong> آخرین پرانتز باز باید اولین پرانتزی باشد که بسته می‌شود ⇒ <strong>LIFO</strong> ⇒ Stack. پرانتز باز را push می‌کنیم؛ با دیدن پرانتز بسته، بالای stack باید جفت متناظرش باشد.</p>
+        <pre><code class="language-php">&lt;?php
+function isValid(string $s): bool
+{
+    $pairs = [')' =&gt; '(', ']' =&gt; '[', '}' =&gt; '{'];
+    $stack = [];
+    for ($i = 0, $n = strlen($s); $i &lt; $n; $i++) {
+        $ch = $s[$i];
+        if (isset($pairs[$ch])) {                       // بسته
+            if (array_pop($stack) !== $pairs[$ch]) {   // stack خالی ⇒ null ⇒ false
+                return false;
+            }
+        } else {
+            $stack[] = $ch;                             // باز
+        }
+    }
+    return $stack === [];                               // باز بسته‌نشده نماند
+}
+// "([]{})" → true ، "(]" → false ، "((" → false ، "" → true</code></pre>
+        <p><strong>پیچیدگی:</strong> زمان <code>O(n)</code>، حافظه <code>O(n)</code> در بدترین حالت (همه باز).</p>
+        <p><strong>حالت‌های مرزی:</strong> رشته‌ی خالی، شروع با پرانتز بسته، پرانتزهای باز باقی‌مانده در انتها، طول فرد (می‌توان زود false برگرداند).</p>
+        <p><strong>کاربرد واقعی:</strong> parserها، اعتبارسنجی template، تطبیق تگ‌های HTML/XML، ارزیابی عبارات ریاضی.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-3">
+      <summary>یک linked list یک‌طرفه را معکوس کنید (هم به روش تکراری و هم بازگشتی) و پیچیدگی هر کدام را بیان کنید.</summary>
+      <div class="answer">
+        <p><strong>ایده:</strong> جهت هر اشاره‌گر <code>next</code> را برعکس کنیم. سه اشاره‌گر لازم است: <code>prev</code>، <code>current</code> و <code>next</code> (برای اینکه ادامه‌ی لیست گم نشود).</p>
+        <pre><code class="language-php">&lt;?php
+// تکراری — O(n) زمان، O(1) حافظه
+function reverseList(?ListNode $head): ?ListNode
+{
+    $prev = null;
+    $cur = $head;
+    while ($cur !== null) {
+        $next = $cur-&gt;next;      // ۱. نگه‌داشتن ادامه
+        $cur-&gt;next = $prev;      // ۲. برعکس کردن اشاره‌گر
+        $prev = $cur;            // ۳. جلو رفتن
+        $cur = $next;
+    }
+    return $prev;                // سر جدید
+}
+
+// بازگشتی — O(n) زمان، O(n) حافظه (call stack)
+function reverseRecursive(?ListNode $head): ?ListNode
+{
+    if ($head === null || $head-&gt;next === null) return $head;
+    $newHead = reverseRecursive($head-&gt;next);
+    $head-&gt;next-&gt;next = $head;   // گره بعدی به من اشاره کند
+    $head-&gt;next = null;
+    return $newHead;
+}</code></pre>
+        <p><strong>Dry run:</strong> <code>1→2→3</code>: بعد از گام اول <code>1→null</code>، prev=1؛ بعد <code>2→1</code>؛ بعد <code>3→2→1</code>.</p>
+        <p><strong>مقایسه:</strong> نسخه‌ی تکراری برای لیست‌های بلند امن‌تر است (بدون خطر stack overflow). حالت‌های مرزی: لیست خالی و تک‌گره.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-4">
+      <summary>کد زیر برای پیدا کردن عناصر تکراری نوشته شده است. چه مشکلی دارد و چگونه بهینه‌اش می‌کنید؟</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+function findDuplicates(array $items): array
+{
+    $seen = [];
+    $dups = [];
+    foreach ($items as $item) {
+        if (in_array($item, $seen)) {
+            if (!in_array($item, $dups)) $dups[] = $item;
+        } else {
+            $seen[] = $item;
+        }
+    }
+    return $dups;
+}</code></pre>
+        <p><strong>مشکل کارایی:</strong> <code>in_array</code> جست‌وجوی خطی <code>O(n)</code> است و درون حلقه‌ای با n تکرار قرار دارد ⇒ کل الگوریتم <code>O(n²)</code>. برای ۱۰۰٬۰۰۰ عنصر، حدود ۱۰¹⁰ مقایسه در بدترین حالت.</p>
+        <p><strong>مشکل صحت:</strong> <code>in_array</code> بدون پارامتر سوم مقایسه‌ی <strong>loose</strong> (<code>==</code>) انجام می‌دهد؛ مثلاً <code>"1"</code> و <code>1</code> یا <code>"abc"</code> و <code>0</code> (در PHP 7) ممکن است برابر تلقی شوند. اگر می‌ماند، باید <code>in_array($x, $arr, true)</code> باشد.</p>
+        <p><strong>اصلاح با hash set:</strong></p>
+        <pre><code class="language-php">&lt;?php
+function findDuplicates(array $items): array
+{
+    $seen = [];
+    $dups = [];
+    foreach ($items as $item) {
+        if (isset($seen[$item])) {
+            $dups[$item] = true;                // set برای جلوگیری از تکرار در خروجی
+        } else {
+            $seen[$item] = true;
+        }
+    }
+    return array_keys($dups);
+}
+// O(n) زمان، O(n) حافظه</code></pre>
+        <p><strong>نکته:</strong> این روش برای int/string کار می‌کند (کلیدهای آرایه)؛ کلیدهای رشته‌ای عددی به int تبدیل می‌شوند. برای اشیا از <code>spl_object_id</code> یا <code>SplObjectStorage</code> استفاده کنید. اگر فقط «آیا تکراری هست؟» مطرح است: <code>count($a) !== count(array_flip($a))</code> یا خروج زودهنگام در اولین تکرار. جایگزین بدون حافظه‌ی اضافه: sort + مقایسه‌ی همسایه‌ها ⇒ <code>O(n log n)</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-5">
+      <summary>طول طولانی‌ترین زیررشته‌ی بدون کاراکتر تکراری را پیدا کنید (مثلاً برای <code>"abcabcbb"</code> جواب ۳ است).</summary>
+      <div class="answer">
+        <p><strong>Brute force:</strong> بررسی همه‌ی زیررشته‌ها و یکتایی هر کدام ⇒ <code>O(n³)</code> یا با set <code>O(n²)</code>.</p>
+        <p><strong>ایده (Sliding Window):</strong> پنجره‌ی <code>[left, right]</code> همیشه بدون تکرار است. right را جلو می‌بریم؛ اگر کاراکتر جدید قبلاً <em>درون پنجره</em> دیده شده، left را به بعد از آخرین وقوعش می‌پریم. آخرین اندیس هر کاراکتر را در hash map نگه می‌داریم.</p>
+        <pre><code class="language-php">&lt;?php
+function lengthOfLongestSubstring(string $s): int
+{
+    $last = [];          // char =&gt; آخرین اندیس
+    $left = 0;
+    $best = 0;
+    for ($right = 0, $n = strlen($s); $right &lt; $n; $right++) {
+        $ch = $s[$right];
+        if (isset($last[$ch]) &amp;&amp; $last[$ch] &gt;= $left) {
+            $left = $last[$ch] + 1;            // پرش از روی تکراری
+        }
+        $last[$ch] = $right;
+        $best = max($best, $right - $left + 1);
+    }
+    return $best;
+}
+// "abcabcbb" → 3 ("abc") ، "bbbbb" → 1 ، "pwwkew" → 3 ("wke") ، "" → 0</code></pre>
+        <p><strong>نکته‌ی ظریف:</strong> شرط <code>$last[$ch] &gt;= $left</code> لازم است؛ وگرنه وقوع قدیمی خارج از پنجره باعث می‌شود left به عقب برگردد (مثال <code>"abba"</code>).</p>
+        <p><strong>پیچیدگی:</strong> زمان <code>O(n)</code> (هر کاراکتر یک بار)، حافظه <code>O(min(n, |alphabet|))</code>.</p>
+        <p><strong>UTF-8:</strong> برای متن فارسی ابتدا <code>mb_str_split($s)</code> و روی آرایه‌ی کاراکترها کار کنید، چون <code>$s[$i]</code> بایت است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-6">
+      <summary>Merge Intervals: لیستی از بازه‌ها داده شده است؛ بازه‌های هم‌پوشان را ادغام کنید. مثال: <code>[[1,3],[2,6],[8,10],[15,18]]</code> ← <code>[[1,6],[8,10],[15,18]]</code></summary>
+      <div class="answer">
+        <p><strong>ایده:</strong> اگر بازه‌ها بر اساس <strong>شروع</strong> مرتب باشند، هر بازه فقط ممکن است با <em>آخرین</em> بازه‌ی ادغام‌شده هم‌پوشانی داشته باشد. پس: sort، سپس یک گذر.</p>
+        <pre><code class="language-php">&lt;?php
+function mergeIntervals(array $intervals): array
+{
+    if ($intervals === []) return [];
+    usort($intervals, fn ($a, $b) =&gt; $a[0] &lt;=&gt; $b[0]);
+    $merged = [$intervals[0]];
+    for ($i = 1, $n = count($intervals); $i &lt; $n; $i++) {
+        [$start, $end] = $intervals[$i];
+        $last = &amp;$merged[count($merged) - 1];
+        if ($start &lt;= $last[1]) {                 // هم‌پوشانی (یا مماس)
+            $last[1] = max($last[1], $end);         // max: بازه‌ی [1,10] و [2,3]
+        } else {
+            $merged[] = [$start, $end];
+        }
+        unset($last);                               // شکستن reference
+    }
+    return $merged;
+}</code></pre>
+        <p><strong>پیچیدگی:</strong> <code>O(n log n)</code> برای sort + <code>O(n)</code> گذر ⇒ <code>O(n log n)</code>؛ حافظه <code>O(n)</code> برای خروجی.</p>
+        <p><strong>حالت‌های مرزی:</strong> بازه‌ی کاملاً درون بازه‌ی دیگر (به همین دلیل <code>max</code>)، بازه‌های مماس (<code>[1,4],[4,5]</code> — بسته به تعریف مسئله ادغام شوند یا نه)، لیست خالی یا تک‌عضوی.</p>
+        <p><strong>کاربرد واقعی:</strong> ادغام بازه‌های رزرو، شیفت‌های کاری، ساعات در دسترس بودن، بازه‌های IP.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-7">
+      <summary>در یک آرایه‌ی مرتب که ممکن است عناصر تکراری داشته باشد، اولین و آخرین موقعیت یک عدد را در <code>O(log n)</code> پیدا کنید.</summary>
+      <div class="answer">
+        <p><strong>ایده:</strong> binary search معمولی در اولین برخورد متوقف می‌شود؛ ما به <strong>مرز</strong> نیاز داریم. دو بار lower bound:</p>
+        <ul>
+          <li>اولین موقعیت = اولین اندیسی که <code>a[i] &gt;= x</code>.</li>
+          <li>آخرین موقعیت = (اولین اندیسی که <code>a[i] &gt;= x + 1</code>) منهای ۱ — یا upper bound با شرط <code>a[i] &gt; x</code>.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+function lowerBound(array $a, int $x): int
+{
+    $lo = 0; $hi = count($a);            // [lo, hi)
+    while ($lo &lt; $hi) {
+        $mid = $lo + intdiv($hi - $lo, 2);
+        if ($a[$mid] &lt; $x) $lo = $mid + 1;
+        else $hi = $mid;
+    }
+    return $lo;
+}
+
+function searchRange(array $a, int $x): array
+{
+    $first = lowerBound($a, $x);
+    if ($first === count($a) || $a[$first] !== $x) return [-1, -1];
+    $last = lowerBound($a, $x + 1) - 1;
+    return [$first, $last];
+}
+// searchRange([5,7,7,8,8,10], 8) → [3, 4]</code></pre>
+        <p><strong>پیچیدگی:</strong> دو binary search ⇒ <code>O(log n)</code> زمان، <code>O(1)</code> حافظه. تعداد وقوع هم <code>last - first + 1</code> است.</p>
+        <p><strong>چرا راه ساده‌تر بد است؟</strong> پیدا کردن یک وقوع و سپس گسترش خطی به چپ و راست در بدترین حالت (همه‌ی عناصر برابر x) <code>O(n)</code> می‌شود.</p>
+        <p><strong>اشکالات رایج:</strong> قرارداد بازه‌ی نیم‌باز را رعایت کنید؛ <code>hi = mid</code> (نه <code>mid - 1</code>) و شرط حلقه <code>lo &lt; hi</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-8">
+      <summary>سوالات گرم‌کردن: FizzBuzz را بنویسید، و تابعی بنویسید که یک رشته را بدون استفاده از <code>strrev</code> معکوس کند. به چه نکاتی توجه می‌کنید؟</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+function fizzBuzz(int $n): array
+{
+    $out = [];
+    for ($i = 1; $i &lt;= $n; $i++) {
+        $out[] = match (true) {
+            $i % 15 === 0 =&gt; 'FizzBuzz',      // اول شرط ترکیبی!
+            $i % 3 === 0  =&gt; 'Fizz',
+            $i % 5 === 0  =&gt; 'Buzz',
+            default       =&gt; (string) $i,
+        };
+    }
+    return $out;
+}
+
+// معکوس رشته با two pointers — O(n)
+function reverseString(string $s): string
+{
+    for ($l = 0, $r = strlen($s) - 1; $l &lt; $r; $l++, $r--) {
+        [$s[$l], $s[$r]] = [$s[$r], $s[$l]];
+    }
+    return $s;
+}
+
+// نسخه‌ی امن برای UTF-8 (فارسی)
+function mbReverse(string $s): string
+{
+    return implode('', array_reverse(mb_str_split($s)));
+}</code></pre>
+        <p><strong>نکاتی که ارزیاب دنبالش است:</strong></p>
+        <ul>
+          <li><strong>ترتیب شرط‌ها</strong> در FizzBuzz: شرط بخش‌پذیری بر ۱۵ باید قبل از ۳ و ۵ بیاید.</li>
+          <li><strong>جداسازی منطق از خروجی:</strong> تابع آرایه برمی‌گرداند و echo نمی‌کند ⇒ قابل تست.</li>
+          <li><strong>استفاده از <code>match</code></strong> (PHP 8) با مقایسه‌ی strict.</li>
+          <li><strong>یونیکد:</strong> <code>strrev</code> و دسترسی <code>$s[$i]</code> بایت‌محورند و رشته‌ی فارسی را خراب می‌کنند؛ <code>mb_str_split</code> لازم است.</li>
+          <li><strong>حالت‌های مرزی:</strong> <code>n = 0</code>، رشته‌ی خالی، یک کاراکتر.</li>
+          <li><strong>پیچیدگی:</strong> هر دو <code>O(n)</code>.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-9">
+      <summary>Group Anagrams: کلماتی را که آناگرام یکدیگرند گروه‌بندی کنید. مثال: <code>["eat","tea","tan","ate","nat","bat"]</code>.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> دو کلمه آناگرام‌اند اگر حروف یکسان با تعداد یکسان داشته باشند. پس به یک <strong>کلید canonical</strong> نیاز داریم که برای همه‌ی آناگرام‌ها یکسان باشد و آن را کلید hash map قرار دهیم.</p>
+        <p><strong>روش ۱ — حروف مرتب‌شده به‌عنوان کلید:</strong></p>
+        <pre><code class="language-php">&lt;?php
+function groupAnagrams(array $words): array
+{
+    $groups = [];
+    foreach ($words as $w) {
+        $chars = str_split($w);
+        sort($chars);
+        $groups[implode('', $chars)][] = $w;      // "aet" =&gt; [eat, tea, ate]
+    }
+    return array_values($groups);
+}
+// → [["eat","tea","ate"], ["tan","nat"], ["bat"]]</code></pre>
+        <p>پیچیدگی: n کلمه با طول حداکثر k ⇒ <code>O(n · k log k)</code> زمان، <code>O(n · k)</code> حافظه.</p>
+        <p><strong>روش ۲ — شمارش حروف به‌عنوان کلید:</strong> برای الفبای محدود (a-z)، کلید = رشته‌ی ۲۶ شمارنده (مثلاً <code>"1,0,0,...,1"</code>). زمان <code>O(n · k)</code> چون مرتب‌سازی حذف می‌شود.</p>
+        <pre><code class="language-php">$key = implode(',', array_values(array_replace(array_fill_keys(range('a', 'z'), 0), array_count_values(str_split($w)))));</code></pre>
+        <p><strong>بررسی آناگرام بودن دو کلمه:</strong> <code>count_chars($a, 1) == count_chars($b, 1)</code> یا مقایسه‌ی نسخه‌ی مرتب‌شده.</p>
+        <p><strong>نکات:</strong> حساسیت به حروف بزرگ/کوچک و فاصله‌ها را با سؤال‌کننده روشن کنید؛ برای UTF-8 از <code>mb_str_split</code> استفاده کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-10">
+      <summary>Missing Number: آرایه‌ای شامل n عدد متمایز از بازه‌ی 0 تا n داده شده است. عدد گمشده را با حافظه‌ی <code>O(1)</code> پیدا کنید.</summary>
+      <div class="answer">
+        <p><strong>روش‌ها:</strong></p>
+        <ul>
+          <li><strong>Sort:</strong> <code>O(n log n)</code> — کند.</li>
+          <li><strong>Hash set:</strong> <code>O(n)</code> زمان ولی <code>O(n)</code> حافظه.</li>
+          <li><strong>فرمول جمع گاوس:</strong> مجموع 0..n برابر <code>n(n+1)/2</code>؛ اختلاف با مجموع آرایه همان عدد گمشده است. <code>O(n)</code> زمان، <code>O(1)</code> حافظه.</li>
+          <li><strong>XOR:</strong> چون <code>x ^ x = 0</code> و <code>x ^ 0 = x</code>، XOR همه‌ی اندیس‌ها و همه‌ی مقادیر، فقط عدد گمشده را باقی می‌گذارد. بدون خطر overflow.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+function missingNumberSum(array $nums): int
+{
+    $n = count($nums);
+    return intdiv($n * ($n + 1), 2) - array_sum($nums);
+}
+
+function missingNumberXor(array $nums): int
+{
+    $x = count($nums);                    // n
+    foreach ($nums as $i =&gt; $v) {
+        $x ^= $i ^ $v;
+    }
+    return $x;
+}
+// [3, 0, 1] → 2 ، [0, 1] → 2 ، [1] → 0</code></pre>
+        <p><strong>Trade-off:</strong> روش جمع ساده و خواناست، اما در زبان‌هایی با int محدود برای n بزرگ ممکن است overflow کند (در PHP روی پلتفرم ۶۴ بیتی، int 64 بیتی است و در صورت overflow به float تبدیل می‌شود که دقت را از دست می‌دهد). روش XOR این مشکل را ندارد.</p>
+        <p><strong>تعمیم:</strong> اگر دو عدد گمشده باشد، از ترکیب مجموع و مجموع مربعات یا تقسیم بر اساس یک بیت XOR استفاده می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-11">
+      <summary>Merge Sort و Quick Sort را از نظر پیچیدگی، حافظه، پایداری و کاربرد مقایسه کنید.</summary>
+      <div class="answer">
+        <p>هر دو الگوریتم <strong>تقسیم و حل</strong> هستند ولی کار اصلی را در مراحل متفاوتی انجام می‌دهند: Merge Sort تقسیم را ساده انجام می‌دهد (نصف کردن) و کار اصلی در <strong>ادغام</strong> است؛ Quick Sort کار اصلی را در <strong>partition</strong> انجام می‌دهد و ترکیب نتیجه رایگان است.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>معیار</th><th>Merge Sort</th><th>Quick Sort</th></tr></thead>
+          <tbody>
+            <tr><td>میانگین</td><td><code>O(n log n)</code></td><td><code>O(n log n)</code></td></tr>
+            <tr><td>بدترین</td><td><code>O(n log n)</code> تضمینی</td><td><code>O(n²)</code> (pivot بد، مثلاً ورودی مرتب با pivot اول/آخر)</td></tr>
+            <tr><td>حافظه‌ی اضافه</td><td><code>O(n)</code> برای ادغام</td><td><code>O(log n)</code> پشته‌ی بازگشت (in-place)</td></tr>
+            <tr><td>Stable</td><td>✓</td><td>✗ (در نسخه‌ی in-place معمول)</td></tr>
+            <tr><td>کارایی عملی</td><td>خوب</td><td>معمولاً سریع‌تر به خاطر cache locality و ثابت‌های کوچک</td></tr>
+            <tr><td>مناسب برای</td><td>Linked list، داده‌ی خارج از حافظه (external sort)، وقتی پایداری لازم است</td><td>آرایه‌های درون حافظه، مرتب‌سازی عمومی</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>کاهش ریسک بدترین حالت Quick Sort:</strong> pivot تصادفی، median-of-three، partition سه‌طرفه برای تکراری‌های زیاد، و <strong>Introsort</strong> (سوئیچ به heap sort وقتی عمق بازگشت زیاد شد) که در کتابخانه‌های استاندارد رایج است. برای آرایه‌های کوچک هم معمولاً به insertion sort سوئیچ می‌شود.</p>
+        <p><strong>جمع‌بندی:</strong> اگر تضمین زمانی و stable بودن مهم است ⇒ Merge Sort؛ اگر حافظه محدود است و سرعت میانگین مهم ⇒ Quick Sort.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-12">
+      <summary>Amortized Complexity چیست؟ با مثال آرایه‌ی پویا توضیح دهید که چرا append به‌طور amortized <code>O(1)</code> است.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> تحلیل amortized هزینه‌ی <strong>میانگین هر عملیات در بدترین دنباله‌ی ممکن از عملیات‌ها</strong> را می‌دهد. برخلاف average-case، به توزیع احتمالی ورودی وابسته نیست؛ تضمین می‌کند که مجموع هزینه‌ی m عملیات حداکثر m برابر هزینه‌ی amortized است، حتی اگر برخی عملیات‌ها تکی گران باشند.</p>
+        <p><strong>مثال آرایه‌ی پویا:</strong> آرایه با ظرفیت c؛ append وقتی جا هست <code>O(1)</code> است. وقتی پر شد، آرایه‌ای با ظرفیت <strong>2c</strong> ساخته و همه‌ی عناصر کپی می‌شوند (<code>O(n)</code>).</p>
+        <ul>
+          <li>برای n بار append از ظرفیت ۱، کپی‌ها در اندازه‌های 1، 2، 4، …، n رخ می‌دهند.</li>
+          <li>مجموع کپی‌ها: <code>1 + 2 + 4 + … + n &lt; 2n</code>.</li>
+          <li>کل هزینه: <code>n</code> (درج‌ها) + <code>2n</code> (کپی‌ها) = <code>O(n)</code> ⇒ هر append به‌طور amortized <code>O(1)</code>.</li>
+        </ul>
+        <p><strong>چرا دو برابر و نه +۱۰؟</strong> با رشد ثابت (هر بار ۱۰ خانه)، تعداد resizeها n/10 و مجموع کپی‌ها <code>O(n²)</code> می‌شود ⇒ amortized <code>O(n)</code>. رشد <strong>هندسی</strong> کلید است.</p>
+        <p><strong>مثال‌های دیگر:</strong> rehash در hash table (آرایه‌ی PHP هم هنگام پر شدن بزرگ می‌شود)، صف با دو stack، union-find. در عمل: بیشتر <code>$arr[] = $x</code>ها ارزان‌اند ولی گاهی یکی کند است؛ برای سیستم‌های real-time این spike مهم است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-13">
+      <summary>Hash Table چگونه کار می‌کند؟ روش‌های رسیدگی به برخورد (collision) را توضیح دهید و بگویید چرا بدترین حالت <code>O(n)</code> است.</summary>
+      <div class="answer">
+        <p><strong>سازوکار:</strong> تابع hash کلید را به یک عدد تبدیل می‌کند و <code>hash(key) mod capacity</code> اندیس bucket را می‌دهد. با تابع hash خوب و load factor کنترل‌شده، درج/جست‌وجو/حذف به‌طور میانگین <code>O(1)</code> است.</p>
+        <p><strong>Collision:</strong> چون فضای کلیدها از تعداد bucketها بزرگ‌تر است، دو کلید متفاوت ممکن است به یک bucket برسند (اصل لانه‌ی کبوتری).</p>
+        <ul>
+          <li><strong>Separate Chaining:</strong> هر bucket یک لیست پیوندی (یا در برخی پیاده‌سازی‌ها درخت متوازن) از جفت‌ها دارد. ساده، حذف آسان، تحمل load factor بالا. هزینه: اشاره‌گرها و cache locality ضعیف‌تر.</li>
+          <li><strong>Open Addressing:</strong> همه چیز در خود آرایه است؛ در برخورد خانه‌ی بعدی بررسی می‌شود: <em>Linear probing</em> (i+1، i+2…؛ cache-friendly ولی دچار clustering)، <em>Quadratic probing</em> (i+1²، i+2²…)، <em>Double hashing</em> (گام با hash دوم). حذف نیاز به tombstone دارد و با load factor بالا به‌سرعت کند می‌شود.</li>
+        </ul>
+        <p><strong>Load factor و resize:</strong> وقتی <code>n / capacity</code> از آستانه گذشت، ظرفیت (معمولاً دو برابر) و همه‌ی کلیدها rehash می‌شوند: <code>O(n)</code> تکی، amortized <code>O(1)</code>.</p>
+        <p><strong>بدترین حالت O(n):</strong> اگر همه‌ی کلیدها در یک bucket بیفتند (تابع hash بد یا حمله‌ی عمدی <strong>hash flooding</strong>)، جست‌وجو به پیمایش خطی تبدیل می‌شود. دفاع: hash تصادفی با seed، محدود کردن تعداد ورودی‌ها (مثل <code>max_input_vars</code> در PHP)، یا تبدیل chain بلند به درخت.</p>
+        <p><strong>در PHP:</strong> <code>array</code> یک hash table مرتب با chaining است که ترتیب درج را هم حفظ می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-14">
+      <summary>سناریو: از یک فایل لاگ با ۵۰ میلیون خط، ۱۰ آدرس IP پرتکرار را پیدا کنید. رویکرد و پیچیدگی را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>گام ۱ — شمارش:</strong> فایل را <strong>جریانی (streaming)</strong> و خط‌به‌خط بخوانید (نه <code>file()</code> که کل فایل را در حافظه می‌برد) و فراوانی هر IP را در hash map بشمارید: <code>O(N)</code> زمان، <code>O(U)</code> حافظه (U = تعداد IP یکتا).</p>
+        <p><strong>گام ۲ — انتخاب top-k:</strong> به جای مرتب‌سازی کامل (<code>O(U log U)</code>)، یک <strong>min-heap با اندازه‌ی k=10</strong>: هر IP را درج کن و اگر اندازه از k گذشت، کوچک‌ترین را حذف کن ⇒ <code>O(U log k)</code>.</p>
+        <pre><code class="language-php">&lt;?php
+function topIps(string $path, int $k = 10): array
+{
+    $counts = [];
+    $fh = fopen($path, 'rb');
+    while (($line = fgets($fh)) !== false) {
+        $ip = strtok($line, ' ');                 // فرض: IP اولین فیلد است
+        $counts[$ip] = ($counts[$ip] ?? 0) + 1;
+    }
+    fclose($fh);
+
+    $heap = new SplMinHeap();                     // عناصر: [count, ip]
+    foreach ($counts as $ip =&gt; $c) {
+        $heap-&gt;insert([$c, (string) $ip]);
+        if ($heap-&gt;count() &gt; $k) $heap-&gt;extract();
+    }
+    $result = [];
+    foreach ($heap as [$c, $ip]) $result[$ip] = $c;
+    arsort($result);
+    return $result;
+}</code></pre>
+        <p><strong>اگر IPهای یکتا در حافظه جا نشوند:</strong> partition بر اساس <code>hash(ip) mod P</code> به P فایل کوچک‌تر (همه‌ی وقوع‌های یک IP در یک فایل)، top-k هر فایل، سپس ادغام نتایج. یا الگوریتم‌های تقریبی مثل <strong>Count-Min Sketch</strong>. در دنیای واقعی: <code>sort | uniq -c | sort -rn | head</code> یا ابزارهایی مثل ELK/ClickHouse.</p>
+        <p><strong>پیچیدگی کل:</strong> <code>O(N + U log k)</code> زمان، <code>O(U + k)</code> حافظه.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-15">
+      <summary>Memoization و Tabulation را در Dynamic Programming مقایسه کنید و مسئله‌ی Climbing Stairs را با هر دو روش حل کنید.</summary>
+      <div class="answer">
+        <p><strong>مسئله:</strong> به چند روش می‌توان با گام‌های ۱ یا ۲ از پله‌ی ۰ به پله‌ی n رسید؟ آخرین گام یا از n-1 بوده یا از n-2 ⇒ <code>ways(n) = ways(n-1) + ways(n-2)</code>، با <code>ways(0) = ways(1) = 1</code>. (همان فیبوناچی.)</p>
+        <pre><code class="language-php">&lt;?php
+// Top-down (Memoization)
+function climbMemo(int $n, array &amp;$memo = []): int
+{
+    if ($n &lt;= 1) return 1;
+    return $memo[$n] ??= climbMemo($n - 1, $memo) + climbMemo($n - 2, $memo);
+}
+
+// Bottom-up (Tabulation) با حافظه‌ی O(1)
+function climbTab(int $n): int
+{
+    $a = 1; $b = 1;                 // ways(0), ways(1)
+    for ($i = 2; $i &lt;= $n; $i++) {
+        [$a, $b] = [$b, $a + $b];
+    }
+    return $b;
+}</code></pre>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Memoization</th><th>Tabulation</th></tr></thead>
+          <tbody>
+            <tr><td>جهت</td><td>از بالا (مسئله‌ی اصلی) به پایین</td><td>از پایین (base case) به بالا</td></tr>
+            <tr><td>پیاده‌سازی</td><td>بازگشت + cache</td><td>حلقه + جدول</td></tr>
+            <tr><td>زیرمسئله‌های حل‌شده</td><td>فقط موارد لازم</td><td>همه</td></tr>
+            <tr><td>حافظه</td><td>cache + call stack</td><td>جدول؛ اغلب قابل کاهش به O(1)</td></tr>
+            <tr><td>ریسک</td><td>stack overflow برای n بزرگ</td><td>باید ترتیب وابستگی‌ها را درست تعیین کرد</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>پیچیدگی:</strong> نسخه‌ی بازگشتی ساده <code>O(2ⁿ)</code>؛ هر دو نسخه‌ی DP <code>O(n)</code> زمان؛ حافظه memo <code>O(n)</code> و tabulation بهینه <code>O(1)</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-16">
+      <summary>BFS و DFS را مقایسه کنید. برای پیدا کردن «کمترین تعداد واسطه بین دو کاربر در شبکه‌ی اجتماعی» کدام را انتخاب می‌کنید و چرا؟</summary>
+      <div class="answer">
+        <p><strong>BFS:</strong> پیمایش سطح‌به‌سطح با صف؛ ابتدا همه‌ی رأس‌های با فاصله‌ی ۱، سپس ۲ و… . <strong>DFS:</strong> تا انتهای یک مسیر عمیق می‌رود و سپس backtrack می‌کند؛ با stack یا بازگشت. هر دو <code>O(V + E)</code> زمان دارند.</p>
+        <ul>
+          <li><strong>حافظه:</strong> BFS به اندازه‌ی پهن‌ترین سطح (در شبکه‌ی اجتماعی می‌تواند بسیار بزرگ باشد)؛ DFS به اندازه‌ی عمق.</li>
+          <li><strong>کوتاه‌ترین مسیر بی‌وزن:</strong> فقط BFS تضمین می‌کند اولین باری که به مقصد می‌رسد، با کمترین تعداد یال است.</li>
+          <li><strong>کاربرد DFS:</strong> تشخیص دور، topological sort، مؤلفه‌های همبند، پیدا کردن همه‌ی مسیرها، backtracking (sudoku، جایگشت‌ها).</li>
+        </ul>
+        <p><strong>پاسخ سناریو:</strong> <strong>BFS</strong>، چون «کمترین تعداد واسطه» همان کوتاه‌ترین مسیر در گراف بی‌وزن است. بهبودها:</p>
+        <ul>
+          <li><strong>Bidirectional BFS:</strong> هم‌زمان از هر دو کاربر جست‌وجو و توقف در محل برخورد؛ تعداد رأس‌های بازدیدشده به‌شدت کم می‌شود (حدوداً از <code>b^d</code> به <code>2·b^(d/2)</code>).</li>
+          <li>محدود کردن عمق (مثلاً حداکثر ۳ واسطه) و علامت‌گذاری بازدیدشده‌ها هنگام enqueue.</li>
+          <li>در مقیاس واقعی از graph database یا پیش‌محاسبه استفاده می‌شود.</li>
+        </ul>
+        <p>اگر یال‌ها وزن داشتند (مثلاً میزان صمیمیت)، Dijkstra لازم بود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-17">
+      <summary>کد binary search زیر گاهی در حلقه‌ی بی‌نهایت گیر می‌کند یا جواب غلط می‌دهد. مشکلاتش را پیدا کنید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+function search(array $a, int $target): int
+{
+    $lo = 0;
+    $hi = count($a);
+    while ($lo &lt; $hi) {
+        $mid = ($lo + $hi) / 2;
+        if ($a[$mid] == $target) return $mid;
+        if ($a[$mid] &lt; $target) $lo = $mid;
+        else $hi = $mid - 1;
+    }
+    return -1;
+}</code></pre>
+        <p><strong>مشکلات:</strong></p>
+        <ol>
+          <li><code>($lo + $hi) / 2</code> در PHP عدد <strong>float</strong> برمی‌گرداند (مثلاً 2.5)؛ استفاده از float به‌عنوان اندیس آرایه منسوخ است و به int بریده می‌شود. باید <code>intdiv</code> یا <code>&gt;&gt; 1</code> استفاده شود. در زبان‌های با int محدود، <code>lo + hi</code> ممکن است overflow کند ⇒ <code>lo + (hi - lo) / 2</code>.</li>
+          <li><code>$lo = $mid</code>: وقتی <code>hi = lo + 1</code>، mid برابر lo می‌شود و lo هرگز جلو نمی‌رود ⇒ <strong>حلقه‌ی بی‌نهایت</strong>. باید <code>$lo = $mid + 1</code> باشد، چون mid قبلاً بررسی شده است.</li>
+          <li><strong>ناسازگاری قرارداد بازه:</strong> hi اولیه <code>count($a)</code> (نیم‌باز) و شرط <code>lo &lt; hi</code> است، ولی <code>$hi = $mid - 1</code> مربوط به بازه‌ی بسته است و ممکن است عنصر <code>mid - 1</code> را از دست بدهد. در بازه‌ی نیم‌باز باید <code>$hi = $mid</code> باشد.</li>
+          <li><code>==</code> به جای <code>===</code>: مقایسه‌ی loose.</li>
+        </ol>
+        <pre><code class="language-php">&lt;?php
+function search(array $a, int $target): int
+{
+    $lo = 0;
+    $hi = count($a);                         // [lo, hi)
+    while ($lo &lt; $hi) {
+        $mid = $lo + intdiv($hi - $lo, 2);
+        if ($a[$mid] === $target) return $mid;
+        if ($a[$mid] &lt; $target) $lo = $mid + 1;
+        else $hi = $mid;
+    }
+    return -1;
+}</code></pre>
+        <p><strong>تست‌های لازم:</strong> آرایه‌ی خالی، یک عنصر، target در اول/آخر، target کوچک‌تر/بزرگ‌تر از همه، و آرایه‌ی دوعنصری.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-algorithms-18">
+      <summary>Topological Sort چیست؟ یک کاربرد آن در توسعه‌ی backend مثال بزنید و الگوریتم Kahn را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> ترتیب خطی رأس‌های یک گراف جهت‌دار بدون دور (DAG) به‌طوری که برای هر یال <code>u → v</code>، u قبل از v بیاید. فقط برای DAG وجود دارد و ممکن است یکتا نباشد.</p>
+        <p><strong>کاربردها در backend:</strong> ترتیب اجرای jobهای وابسته در یک pipeline (Laravel Bus chain/batch یا DAG در Airflow)، ترتیب ایجاد جداول بر اساس FK در seeding یا migration، resolve وابستگی پکیج‌ها (Composer)، ترتیب boot شدن service providerها یا microserviceها، build system.</p>
+        <p><strong>الگوریتم Kahn:</strong></p>
+        <ol>
+          <li>درجه‌ی ورودی (in-degree) هر رأس را حساب کن.</li>
+          <li>همه‌ی رأس‌های با in-degree صفر (بدون پیش‌نیاز) را در صف بگذار.</li>
+          <li>تا صف خالی نشده: رأسی را خارج و به خروجی اضافه کن؛ in-degree همسایه‌هایش را یکی کم کن و هر کدام صفر شد را وارد صف کن.</li>
+          <li>اگر تعداد رأس‌های خروجی کمتر از V بود ⇒ گراف <strong>دور</strong> دارد (وابستگی حلقوی) و ترتیب ممکن نیست.</li>
+        </ol>
+        <pre class="diagram">users ──► orders ──► order_items
+  │                     ▲
+  └──► products ────────┘
+ترتیب معتبر: users, products, orders, order_items</pre>
+        <p><strong>پیچیدگی:</strong> <code>O(V + E)</code> زمان و حافظه.</p>
+        <p><strong>روش جایگزین:</strong> DFS و افزودن رأس به ابتدای لیست بعد از اتمام بازدید همه‌ی فرزندانش (post-order معکوس)؛ تشخیص دور با سه رنگ (سفید/خاکستری/سیاه). مزیت Kahn: تشخیص دور طبیعی و امکان پردازش موازی رأس‌های هم‌سطح.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ===================== CHEATSHEET ===================== -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>فرایند</h3>
+      <ul>
+        <li>درک ← مثال و حالت مرزی ← brute force ← بهینه‌سازی ← کد ← dry run و پیچیدگی.</li>
+        <li>همیشه زمان <strong>و</strong> حافظه را بگویید.</li>
+      </ul>
+      <h3>Big-O</h3>
+      <ul>
+        <li>1 &lt; log n &lt; n &lt; n log n &lt; n² &lt; 2ⁿ &lt; n!</li>
+        <li>پشت سر هم: جمع؛ تودرتو: ضرب؛ نصف کردن: log.</li>
+        <li>Amortized: میانگین روی دنباله (append آرایه‌ی پویا، rehash).</li>
+        <li>PHP: <code>isset</code> O(1)، <code>in_array</code> O(n)، <code>array_shift</code> O(n)، <code>sort</code> O(n log n) و stable (8.0+).</li>
+      </ul>
+      <h3>Hash</h3>
+      <ul>
+        <li>میانگین O(1)، بدترین O(n).</li>
+        <li>Collision: chaining یا open addressing (linear/quadratic/double hashing).</li>
+        <li>Load factor ← resize و rehash.</li>
+        <li>Set در PHP: <code>$s[$x] = true</code> + <code>isset</code>.</li>
+      </ul>
+      <h3>الگوها</h3>
+      <ul>
+        <li>Two pointers: آرایه‌ی مرتب، پالیندروم، حذف تکراری درجا.</li>
+        <li>Sliding window: زیرآرایه/زیررشته‌ی پیوسته؛ اعداد نامنفی.</li>
+        <li>Prefix sum: جمع بازه O(1)؛ با hash map برای «تعداد زیرآرایه با مجموع k».</li>
+        <li>Monotonic stack: «بزرگ‌تر بعدی» O(n).</li>
+        <li>Fast/slow: وسط لیست، تشخیص حلقه (Floyd).</li>
+        <li>Binary search on answer: شرط یکنوا روی جواب.</li>
+      </ul>
+      <h3>Binary Search</h3>
+      <ul>
+        <li><code>mid = lo + intdiv(hi - lo, 2)</code></li>
+        <li>بسته: <code>lo &lt;= hi</code>، <code>hi = mid - 1</code>.</li>
+        <li>نیم‌باز: <code>lo &lt; hi</code>، <code>hi = mid</code>.</li>
+        <li>همیشه <code>lo = mid + 1</code>.</li>
+      </ul>
+      <h3>مرتب‌سازی</h3>
+      <ul>
+        <li>Stable: bubble، insertion، merge، counting.</li>
+        <li>Unstable: selection، quick، heap.</li>
+        <li>Merge: n log n تضمینی، O(n) حافظه.</li>
+        <li>Quick: میانگین n log n، بدترین n²، O(log n) حافظه، pivot تصادفی.</li>
+        <li>Heap: n log n تضمینی، O(1) حافظه.</li>
+        <li>Insertion: داده‌ی تقریباً مرتب و n کوچک.</li>
+        <li>Counting: O(n + k) برای بازه‌ی کوچک.</li>
+        <li>کران پایین مقایسه‌ای: Ω(n log n).</li>
+      </ul>
+      <h3>درخت و Heap</h3>
+      <ul>
+        <li>BST: متوازن O(log n)، نامتوازن O(n).</li>
+        <li>In-order روی BST = مرتب.</li>
+        <li>Pre: کپی؛ Post: حذف/محاسبه از پایین؛ Level: صف.</li>
+        <li>Validate BST: بازه‌ی (min, max).</li>
+        <li>Heap: peek O(1)، insert/extract O(log n)، heapify O(n).</li>
+        <li>Top-k: min-heap اندازه‌ی k ⇒ O(n log k).</li>
+        <li>PHP: <code>SplMinHeap</code>، <code>SplMaxHeap</code>، <code>SplPriorityQueue</code> (max).</li>
+      </ul>
+      <h3>گراف</h3>
+      <ul>
+        <li>Adjacency list O(V+E)؛ matrix O(V²).</li>
+        <li>BFS: صف، کوتاه‌ترین مسیر بی‌وزن، علامت هنگام enqueue.</li>
+        <li>DFS: stack/بازگشت، دور، مؤلفه‌ها، backtracking.</li>
+        <li>Dijkstra: وزن نامنفی، O((V+E) log V)، lazy deletion.</li>
+        <li>Topological (Kahn): in-degree صفر در صف؛ کمتر از V خروجی = دور.</li>
+      </ul>
+      <h3>Greedy و DP</h3>
+      <ul>
+        <li>Greedy: انتخاب محلی بهینه؛ باید اثبات شود (activity selection: مرتب بر اساس پایان).</li>
+        <li>DP: زیرمسئله‌ی هم‌پوشان + زیرساختار بهینه.</li>
+        <li>State ← transition ← base case ← ترتیب ← بهینه‌سازی حافظه.</li>
+        <li>Memo (top-down) در برابر tabulation (bottom-up).</li>
+        <li>Fib/Stairs: O(n)، حافظه O(1).</li>
+        <li>Coin change: O(amount × coins).</li>
+        <li>Knapsack 0/1: O(n·W). LCS: O(m·n).</li>
+        <li>Kadane: <code>cur = max(x, cur + x)</code>.</li>
+      </ul>
+      <h3>مسائل کلاسیک — یک خطی</h3>
+      <ul>
+        <li>Two Sum: hash map مکمل، O(n).</li>
+        <li>Valid Parentheses: stack، O(n).</li>
+        <li>Reverse List: prev/cur/next، O(n)/O(1).</li>
+        <li>Duplicates: hash set، O(n).</li>
+        <li>Longest Unique Substring: sliding window + آخرین اندیس.</li>
+        <li>Merge Intervals: sort بر اساس شروع + یک گذر.</li>
+        <li>First/Last Position: دو lower bound.</li>
+        <li>Group Anagrams: کلید = حروف مرتب‌شده.</li>
+        <li>Missing Number: جمع گاوس یا XOR.</li>
+        <li>Top-k: شمارش + min-heap.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

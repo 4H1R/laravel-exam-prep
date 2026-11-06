@@ -1,0 +1,1495 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HTTP · HTML · CSS · JS — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="web-fundamentals">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>HTTP · HTML · CSS · JS</h1>
+    <p class="lead">مبانی مشترک وب برای برنامه‌نویس بک‌اند: ساختار پیام HTTP، cookie و session، cache و CORS؛ HTML معنایی و فرم‌ها؛ cascade، box model، Flexbox و Grid در CSS؛ و JavaScript از coercion و closure تا event loop، Promise و DOM، به‌همراه رندر مرورگر، ذخیره‌سازی و XSS.</p>
+  </header>
+
+  <section class="lesson" id="http-anatomy" data-title="ساختار پیام HTTP و هدرها">
+    <h2>ساختار پیام HTTP و هدرها</h2>
+    <p><strong>HTTP</strong> پروتکل لایهٔ کاربرد، <strong>request/response</strong> و <strong>stateless</strong> است: سرور به‌طور ذاتی درخواست‌های قبلی را به خاطر نمی‌آورد. هر پیام HTTP/1.1 سه بخش دارد: <strong>start line</strong>، <strong>هدرها</strong> و یک خط خالی، سپس <strong>بدنهٔ اختیاری</strong>. (در HTTP/2 و 3 همین معنا در قالب frameهای باینری منتقل می‌شود.)</p>
+    <pre><code class="language-http">POST /api/orders?ref=home HTTP/1.1          ← request line: method, request-target, version
+Host: shop.example.com                       ← هدرها (case-insensitive)
+User-Agent: Mozilla/5.0 ...
+Accept: application/json
+Content-Type: application/json
+Content-Length: 41
+Authorization: Bearer eyJhbGciOi...
+Cookie: laravel_session=abc123
+                                             ← خط خالی (CRLF) پایان هدرها
+{"product_id": 15, "quantity": 2}            ← body</code></pre>
+    <pre><code class="language-http">HTTP/1.1 201 Created                         ← status line: version, status code, reason phrase
+Content-Type: application/json; charset=utf-8
+Location: /api/orders/981
+Cache-Control: no-store
+Set-Cookie: cart_id=; Max-Age=0; Path=/
+
+{"id": 981, "status": "pending"}</code></pre>
+
+    <h3>هدرهای مهم</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دسته</th><th>هدر</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="6">درخواست</td><td><code>Host</code></td><td>دامنهٔ مقصد؛ در HTTP/1.1 اجباری (virtual hosting)</td></tr>
+        <tr><td><code>Accept</code> / <code>Accept-Language</code> / <code>Accept-Encoding</code></td><td>content negotiation: قالب، زبان، فشرده‌سازی (gzip، br)</td></tr>
+        <tr><td><code>Authorization</code></td><td>اعتبارنامه: <code>Bearer</code>، <code>Basic</code></td></tr>
+        <tr><td><code>Cookie</code></td><td>ارسال cookieهای ذخیره‌شده</td></tr>
+        <tr><td><code>Origin</code> / <code>Referer</code></td><td>مبدأ درخواست؛ برای CORS و محافظت CSRF</td></tr>
+        <tr><td><code>If-None-Match</code> / <code>If-Modified-Since</code></td><td>درخواست شرطی برای revalidate کردن cache</td></tr>
+        <tr><td rowspan="5">پاسخ</td><td><code>Set-Cookie</code></td><td>ذخیرهٔ cookie در مرورگر</td></tr>
+        <tr><td><code>Location</code></td><td>مقصد redirect (3xx) یا منبع ساخته‌شده (201)</td></tr>
+        <tr><td><code>Cache-Control</code> / <code>ETag</code> / <code>Last-Modified</code></td><td>سیاست cache و اعتبارسنجی</td></tr>
+        <tr><td><code>WWW-Authenticate</code></td><td>همراه 401؛ روش احراز هویت</td></tr>
+        <tr><td><code>Access-Control-Allow-*</code></td><td>CORS</td></tr>
+        <tr><td rowspan="2">نمایش (هر دو)</td><td><code>Content-Type</code></td><td>نوع MIME بدنه: <code>application/json</code>، <code>text/html; charset=utf-8</code>، <code>multipart/form-data</code></td></tr>
+        <tr><td><code>Content-Length</code> / <code>Content-Encoding</code></td><td>طول بدنه / فشرده‌سازی اعمال‌شده</td></tr>
+        <tr><td rowspan="5">امنیتی</td><td><code>Strict-Transport-Security</code></td><td>HSTS: فقط HTTPS</td></tr>
+        <tr><td><code>Content-Security-Policy</code></td><td>منابع مجاز برای اسکریپت، استایل و …؛ دفاع قوی در برابر XSS</td></tr>
+        <tr><td><code>X-Content-Type-Options: nosniff</code></td><td>جلوگیری از حدس زدن نوع محتوا توسط مرورگر</td></tr>
+        <tr><td><code>X-Frame-Options</code> / CSP <code>frame-ancestors</code></td><td>جلوگیری از clickjacking</td></tr>
+        <tr><td><code>Referrer-Policy</code></td><td>کنترل اطلاعات ارسالی در Referer</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>دسته‌های status code</h3>
+    <ul>
+      <li><strong>1xx</strong> اطلاعاتی (<code>101 Switching Protocols</code>، <code>103 Early Hints</code>)</li>
+      <li><strong>2xx</strong> موفق (<code>200</code>، <code>201</code>، <code>204</code>)</li>
+      <li><strong>3xx</strong> redirect (<code>301</code>، <code>302</code>، <code>304</code>، <code>307</code>، <code>308</code>)</li>
+      <li><strong>4xx</strong> خطای client (<code>400</code>، <code>401</code>، <code>403</code>، <code>404</code>، <code>419</code> در Laravel برای CSRF منقضی، <code>422</code>، <code>429</code>)</li>
+      <li><strong>5xx</strong> خطای سرور (<code>500</code>، <code>502</code>، <code>503</code>، <code>504</code>)</li>
+    </ul>
+    <div class="callout exam"><p>تفاوت ارسال فرم HTML با <code>application/x-www-form-urlencoded</code> (پیش‌فرض، <code>a=1&amp;b=2</code>) و <code>multipart/form-data</code> (لازم برای آپلود فایل، بخش‌ها با boundary جدا می‌شوند) و ارسال JSON با <code>application/json</code> سوال رایجی است. فرم HTML فقط GET و POST را پشتیبانی می‌کند؛ Laravel برای PUT/PATCH/DELETE از <strong>method spoofing</strong> با فیلد مخفی <code>_method</code> (دستور Blade <code>@method('PUT')</code>) استفاده می‌کند.</p></div>
+  </section>
+
+  <section class="lesson" id="cookies-sessions" data-title="Cookie و Session">
+    <h2>Cookie و Session</h2>
+    <p>چون HTTP stateless است، برای «به خاطر سپردن» کاربر بین درخواست‌ها از <strong>cookie</strong> استفاده می‌کنیم: سرور با <code>Set-Cookie</code> یک جفت نام/مقدار به مرورگر می‌دهد و مرورگر آن را در درخواست‌های بعدی (منطبق با دامنه و مسیر) با هدر <code>Cookie</code> برمی‌گرداند.</p>
+    <pre><code class="language-http">Set-Cookie: __Host-session=9f8a7c...; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=7200</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Attribute</th><th>معنا</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td><code>Expires</code> / <code>Max-Age</code></td><td>زمان انقضا (تاریخ مطلق / ثانیه)</td><td>بدون هر دو ⇐ <strong>session cookie</strong> که با بستن مرورگر پاک می‌شود. اگر هر دو باشند، Max-Age اولویت دارد. <code>Max-Age=0</code> یعنی حذف.</td></tr>
+        <tr><td><code>Domain</code></td><td>دامنه‌هایی که cookie برایشان ارسال می‌شود</td><td>اگر تنظیم نشود، فقط همان host (host-only). اگر <code>Domain=example.com</code> شود، زیردامنه‌ها هم دریافت می‌کنند (دامنهٔ گسترده‌تر = ریسک بیشتر).</td></tr>
+        <tr><td><code>Path</code></td><td>پیشوند مسیرهایی که cookie برایشان ارسال می‌شود</td><td>مرز امنیتی محسوب نمی‌شود.</td></tr>
+        <tr><td><code>Secure</code></td><td>فقط روی HTTPS ارسال شود</td><td>برای cookieهای حساس الزامی.</td></tr>
+        <tr><td><code>HttpOnly</code></td><td>از طریق JavaScript (<code>document.cookie</code>) قابل دسترسی نیست</td><td>سرقت session با XSS را دشوار می‌کند (ولی XSS را حل نمی‌کند).</td></tr>
+        <tr><td><code>SameSite</code></td><td>کنترل ارسال در درخواست‌های cross-site</td><td><code>Strict</code>: هرگز cross-site؛ <code>Lax</code>: فقط در navigation سطح بالا با متد امن (کلیک روی لینک)؛ <code>None</code>: همیشه — نیازمند <code>Secure</code>. مرورگرهای مبتنی بر Chromium در نبود این attribute رفتار <code>Lax</code> را پیش‌فرض می‌گیرند.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout note"><p>پیشوند <code>__Host-</code> در نام cookie مرورگر را مجبور می‌کند فقط وقتی آن را بپذیرد که <code>Secure</code> باشد، <code>Path=/</code> داشته باشد و <code>Domain</code> نداشته باشد؛ بنابراین زیردامنهٔ آلوده نمی‌تواند آن را بازنویسی کند.</p></div>
+
+    <h3>Session سمت سرور</h3>
+    <pre class="diagram">1. POST /login (credentials)
+2. سرور کاربر را احراز می‌کند، session id تصادفی می‌سازد، داده را در store ذخیره می‌کند
+     store (file / database / Redis):  9f8a7c → { user_id: 42, cart: [...] }
+3. Set-Cookie: laravel_session=9f8a7c (HttpOnly, Secure, SameSite=Lax)
+4. درخواست‌های بعدی: Cookie: laravel_session=9f8a7c → lookup در store → کاربر 42</pre>
+    <ul>
+      <li>در cookie فقط <strong>شناسهٔ تصادفی</strong> است؛ داده‌ها روی سرور می‌ماند. (Laravel cookieها را رمز می‌کند؛ درایور <code>cookie</code> خود داده را در cookie رمزشده نگه می‌دارد.)</li>
+      <li>در چند سرور، session store باید مشترک باشد (Redis یا دیتابیس) — یا sticky session که توصیه نمی‌شود.</li>
+      <li><strong>Session fixation:</strong> پس از login شناسهٔ session را عوض کنید (<code>$request-&gt;session()-&gt;regenerate()</code>؛ Laravel در سیستم احراز هویتش این کار را انجام می‌دهد). در logout هم session را invalidate کنید.</li>
+      <li><strong>CSRF:</strong> چون مرورگر cookie را خودکار می‌فرستد، سایت مخرب می‌تواند درخواست تغییردهنده از طرف کاربر ارسال کند. دفاع: <strong>CSRF token</strong> (<code>@csrf</code> در Laravel؛ خطای 419 در صورت نبود یا انقضا)، SameSite=Lax/Strict، و عدم انجام تغییر با GET.</li>
+    </ul>
+    <div class="grid-2">
+      <div class="card"><h4>Session + Cookie</h4><ul>
+        <li>stateful؛ لغو فوری با حذف session</li>
+        <li>HttpOnly ⇒ دور از دسترس JS</li>
+        <li>نیاز به CSRF protection</li>
+        <li>مناسب اپ وب سرور-رندر و SPA first-party</li>
+      </ul></div>
+      <div class="card"><h4>Token در هدر Authorization</h4><ul>
+        <li>stateless (JWT) یا lookup (opaque)</li>
+        <li>اگر در localStorage باشد ⇒ در معرض XSS</li>
+        <li>CSRF ندارد (مرورگر خودکار نمی‌فرستد)</li>
+        <li>مناسب موبایل، API شخص ثالث، cross-domain</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section class="lesson" id="caching-cors" data-title="مبانی HTTP Cache و CORS">
+    <h2>مبانی HTTP Cache و CORS</h2>
+    <h3>HTTP Cache</h3>
+    <p>cache در مرورگر (private) یا در CDN و proxy (shared) پاسخ‌ها را نگه می‌دارد. دو مکانیزم دارد:</p>
+    <ol>
+      <li><strong>Freshness:</strong> تا وقتی پاسخ تازه است، بدون تماس با سرور استفاده می‌شود: <code>Cache-Control: max-age=3600</code>.</li>
+      <li><strong>Validation:</strong> بعد از stale شدن، مرورگر درخواست شرطی می‌فرستد (<code>If-None-Match: "etag"</code>) و اگر تغییری نبود، <code>304 Not Modified</code> بدون بدنه می‌گیرد.</li>
+    </ol>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع محتوا</th><th>سیاست پیشنهادی</th></tr></thead>
+      <tbody>
+        <tr><td>فایل static با hash در نام (<code>app.3f9c1.js</code>؛ خروجی Vite)</td><td><code>Cache-Control: public, max-age=31536000, immutable</code> — تغییر محتوا = نام جدید (cache busting)</td></tr>
+        <tr><td>HTML صفحه</td><td><code>no-cache</code> (همیشه revalidate) یا max-age کوتاه</td></tr>
+        <tr><td>پاسخ API شخصی</td><td><code>private, no-cache</code> یا <code>no-store</code> برای داده حساس</td></tr>
+        <tr><td>دادهٔ عمومی کم‌تغییر</td><td><code>public, max-age=60, s-maxage=300</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p><code>no-cache</code> = «ذخیره کن ولی قبل از استفاده بپرس»؛ <code>no-store</code> = «اصلاً ذخیره نکن». هدر <code>Vary</code> (مثلاً <code>Vary: Accept-Encoding</code>) به cache می‌گوید پاسخ بسته به کدام هدر درخواست متفاوت است.</p></div>
+
+    <h3>Same-Origin Policy و CORS</h3>
+    <p><strong>Origin</strong> = <code>scheme + host + port</code>. <code>https://app.example.com</code> و <code>https://api.example.com</code> دو origin متفاوت‌اند (اما <strong>same-site</strong> هستند چون دامنهٔ ثبت‌شدهٔ یکسان دارند — این تمایز برای SameSite cookie مهم است). <strong>Same-Origin Policy</strong> مرورگر اجازه نمی‌دهد JS یک origin پاسخ درخواست به origin دیگر را بخواند، مگر اینکه سرور مقصد با <strong>CORS</strong> اجازه دهد.</p>
+    <ul>
+      <li><strong>Simple request:</strong> متد GET/HEAD/POST، فقط هدرهای ساده و <code>Content-Type</code> یکی از <code>text/plain</code>، <code>application/x-www-form-urlencoded</code>، <code>multipart/form-data</code>. مستقیم ارسال می‌شود و مرورگر فقط هدر <code>Access-Control-Allow-Origin</code> پاسخ را چک می‌کند.</li>
+      <li><strong>Preflight:</strong> در غیر این صورت (مثلاً <code>Content-Type: application/json</code>، هدر <code>Authorization</code>، یا متد PUT/DELETE) مرورگر ابتدا یک <code>OPTIONS</code> می‌فرستد تا اجازه بگیرد.</li>
+    </ul>
+    <pre class="diagram">Browser (app.example.com)                         Server (api.example.com)
+  │ OPTIONS /orders                                          │
+  │ Origin: https://app.example.com                          │
+  │ Access-Control-Request-Method: DELETE                    │
+  │ Access-Control-Request-Headers: authorization ─────────► │
+  │ ◄─────────────── 204  Access-Control-Allow-Origin: https://app.example.com
+  │                       Access-Control-Allow-Methods: GET, POST, DELETE
+  │                       Access-Control-Allow-Headers: authorization
+  │                       Access-Control-Max-Age: 600
+  │ DELETE /orders/7  (درخواست اصلی) ──────────────────────► │
+  │ ◄─────────────── 204  Access-Control-Allow-Origin: https://app.example.com</pre>
+    <div class="callout warn"><p>CORS را <strong>مرورگر</strong> اعمال می‌کند؛ از سرور در برابر curl یا اسکریپت محافظت نمی‌کند. همچنین CORS جلوی <em>ارسال</em> simple request را نمی‌گیرد (فقط خواندن پاسخ را مسدود می‌کند)، پس جایگزین CSRF token نیست. <code>Access-Control-Allow-Origin: *</code> همراه با credentials (cookie) مجاز نیست.</p></div>
+  </section>
+
+  <section class="lesson" id="html-structure" data-title="ساختار سند و HTML معنایی">
+    <h2>ساختار سند و HTML معنایی</h2>
+    <pre><code class="language-xml">&lt;!DOCTYPE html&gt;                       &lt;!-- standards mode (نه quirks mode) --&gt;
+&lt;html lang="fa" dir="rtl"&gt;              &lt;!-- زبان برای screen reader و موتور جستجو --&gt;
+&lt;head&gt;
+  &lt;meta charset="utf-8"&gt;
+  &lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;
+  &lt;title&gt;خرید لپ‌تاپ | فروشگاه نمونه&lt;/title&gt;
+  &lt;meta name="description" content="خلاصهٔ ۱۵۰ کاراکتری صفحه برای نتایج جستجو"&gt;
+  &lt;link rel="canonical" href="https://shop.example.com/laptops"&gt;
+  &lt;meta property="og:title" content="لپ‌تاپ‌ها"&gt;      &lt;!-- Open Graph برای اشتراک در شبکه‌های اجتماعی --&gt;
+  &lt;link rel="stylesheet" href="/build/app.css"&gt;
+  &lt;script src="/build/app.js" defer&gt;&lt;/script&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;header&gt;&lt;nav aria-label="منوی اصلی"&gt;...&lt;/nav&gt;&lt;/header&gt;
+  &lt;main&gt;
+    &lt;h1&gt;لپ‌تاپ‌ها&lt;/h1&gt;
+    &lt;article&gt;
+      &lt;h2&gt;لپ‌تاپ X&lt;/h2&gt;
+      &lt;figure&gt;&lt;img src="x.webp" alt="لپ‌تاپ X از نمای جلو" width="640" height="400"&gt;&lt;figcaption&gt;...&lt;/figcaption&gt;&lt;/figure&gt;
+      &lt;p&gt;قیمت: &lt;data value="42000000"&gt;۴۲ میلیون تومان&lt;/data&gt;&lt;/p&gt;
+    &lt;/article&gt;
+    &lt;aside&gt;محصولات مرتبط&lt;/aside&gt;
+  &lt;/main&gt;
+  &lt;footer&gt;...&lt;/footer&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+    <h3>عناصر معنایی (Semantic)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عنصر</th><th>معنا</th></tr></thead>
+      <tbody>
+        <tr><td><code>&lt;header&gt;</code> / <code>&lt;footer&gt;</code></td><td>سرصفحه/پاصفحهٔ صفحه یا یک بخش</td></tr>
+        <tr><td><code>&lt;nav&gt;</code></td><td>مجموعهٔ لینک‌های ناوبری اصلی</td></tr>
+        <tr><td><code>&lt;main&gt;</code></td><td>محتوای اصلی و یکتای صفحه (یکی در هر صفحه)</td></tr>
+        <tr><td><code>&lt;article&gt;</code></td><td>محتوای مستقل و قابل‌انتشار جداگانه (پست، کارت محصول، کامنت)</td></tr>
+        <tr><td><code>&lt;section&gt;</code></td><td>بخش موضوعی با عنوان</td></tr>
+        <tr><td><code>&lt;aside&gt;</code></td><td>محتوای جانبی مرتبط</td></tr>
+        <tr><td><code>&lt;figure&gt;</code> / <code>&lt;figcaption&gt;</code></td><td>تصویر/نمودار/کد با توضیح</td></tr>
+        <tr><td><code>&lt;time datetime="..."&gt;</code></td><td>زمان ماشین‌خوان</td></tr>
+        <tr><td><code>&lt;button&gt;</code> در برابر <code>&lt;a&gt;</code></td><td>button برای <strong>عمل</strong> (ارسال، باز کردن منو)؛ a برای <strong>رفتن</strong> به آدرس</td></tr>
+        <tr><td><code>&lt;strong&gt;</code> / <code>&lt;em&gt;</code></td><td>اهمیت / تأکید (در برابر <code>&lt;b&gt;</code>/<code>&lt;i&gt;</code> که صرفاً ظاهری‌اند)</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>چرا معنایی؟</strong> (۱) <strong>دسترس‌پذیری:</strong> screen readerها landmarkها و headingها را برای ناوبری استفاده می‌کنند؛ (۲) <strong>SEO:</strong> موتورهای جستجو ساختار محتوا را بهتر درک می‌کنند؛ (۳) <strong>نگه‌داری:</strong> کد خواناتر از «div soup»؛ (۴) رفتار پیش‌فرض رایگان (button با کیبورد فعال می‌شود، فوکوس‌پذیر است).</p>
+    <ul>
+      <li><strong>Block در برابر inline:</strong> عناصر block (<code>div</code>، <code>p</code>، <code>section</code>) عرض کامل و خط جدید؛ inline (<code>span</code>، <code>a</code>، <code>strong</code>) در جریان متن. (این رفتار پیش‌فرض با CSS <code>display</code> تغییر می‌کند.)</li>
+      <li><strong>Heading hierarchy:</strong> یک <code>h1</code> اصلی و سطوح بدون پرش (h2 ← h3)، بر اساس ساختار نه اندازهٔ ظاهری.</li>
+      <li>برای تصاویر <code>width</code> و <code>height</code> بدهید تا مرورگر فضا را رزرو کند و <strong>layout shift (CLS)</strong> رخ ندهد؛ <code>loading="lazy"</code> برای تصاویر پایین صفحه.</li>
+    </ul>
+
+    <h3>Meta و مبانی SEO</h3>
+    <ul>
+      <li><code>&lt;title&gt;</code> یکتا و توصیفی برای هر صفحه؛ <code>meta description</code> برای snippet نتایج جستجو.</li>
+      <li><code>&lt;link rel="canonical"&gt;</code> برای جلوگیری از محتوای تکراری (مثلاً صفحه با پارامترهای مرتب‌سازی مختلف).</li>
+      <li><code>&lt;meta name="robots" content="noindex"&gt;</code> برای صفحاتی که نباید index شوند؛ <code>robots.txt</code> و <code>sitemap.xml</code>.</li>
+      <li>Open Graph و Twitter Card برای پیش‌نمایش اشتراک‌گذاری؛ <code>hreflang</code> برای نسخه‌های چندزبانه؛ داده‌های ساختاریافته (JSON-LD با schema.org).</li>
+      <li>URL تمیز و خوانا، status code درست (404 واقعی نه «soft 404»، 301 برای انتقال دائمی)، سرعت بارگذاری و سازگاری موبایل.</li>
+      <li>محتوایی که فقط با JS رندر می‌شود ممکن است دیرتر یا ناقص index شود؛ SSR (مثل Blade یا Inertia SSR) برای صفحات عمومی مزیت دارد.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="html-forms-a11y" data-title="فرم‌ها و دسترس‌پذیری">
+    <h2>فرم‌ها و دسترس‌پذیری</h2>
+    <pre><code class="language-xml">&lt;form action="/register" method="POST" enctype="multipart/form-data" novalidate&gt;
+  &lt;input type="hidden" name="_token" value="..."&gt;   &lt;!-- @csrf در Blade --&gt;
+
+  &lt;label for="email"&gt;ایمیل&lt;/label&gt;
+  &lt;input id="email" name="email" type="email" required autocomplete="email"
+         aria-describedby="email-hint"&gt;
+  &lt;small id="email-hint"&gt;ایمیل کاری خود را وارد کنید.&lt;/small&gt;
+
+  &lt;label for="pass"&gt;رمز عبور&lt;/label&gt;
+  &lt;input id="pass" name="password" type="password" minlength="8" required autocomplete="new-password"&gt;
+
+  &lt;label for="age"&gt;سن&lt;/label&gt;
+  &lt;input id="age" name="age" type="number" min="18" max="120" step="1"&gt;
+
+  &lt;label for="mobile"&gt;موبایل&lt;/label&gt;
+  &lt;input id="mobile" name="mobile" type="tel" pattern="09[0-9]{9}" inputmode="numeric"&gt;
+
+  &lt;fieldset&gt;
+    &lt;legend&gt;نوع حساب&lt;/legend&gt;
+    &lt;label&gt;&lt;input type="radio" name="plan" value="free" checked&gt; رایگان&lt;/label&gt;
+    &lt;label&gt;&lt;input type="radio" name="plan" value="pro"&gt; حرفه‌ای&lt;/label&gt;
+  &lt;/fieldset&gt;
+
+  &lt;label for="avatar"&gt;تصویر&lt;/label&gt;
+  &lt;input id="avatar" name="avatar" type="file" accept="image/png, image/jpeg"&gt;
+
+  &lt;label&gt;&lt;input type="checkbox" name="terms" required&gt; قوانین را می‌پذیرم&lt;/label&gt;
+  &lt;button type="submit"&gt;ثبت‌نام&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+    <h3>نکات فرم</h3>
+    <ul>
+      <li><strong>Input typeها:</strong> <code>text</code>، <code>email</code>، <code>password</code>، <code>number</code>، <code>tel</code>، <code>url</code>، <code>search</code>، <code>date</code>، <code>datetime-local</code>، <code>time</code>، <code>range</code>، <code>color</code>، <code>file</code>، <code>checkbox</code>، <code>radio</code>، <code>hidden</code>. type درست کیبورد مناسب موبایل و validation داخلی را فعال می‌کند.</li>
+      <li><strong>Validation داخلی (Constraint Validation):</strong> <code>required</code>، <code>min</code>/<code>max</code>، <code>minlength</code>/<code>maxlength</code>، <code>pattern</code>، <code>step</code>؛ در CSS با <code>:invalid</code> و <code>:user-invalid</code> و در JS با <code>checkValidity()</code> و <code>setCustomValidity()</code>. <code>novalidate</code> آن را خاموش می‌کند.</li>
+      <li><strong>اعتبارسنجی سمت client هرگز کافی نیست:</strong> با DevTools یا curl دور زده می‌شود؛ همیشه در سرور (Form Request لاراول) validate کنید.</li>
+      <li><strong>name</strong> کلید ارسال‌شده به سرور است؛ <strong>id</strong> برای اتصال <code>label</code> و CSS/JS. فیلد بدون <code>name</code> ارسال نمی‌شود؛ فیلد <code>disabled</code> هم ارسال نمی‌شود (برخلاف <code>readonly</code>). checkbox تیک‌نخورده اصلاً ارسال نمی‌شود.</li>
+      <li><code>enctype="multipart/form-data"</code> برای آپلود فایل الزامی است. <code>method="GET"</code> داده‌ها را در query string می‌گذارد (برای جستجو مناسب، برای رمز عبور هرگز).</li>
+      <li><code>autocomplete</code> درست (<code>email</code>، <code>current-password</code>، <code>one-time-code</code>) تجربهٔ کاربری و مدیران رمز را بهبود می‌دهد.</li>
+      <li><code>&lt;button&gt;</code> داخل form به‌طور پیش‌فرض <code>type="submit"</code> است؛ برای دکمه‌های دیگر <code>type="button"</code> بگذارید.</li>
+    </ul>
+
+    <h3>دسترس‌پذیری (Accessibility، a11y) و ARIA</h3>
+    <ul>
+      <li><strong>اول HTML معنایی:</strong> «قانون اول ARIA»: اگر عنصر بومی HTML با معنا و رفتار مورد نیاز وجود دارد، از آن استفاده کنید نه از <code>&lt;div role="button"&gt;</code>. عنصر بومی فوکوس، کیبورد و معنا را رایگان دارد.</li>
+      <li>هر input باید <strong>label</strong> مرتبط داشته باشد (placeholder جایگزین label نیست).</li>
+      <li>تصاویر معنادار <code>alt</code> توصیفی؛ تصاویر تزئینی <code>alt=""</code> تا screen reader از آن‌ها بگذرد.</li>
+      <li>همهٔ تعامل‌ها با <strong>کیبورد</strong> قابل انجام باشند؛ ترتیب فوکوس منطقی؛ <code>:focus-visible</code> را حذف نکنید. <code>tabindex="0"</code> عنصر را فوکوس‌پذیر می‌کند، <code>-1</code> فقط با اسکریپت؛ مقادیر مثبت ضدالگو هستند.</li>
+      <li><strong>کنتراست</strong> رنگ کافی (WCAG AA: نسبت ۴٫۵:۱ برای متن معمولی) و عدم اتکای صرف به رنگ برای انتقال معنا.</li>
+      <li>ARIA پرکاربرد:
+        <ul>
+          <li><code>aria-label</code> / <code>aria-labelledby</code>: نام دسترس‌پذیر (مثلاً دکمهٔ آیکونی).</li>
+          <li><code>aria-describedby</code>: توضیح یا پیام خطای مرتبط با فیلد.</li>
+          <li><code>aria-expanded</code>، <code>aria-controls</code>: وضعیت منوی کشویی/آکاردئون.</li>
+          <li><code>aria-live="polite"</code>: اعلام تغییرات پویا (نتیجهٔ ذخیره، toast).</li>
+          <li><code>aria-hidden="true"</code>: پنهان کردن از فناوری‌های کمکی (روی عنصر فوکوس‌پذیر نگذارید).</li>
+          <li><code>aria-invalid="true"</code>: فیلد نامعتبر.</li>
+        </ul>
+      </li>
+    </ul>
+    <pre><code class="language-xml">&lt;button type="button" aria-label="بستن" aria-controls="menu" aria-expanded="false"&gt;
+  &lt;svg aria-hidden="true"&gt;...&lt;/svg&gt;
+&lt;/button&gt;
+&lt;div role="status" aria-live="polite"&gt;&lt;/div&gt;   &lt;!-- پیام «ذخیره شد» این‌جا درج می‌شود --&gt;</code></pre>
+    <div class="callout warn"><p>ARIA فقط <em>معنا</em> را برای فناوری‌های کمکی تغییر می‌دهد، نه <em>رفتار</em> را. <code>&lt;div role="button"&gt;</code> همچنان با Enter/Space کار نمی‌کند و فوکوس نمی‌گیرد مگر خودتان <code>tabindex</code> و event handler کیبورد اضافه کنید. «ARIA بد بدتر از نبود ARIA است.»</p></div>
+  </section>
+
+  <section class="lesson" id="css-cascade" data-title="Cascade، Specificity و Inheritance">
+    <h2>Cascade، Specificity و Inheritance</h2>
+    <p>وقتی چند قانون CSS برای یک property روی یک عنصر رقابت می‌کنند، <strong>Cascade</strong> برنده را تعیین می‌کند. ترتیب معیارها (از مهم‌ترین):</p>
+    <ol>
+      <li><strong>Origin و importance:</strong> استایل‌های transition؛ <code>!important</code> مرورگر (user-agent)؛ <code>!important</code> کاربر؛ <code>!important</code> نویسنده؛ animationها؛ استایل عادی نویسنده؛ کاربر؛ مرورگر. (برای حالت عادی: نویسنده &gt; کاربر &gt; مرورگر و برای <code>!important</code> برعکس.)</li>
+      <li><strong>Cascade layers</strong> (<code>@layer</code>): استایل بیرون از layerها بر داخل layerها غلبه می‌کند و بین layerها، آخرین تعریف‌شده برنده است (برای <code>!important</code> برعکس).</li>
+      <li><strong>Specificity</strong> selector.</li>
+      <li><strong>ترتیب ظاهر شدن:</strong> در specificity برابر، قانون آخر برنده است.</li>
+    </ol>
+    <p>(استایل inline با <code>style=""</code> را می‌توان بالاترین سطح specificity در نظر گرفت.)</p>
+
+    <h3>محاسبهٔ Specificity</h3>
+    <p>specificity یک سه‌تایی <strong>(A, B, C)</strong> است که از چپ مقایسه می‌شود (نه مبنای ده!):</p>
+    <ul>
+      <li><strong>A:</strong> تعداد ID selectorها (<code>#nav</code>)</li>
+      <li><strong>B:</strong> تعداد class (<code>.btn</code>)، attribute (<code>[type="text"]</code>) و pseudo-class (<code>:hover</code>، <code>:nth-child()</code>)</li>
+      <li><strong>C:</strong> تعداد type selector (<code>div</code>) و pseudo-element (<code>::before</code>)</li>
+      <li>صفر: universal <code>*</code>، combinatorها (<code>&gt;</code>، <code>+</code>، <code>~</code>، فاصله) و <code>:where()</code>.</li>
+      <li><code>:is()</code>، <code>:not()</code> و <code>:has()</code> خودشان صفرند اما specificity <strong>بیشترین آرگومان</strong> خود را می‌گیرند.</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Selector</th><th>Specificity</th></tr></thead>
+      <tbody>
+        <tr><td><code>p</code></td><td>(0,0,1)</td></tr>
+        <tr><td><code>.card p</code></td><td>(0,1,1)</td></tr>
+        <tr><td><code>ul li a:hover</code></td><td>(0,1,3)</td></tr>
+        <tr><td><code>nav .menu &gt; li.active</code></td><td>(0,2,2)</td></tr>
+        <tr><td><code>#header .logo</code></td><td>(1,1,0)</td></tr>
+        <tr><td><code>input[type="email"]:focus</code></td><td>(0,2,1)</td></tr>
+        <tr><td><code>:is(#main, .content) p</code></td><td>(1,0,1)</td></tr>
+        <tr><td><code>:where(#main, .content) p</code></td><td>(0,0,1)</td></tr>
+        <tr><td><code>a::before</code></td><td>(0,0,2)</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-css">/* (0,1,1) */ .card p { color: gray; }
+/* (0,0,2) */ article p { color: black; }   /* با اینکه بعداً آمده، می‌بازد */
+/* (1,0,0) */ #intro { color: blue; }       /* بر هر تعداد class غلبه می‌کند */
+/* !important همه را (در همان origin) کنار می‌زند — آخرین راه، نه راه اول */</code></pre>
+    <div class="callout exam"><p>یک ID همیشه از هر تعداد class قوی‌تر است، چون مقایسه ستون‌به‌ستون انجام می‌شود: <code>(1,0,0) &gt; (0,15,0)</code>. specificity فقط وقتی مطرح است که قوانین در یک origin و layer باشند؛ در غیر این صورت معیارهای بالاتر cascade تصمیم می‌گیرند.</p></div>
+    <div class="callout tip"><p>برای CSS قابل نگه‌داری: specificity را پایین و یکنواخت نگه دارید (classها، روش BEM یا utility-first مثل Tailwind)، از ID برای استایل و از <code>!important</code> پرهیز کنید، و برای استایل‌های پایه/ریست از <code>:where()</code> یا <code>@layer</code> استفاده کنید تا به‌راحتی override شوند.</p></div>
+
+    <h3>Inheritance</h3>
+    <ul>
+      <li>برخی propertyها به‌طور پیش‌فرض از والد <strong>ارث می‌رسند</strong>: عمدتاً متنی‌ها مثل <code>color</code>، <code>font-*</code>، <code>line-height</code>، <code>text-align</code>، <code>visibility</code>، <code>direction</code>، <code>cursor</code>.</li>
+      <li>بیشتر propertyهای چیدمان و جعبه ارث نمی‌رسند: <code>margin</code>، <code>padding</code>، <code>border</code>، <code>width</code>، <code>background</code>، <code>display</code>، <code>position</code>.</li>
+      <li>کلمات کلیدی سراسری: <code>inherit</code> (از والد بگیر)، <code>initial</code> (مقدار اولیهٔ مشخصات)، <code>unset</code> (inherit اگر ارثی است، وگرنه initial)، <code>revert</code> (برگشت به استایل مرورگر).</li>
+      <li>مقدار ارث‌رسیده specificity ندارد: هر قانونی که مستقیماً عنصر را هدف بگیرد، حتی <code>*</code>، بر مقدار ارثی غلبه می‌کند.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="css-box-layout" data-title="Box Model، display و position">
+    <h2>Box Model، display و position</h2>
+    <pre class="diagram">┌──────────────── margin ────────────────┐
+│ ┌───────────── border ───────────────┐ │
+│ │ ┌────────── padding ─────────────┐ │ │
+│ │ │                                │ │ │
+│ │ │      content (width × height)  │ │ │
+│ │ │                                │ │ │
+│ │ └────────────────────────────────┘ │ │
+│ └────────────────────────────────────┘ │
+└────────────────────────────────────────┘</pre>
+    <ul>
+      <li><code>box-sizing: content-box</code> (پیش‌فرض): <code>width</code> فقط اندازهٔ content است؛ عرض واقعی = width + padding + border. <code>width: 200px; padding: 20px; border: 1px</code> ⇐ ۲۴۲px.</li>
+      <li><code>box-sizing: border-box</code>: <code>width</code> شامل padding و border است ⇐ دقیقاً ۲۰۰px. محاسبات بسیار ساده‌تر می‌شود و تقریباً همهٔ پروژه‌ها آن را سراسری تنظیم می‌کنند.</li>
+      <li><strong>Margin collapsing:</strong> margin عمودی دو عنصر block مجاور (یا والد و اولین/آخرین فرزند) با هم جمع نمی‌شوند؛ بزرگ‌ترین برنده است. در flex و grid رخ نمی‌دهد.</li>
+    </ul>
+    <pre><code class="language-css">*, *::before, *::after { box-sizing: border-box; }</code></pre>
+
+    <h3>display</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>مقدار</th><th>رفتار</th></tr></thead>
+      <tbody>
+        <tr><td><code>block</code></td><td>خط جدید، عرض کامل والد، width/height و margin عمودی اعمال می‌شود</td></tr>
+        <tr><td><code>inline</code></td><td>در جریان متن؛ width/height اعمال نمی‌شود؛ margin/padding عمودی روی جای‌گیری خطوط اثر ندارد</td></tr>
+        <tr><td><code>inline-block</code></td><td>در جریان متن ولی width/height و padding کامل دارد</td></tr>
+        <tr><td><code>flex</code> / <code>grid</code></td><td>container برای layout یک‌بعدی / دوبعدی فرزندان</td></tr>
+        <tr><td><code>none</code></td><td>عنصر از render tree حذف می‌شود و فضایی نمی‌گیرد (برخلاف <code>visibility: hidden</code> که فضا را نگه می‌دارد)</td></tr>
+        <tr><td><code>contents</code></td><td>جعبهٔ خود عنصر حذف می‌شود و فرزندان جای آن قرار می‌گیرند</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>position</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>مقدار</th><th>نسبت به</th><th>در جریان سند؟</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td><code>static</code></td><td>— (پیش‌فرض؛ top/left اثری ندارند)</td><td>بله</td><td>حالت عادی</td></tr>
+        <tr><td><code>relative</code></td><td>موقعیت عادی خودش</td><td>بله (فضای اصلی حفظ می‌شود)</td><td>جابه‌جایی جزئی؛ مرجع برای فرزندان absolute</td></tr>
+        <tr><td><code>absolute</code></td><td>نزدیک‌ترین جد <strong>positioned</strong> (غیر static)، وگرنه initial containing block</td><td>خیر</td><td>badge، tooltip، dropdown</td></tr>
+        <tr><td><code>fixed</code></td><td>viewport (مگر جدی transform/filter داشته باشد)</td><td>خیر</td><td>هدر ثابت، دکمهٔ شناور، modal</td></tr>
+        <tr><td><code>sticky</code></td><td>تا رسیدن به آستانه مثل relative، سپس در scroll container می‌چسبد</td><td>بله</td><td>هدر جدول، عنوان بخش</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p><code>z-index</code> فقط روی عناصر positioned (و فرزندان flex/grid) اثر دارد و در محدودهٔ <strong>stacking context</strong> مقایسه می‌شود. propertyهایی مثل <code>opacity</code> کمتر از ۱، <code>transform</code>، یا <code>position</code> با z-index، stacking context جدید می‌سازند؛ به همین دلیل گاهی <code>z-index: 9999</code> هم کار نمی‌کند.</p></div>
+    <div class="callout note"><p>برای صفحات RTL مثل همین سایت، از <strong>logical properties</strong> استفاده کنید: <code>margin-inline-start</code> به‌جای <code>margin-left</code>، <code>padding-inline</code>، <code>inset-inline-end</code> و <code>text-align: start</code>. این‌ها بر اساس جهت نوشتن خودکار برعکس می‌شوند.</p></div>
+  </section>
+
+  <section class="lesson" id="flexbox-grid" data-title="Flexbox و Grid">
+    <h2>Flexbox و Grid</h2>
+    <div class="grid-2">
+      <div class="card"><h4>Flexbox — یک‌بعدی</h4><ul>
+        <li>چیدمان در یک راستا (ردیف <em>یا</em> ستون)</li>
+        <li>content-first: اندازهٔ آیتم‌ها از محتوا</li>
+        <li>مناسب: navbar، ردیف دکمه‌ها، وسط‌چین کردن، توزیع فضا</li>
+      </ul></div>
+      <div class="card"><h4>Grid — دوبعدی</h4><ul>
+        <li>ردیف <em>و</em> ستون هم‌زمان</li>
+        <li>layout-first: ابتدا شبکه تعریف می‌شود</li>
+        <li>مناسب: layout کل صفحه، گالری، داشبورد، فرم‌های چندستونه</li>
+      </ul></div>
+    </div>
+
+    <h3>Flexbox</h3>
+    <pre><code class="language-css">.toolbar {
+  display: flex;
+  flex-direction: row;          /* main axis: row | column (+ -reverse) */
+  justify-content: space-between; /* چیدمان روی main axis */
+  align-items: center;          /* چیدمان روی cross axis */
+  flex-wrap: wrap;              /* شکستن به خط بعد */
+  gap: 1rem;                    /* فاصله بین آیتم‌ها */
+}
+.toolbar .search { flex: 1 1 240px; } /* flex-grow flex-shrink flex-basis */
+.toolbar .logo   { flex: none; }      /* 0 0 auto: نه بزرگ می‌شود نه کوچک */
+
+/* وسط‌چین کردن کامل */
+.center { display: flex; justify-content: center; align-items: center; min-height: 100vh; }</code></pre>
+    <ul>
+      <li><strong>Main axis</strong> با <code>flex-direction</code> تعیین می‌شود؛ <code>justify-content</code> روی main axis و <code>align-items</code> روی cross axis کار می‌کند. در RTL، row از راست شروع می‌شود.</li>
+      <li><code>flex-grow</code>: سهم از فضای اضافی؛ <code>flex-shrink</code>: سهم از کوچک شدن؛ <code>flex-basis</code>: اندازهٔ پایه قبل از توزیع. <code>flex: 1</code> یعنی <code>1 1 0%</code> (آیتم‌های هم‌اندازه).</li>
+      <li><code>align-self</code> برای یک آیتم؛ <code>order</code> ترتیب نمایشی را عوض می‌کند (ولی ترتیب DOM و فوکوس کیبورد عوض نمی‌شود — مراقب دسترس‌پذیری باشید).</li>
+      <li>دام رایج: آیتم flex به‌طور پیش‌فرض <code>min-width: auto</code> دارد و از محتوایش کوچک‌تر نمی‌شود (مثلاً متن طولانی بدون شکستن)؛ <code>min-width: 0</code> مشکل را حل می‌کند.</li>
+    </ul>
+
+    <h3>Grid</h3>
+    <pre><code class="language-css">.page {
+  display: grid;
+  grid-template-columns: 240px 1fr;            /* sidebar ثابت + بقیه */
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "header header"
+    "sidebar main"
+    "footer footer";
+  gap: 16px;
+  min-height: 100vh;
+}
+.page &gt; header { grid-area: header; }
+.page &gt; aside  { grid-area: sidebar; }
+.page &gt; main   { grid-area: main; }
+
+/* گالری واکنش‌گرا بدون media query */
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+.featured { grid-column: span 2; }             /* یا grid-column: 1 / 3 */</code></pre>
+    <ul>
+      <li>واحد <code>fr</code> = سهمی از فضای <em>باقی‌مانده</em>.</li>
+      <li><code>repeat(auto-fill, minmax(200px, 1fr))</code>: هر تعداد ستون حداقل ۲۰۰px که جا شود؛ <code>auto-fit</code> ستون‌های خالی را جمع می‌کند تا آیتم‌ها کش بیایند.</li>
+      <li>جای‌گذاری با شماره خط (<code>grid-column: 1 / -1</code> = تمام عرض) یا با نام area.</li>
+      <li>Flex و Grid با هم ترکیب می‌شوند: Grid برای اسکلت صفحه، Flex برای محتوای داخل هر بخش.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="css-responsive" data-title="واحدها، Responsive و CSS Variables">
+    <h2>واحدها، Responsive و CSS Variables</h2>
+    <h3>واحدها</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>واحد</th><th>نسبت به</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td><code>px</code></td><td>پیکسل CSS (مطلق)</td><td>border، سایه، جزئیات دقیق</td></tr>
+        <tr><td><code>rem</code></td><td>font-size عنصر ریشه (<code>html</code>، معمولاً ۱۶px)</td><td>فونت، فاصله‌ها؛ با تنظیم اندازهٔ فونت کاربر مقیاس می‌گیرد (دسترس‌پذیری)</td></tr>
+        <tr><td><code>em</code></td><td>font-size همان عنصر (برای font-size: والد)</td><td>padding دکمه متناسب با متن آن؛ مراقب ضرب‌شدن تودرتو باشید</td></tr>
+        <tr><td><code>%</code></td><td>معمولاً اندازهٔ containing block والد (برای padding/margin: <em>عرض</em> والد)</td><td>layout سیال</td></tr>
+        <tr><td><code>vw</code> / <code>vh</code></td><td>۱٪ عرض/ارتفاع viewport</td><td>بخش تمام‌صفحه؛ در موبایل <code>100vh</code> با نوار آدرس مشکل دارد ⇐ <code>dvh</code>/<code>svh</code>/<code>lvh</code></td></tr>
+        <tr><td><code>ch</code></td><td>عرض کاراکتر «0»</td><td>محدود کردن طول خط متن (<code>max-width: 70ch</code>)</td></tr>
+        <tr><td><code>fr</code></td><td>سهم از فضای آزاد grid</td><td>ستون‌های grid</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-css">html { font-size: 100%; }            /* احترام به تنظیم کاربر */
+.card { padding: 1.5rem; }
+.btn  { font-size: 0.875rem; padding: 0.5em 1em; } /* padding متناسب با فونت خود دکمه */
+h1    { font-size: clamp(1.5rem, 1rem + 2vw, 2.5rem); } /* تایپوگرافی سیال با حد پایین و بالا */</code></pre>
+
+    <h3>Media query و Mobile-first</h3>
+    <p><strong>Mobile-first</strong> یعنی استایل پایه برای صفحهٔ کوچک نوشته شود و با <code>min-width</code> برای صفحات بزرگ‌تر <em>اضافه</em> شود. مزایا: CSS ساده‌تر برای دستگاه‌های ضعیف‌تر، تمرکز بر محتوای اصلی و پیشرفت تدریجی.</p>
+    <pre><code class="language-css">.products { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+
+@media (min-width: 640px)  { .products { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1024px) { .products { grid-template-columns: repeat(4, 1fr); } }
+
+@media (prefers-color-scheme: dark)   { :root { --bg: #111; --text: #eee; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+@media (hover: hover) { .card:hover { transform: translateY(-2px); } }
+
+/* Container query: بر اساس اندازهٔ والد، نه viewport */
+.sidebar { container-type: inline-size; }
+@container (min-width: 400px) { .widget { display: flex; } }</code></pre>
+    <div class="callout exam"><p>بدون <code>&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;</code> مرورگر موبایل صفحه را با عرض مجازی بزرگ (حدود ۹۸۰px) رندر و کوچک می‌کند و media queryها طبق انتظار کار نمی‌کنند. responsive = viewport meta + layout سیال (flex/grid، درصد، fr) + media query + تصاویر واکنش‌گرا (<code>srcset</code>، <code>sizes</code>، <code>max-width: 100%</code>).</p></div>
+
+    <h3>CSS Custom Properties (متغیرها)</h3>
+    <pre><code class="language-css">:root {
+  --color-primary: #2563eb;
+  --radius: 8px;
+  --space: 1rem;
+}
+[data-theme="dark"] { --color-primary: #60a5fa; }
+
+.btn {
+  background: var(--color-primary);
+  border-radius: var(--radius);
+  padding: calc(var(--space) / 2) var(--space);
+  color: var(--btn-text, white);       /* مقدار پیش‌فرض (fallback) */
+}</code></pre>
+    <ul>
+      <li>برخلاف متغیرهای Sass (که هنگام build جایگزین می‌شوند)، custom propertyها <strong>در زمان اجرا</strong> زنده‌اند: <strong>ارث می‌رسند</strong>، تابع cascade هستند، با media query یا کلاس تغییر می‌کنند و با JS قابل تغییرند (<code>el.style.setProperty('--x', '10px')</code>).</li>
+      <li>کاربرد اصلی: <strong>design token</strong>ها و <strong>theming</strong> (حالت تاریک با تغییر چند متغیر).</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="js-types" data-title="JS: انواع، Coercion و تعریف متغیر">
+    <h2>JS: انواع، Coercion و تعریف متغیر</h2>
+    <h3>انواع داده</h3>
+    <p>JavaScript <strong>dynamically typed</strong> و <strong>weakly typed</strong> است. هفت نوع <strong>primitive</strong> (immutable، کپی با مقدار): <code>string</code>، <code>number</code> (float 64 بیتی IEEE 754)، <code>bigint</code>، <code>boolean</code>، <code>undefined</code>، <code>null</code>، <code>symbol</code>؛ و <code>object</code> (شامل آرایه، تابع، Date، Map و …) که با <strong>reference</strong> منتقل می‌شود.</p>
+    <pre><code class="language-javascript">typeof 'a'        // 'string'
+typeof 42         // 'number'
+typeof 10n        // 'bigint'
+typeof undefined  // 'undefined'
+typeof null       // 'object'  ← باگ تاریخی زبان
+typeof []         // 'object'  ⇐ از Array.isArray([]) استفاده کنید
+typeof function(){} // 'function'
+0.1 + 0.2 === 0.3 // false (خطای ممیز شناور؛ برای پول از عدد صحیح ریال/سنت استفاده کنید)
+Number.MAX_SAFE_INTEGER // 9007199254740991 ⇐ IDهای bigint دیتابیس را در JSON به‌صورت string بفرستید
+
+const a = { n: 1 };
+const b = a;      // کپی reference
+b.n = 2;
+console.log(a.n); // 2</code></pre>
+
+    <h3>Coercion و == در برابر ===</h3>
+    <ul>
+      <li><code>===</code> (strict equality): بدون تبدیل نوع؛ اگر نوع متفاوت باشد false.</li>
+      <li><code>==</code> (loose equality): قبل از مقایسه تبدیل نوع ضمنی (coercion) با قواعد پیچیده انجام می‌دهد.</li>
+      <li>objectها در هر دو حالت با <strong>reference</strong> مقایسه می‌شوند: <code>{} === {}</code> false است.</li>
+    </ul>
+    <pre><code class="language-javascript">0 == ''            // true    ('' → 0)
+'0' == false       // true    (هر دو → 0)
+0 == '0'           // true
+'' == '0'          // false   ← == حتی transitive نیست!
+null == undefined  // true    (فقط با هم برابرند)
+null == 0          // false
+NaN == NaN         // false   ⇐ Number.isNaN(x) یا Object.is(NaN, NaN) === true
+[1] == 1           // true    ([1] → '1' → 1)
+
+'5' + 2   // '52'  (+ با یک string ⇒ الحاق رشته)
+'5' - 2   // 3     (- همیشه عددی)
+'5' * '2' // 10
+[] + []   // ''
+[] + {}   // '[object Object]'
++true     // 1
+
+// falsy values: false, 0, -0, 0n, '', null, undefined, NaN — بقیه truthy (حتی '0'، []، {})
+const count = 0;
+count || 10   // 10  ← || هر falsy را جایگزین می‌کند
+count ?? 10   // 0   ← ?? فقط null/undefined را جایگزین می‌کند
+user?.address?.city // optional chaining: در صورت null/undefined مقدار undefined</code></pre>
+    <div class="callout exam"><p>قاعدهٔ عملی: همیشه از <code>===</code> استفاده کنید؛ تنها استثنای رایج <code>x == null</code> برای بررسی هم‌زمان null و undefined است. برای مقادیر پیش‌فرض از <code>??</code> به‌جای <code>||</code> استفاده کنید تا <code>0</code> و <code>''</code> معتبر از دست نروند.</p></div>
+
+    <h3>var، let، const، Hoisting و TDZ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th><code>var</code></th><th><code>let</code></th><th><code>const</code></th></tr></thead>
+      <tbody>
+        <tr><td>Scope</td><td>function</td><td>block</td><td>block</td></tr>
+        <tr><td>Hoisting</td><td>بله، با مقدار اولیهٔ <code>undefined</code></td><td>بله، ولی مقداردهی نشده (TDZ)</td><td>بله، ولی مقداردهی نشده (TDZ)</td></tr>
+        <tr><td>تعریف مجدد در همان scope</td><td>مجاز</td><td>خطا</td><td>خطا</td></tr>
+        <tr><td>انتساب مجدد</td><td>مجاز</td><td>مجاز</td><td>خطا (ولی محتوای object قابل تغییر است)</td></tr>
+        <tr><td>property روی global object</td><td>بله (در سطح بالای script)</td><td>خیر</td><td>خیر</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-javascript">console.log(x); // undefined  (var hoisted شده)
+var x = 1;
+
+console.log(y); // ReferenceError: Cannot access 'y' before initialization  ← TDZ
+let y = 2;
+
+sayHi();        // کار می‌کند: function declaration کامل hoist می‌شود
+function sayHi() { console.log('hi'); }
+
+greet();        // TypeError: greet is not a function (var greet = undefined)
+var greet = function () {};
+
+const cfg = { debug: false };
+cfg.debug = true;   // مجاز: binding ثابت است، نه محتوا ⇐ برای immutability: Object.freeze
+// cfg = {};        // TypeError</code></pre>
+    <p><strong>Hoisting</strong> یعنی موتور JS در مرحلهٔ ایجاد scope، تعریف‌ها را پیش از اجرای کد ثبت می‌کند. <strong>Temporal Dead Zone</strong> بازهٔ بین شروع block تا خط تعریف <code>let</code>/<code>const</code>/<code>class</code> است که دسترسی در آن ReferenceError می‌دهد — این رفتار باگ‌های ناشی از استفادهٔ زودهنگام را آشکار می‌کند.</p>
+    <div class="callout tip"><p>پیش‌فرض: <code>const</code>؛ اگر نیاز به انتساب مجدد بود <code>let</code>؛ <code>var</code> در کد مدرن استفاده نمی‌شود.</p></div>
+  </section>
+
+  <section class="lesson" id="js-scope-this" data-title="JS: Scope، Closure، this و Prototype">
+    <h2>JS: Scope، Closure، this و Prototype</h2>
+    <h3>Scope و Closure</h3>
+    <p>JavaScript <strong>lexical scope</strong> دارد: دسترسی به متغیرها بر اساس <em>محل نوشتن</em> کد تعیین می‌شود نه محل فراخوانی. scopeها: global، module، function، block. جستجوی متغیر از scope داخلی به بیرونی (scope chain) انجام می‌شود.</p>
+    <p><strong>Closure</strong> تابعی است همراه با ارجاع به محیط lexical که در آن تعریف شده؛ یعنی تابع داخلی حتی پس از بازگشت تابع بیرونی، به متغیرهای آن دسترسی دارد (متغیرها زنده می‌مانند، نه کپی‌شان).</p>
+    <pre><code class="language-javascript">function createCounter() {
+  let count = 0;                 // private state
+  return {
+    inc: () =&gt; ++count,
+    get: () =&gt; count,
+  };
+}
+const c = createCounter();
+c.inc(); c.inc();
+c.get();      // 2  — count از بیرون قابل دسترسی مستقیم نیست (encapsulation)
+
+// کاربردهای دیگر: factory، memoize، debounce، partial application
+function debounce(fn, ms) {
+  let timer;
+  return (...args) =&gt; {
+    clearTimeout(timer);
+    timer = setTimeout(() =&gt; fn(...args), ms);
+  };
+}</code></pre>
+    <pre><code class="language-javascript">// سوال کلاسیک
+for (var i = 0; i &lt; 3; i++) {
+  setTimeout(() =&gt; console.log(i), 0);
+}
+// 3 3 3  ← یک i مشترک (function-scoped)؛ callbackها بعد از اتمام حلقه اجرا می‌شوند
+
+for (let i = 0; i &lt; 3; i++) {
+  setTimeout(() =&gt; console.log(i), 0);
+}
+// 0 1 2  ← let در هر تکرار binding جدید می‌سازد؛ هر closure، i خودش را دارد</code></pre>
+    <div class="callout warn"><p>closureها متغیرهای محیطشان را زنده نگه می‌دارند؛ اگر event listener یا timerای که به ساختار دادهٔ بزرگ ارجاع دارد پاک نشود، <strong>memory leak</strong> رخ می‌دهد.</p></div>
+
+    <h3>قواعد this</h3>
+    <p>مقدار <code>this</code> در توابع معمولی هنگام <strong>فراخوانی</strong> تعیین می‌شود، نه تعریف. چهار قاعده به ترتیب اولویت:</p>
+    <ol>
+      <li><strong>new binding:</strong> <code>new Foo()</code> ⇐ <code>this</code> شیء تازه ساخته‌شده است.</li>
+      <li><strong>Explicit binding:</strong> <code>fn.call(obj, a)</code>، <code>fn.apply(obj, [a])</code>، <code>fn.bind(obj)</code> (تابع جدید با this ثابت).</li>
+      <li><strong>Implicit binding:</strong> <code>obj.method()</code> ⇐ <code>this === obj</code> (شیء قبل از نقطه).</li>
+      <li><strong>Default binding:</strong> فراخوانی ساده <code>fn()</code> ⇐ در strict mode (و ماژول‌ها و کلاس‌ها) <code>undefined</code>؛ در غیر این صورت global object.</li>
+    </ol>
+    <p><strong>Arrow function</strong> اصلاً <code>this</code> خودش را ندارد؛ <code>this</code> را به‌صورت <strong>lexical</strong> از scope بیرونی می‌گیرد و با call/bind/new تغییر نمی‌کند (با <code>new</code> قابل فراخوانی نیست، <code>arguments</code> و <code>prototype</code> ندارد).</p>
+    <pre><code class="language-javascript">'use strict';
+const user = {
+  name: 'Ali',
+  greet() { return `Hi ${this.name}`; },
+  greetArrow: () =&gt; `Hi ${this?.name}`,   // this از scope بیرونی (نه user)
+  later() {
+    setTimeout(function () { console.log(this); }, 0);    // undefined یا window — this گم شد
+    setTimeout(() =&gt; console.log(this.name), 0);          // 'Ali' — arrow از later می‌گیرد
+  },
+};
+user.greet();             // 'Hi Ali'   (implicit)
+const g = user.greet;
+g();                      // TypeError: this is undefined  ← از دست رفتن implicit binding
+g.call({ name: 'Sara' }); // 'Hi Sara'  (explicit)
+const bound = user.greet.bind(user);
+bound();                  // 'Hi Ali'
+
+button.addEventListener('click', user.greet);        // this = button نه user
+button.addEventListener('click', () =&gt; user.greet()); // درست</code></pre>
+
+    <h3>Prototype و class</h3>
+    <p>وراثت در JavaScript <strong>prototype-based</strong> است: هر شیء یک لینک داخلی به شیء دیگر (prototype) دارد؛ اگر property در خود شیء پیدا نشود، در <strong>prototype chain</strong> جستجو می‌شود تا <code>null</code>. <code>class</code> در ES2015 <strong>syntactic sugar</strong> روی همین مکانیزم است (به‌علاوهٔ چند تفاوت مثل اجرای خودکار در strict mode و TDZ).</p>
+    <pre><code class="language-javascript">class Animal {
+  #sound;                              // فیلد private واقعی
+  static count = 0;
+  constructor(name, sound) { this.name = name; this.#sound = sound; Animal.count++; }
+  speak() { return `${this.name} says ${this.#sound}`; }  // روی Animal.prototype
+}
+class Dog extends Animal {
+  constructor(name) { super(name, 'woof'); }               // super قبل از this اجباری است
+  speak() { return super.speak() + '!'; }
+}
+const d = new Dog('Rex');
+d.speak();                                        // 'Rex says woof!'
+Object.getPrototypeOf(d) === Dog.prototype;       // true
+Object.getPrototypeOf(Dog.prototype) === Animal.prototype; // true
+d.hasOwnProperty('speak');                        // false — از prototype می‌آید
+// chain: d → Dog.prototype → Animal.prototype → Object.prototype → null</code></pre>
+    <div class="callout note"><p>متدها روی prototype یک‌بار تعریف و بین همهٔ نمونه‌ها به اشتراک گذاشته می‌شوند (صرفه‌جویی حافظه). فیلدهای کلاس (مثل <code>handle = () =&gt; {}</code>) روی هر نمونه جداگانه ساخته می‌شوند — مفید برای bind کردن this در callbackها ولی با هزینهٔ حافظه.</p></div>
+  </section>
+
+  <section class="lesson" id="js-async" data-title="JS: Event Loop و برنامه‌نویسی ناهمگام">
+    <h2>JS: Event Loop و برنامه‌نویسی ناهمگام</h2>
+    <p>JavaScript در مرورگر (و Node) روی یک <strong>thread اصلی</strong> اجرا می‌شود: یک <strong>call stack</strong> دارد و در هر لحظه فقط یک کار انجام می‌دهد. عملیات کند (شبکه، timer، I/O) به محیط میزبان (Web APIs / libuv) سپرده می‌شوند و callbackهایشان بعداً از طریق صف‌ها اجرا می‌شوند. <strong>Event loop</strong> این هماهنگی را انجام می‌دهد.</p>
+    <pre class="diagram">┌─────────────┐     ┌──────────────────────────┐
+│ Call Stack  │ ──► │ Web APIs (timer, fetch,   │
+└─────▲───────┘     │ DOM events)               │
+      │             └───────────┬──────────────┘
+      │                         ▼
+      │   ┌─────────────────────────────────────────────┐
+      │   │ Microtask queue: Promise.then/catch/finally, │  ← اولویت بالا: همه تخلیه می‌شوند
+      │   │ await continuation, queueMicrotask,          │
+      │   │ MutationObserver                             │
+      │   └─────────────────────────────────────────────┘
+      │   ┌─────────────────────────────────────────────┐
+      └───│ Macrotask (task) queue: setTimeout,          │  ← در هر دور فقط یکی
+          │ setInterval, I/O, UI events, MessageChannel  │
+          └─────────────────────────────────────────────┘
+الگوریتم هر دور:
+1) یک task از صف macrotask اجرا کن (اجرای اولیهٔ script هم خودش یک task است)
+2) تا خالی شدن کامل، همهٔ microtaskها را اجرا کن (microtaskهای تازه هم در همین دور)
+3) در صورت نیاز rendering (requestAnimationFrame، style، layout، paint)
+4) تکرار</pre>
+
+    <h3>مثال ترتیب اجرا</h3>
+    <pre><code class="language-javascript">console.log('1');
+
+setTimeout(() =&gt; console.log('2'), 0);
+
+Promise.resolve().then(() =&gt; console.log('3'));
+
+queueMicrotask(() =&gt; console.log('4'));
+
+(async () =&gt; {
+  console.log('5');        // بدنهٔ async تا اولین await همگام اجرا می‌شود
+  await null;
+  console.log('6');        // ادامه به‌صورت microtask
+})();
+
+console.log('7');
+
+// خروجی: 1 5 7 3 4 6 2</code></pre>
+    <ol>
+      <li>کد همگام: <code>1</code>، سپس <code>5</code> (بدنهٔ async تا await)، سپس <code>7</code>.</li>
+      <li>stack خالی شد ⇐ تخلیهٔ microtaskها به ترتیب ورود: <code>3</code> (then)، <code>4</code> (queueMicrotask)، <code>6</code> (ادامهٔ await).</li>
+      <li>دور بعد: macrotask مربوط به setTimeout ⇐ <code>2</code>.</li>
+    </ol>
+    <div class="callout exam"><p><code>setTimeout(fn, 0)</code> یعنی «حداقل» صفر میلی‌ثانیه، نه «فوراً»؛ همیشه بعد از همهٔ کد همگام و همهٔ microtaskهای موجود اجرا می‌شود. حلقهٔ بی‌پایان microtask (Promiseای که مدام then جدید می‌سازد) rendering و eventها را <strong>گرسنه</strong> نگه می‌دارد، و کد همگام سنگین (مثلاً حلقهٔ ۲ ثانیه‌ای) صفحه را freeze می‌کند ⇐ کار سنگین را به <strong>Web Worker</strong> بسپارید یا تکه‌تکه کنید.</p></div>
+
+    <h3>Callback ⇐ Promise ⇐ async/await</h3>
+    <pre><code class="language-javascript">// 1) Callback — «callback hell» و مدیریت خطای پراکنده
+getUser(id, (err, user) =&gt; {
+  if (err) return handle(err);
+  getOrders(user.id, (err, orders) =&gt; {
+    if (err) return handle(err);
+    render(orders);
+  });
+});
+
+// 2) Promise — شیئی برای نتیجهٔ آینده با وضعیت pending → fulfilled | rejected (فقط یک‌بار settle)
+getUser(id)
+  .then(user =&gt; getOrders(user.id))   // زنجیره‌سازی صاف
+  .then(render)
+  .catch(handle)                      // یک نقطهٔ مدیریت خطا
+  .finally(hideSpinner);
+
+// 3) async/await — sugar روی Promise با ظاهر همگام
+async function showOrders(id) {
+  try {
+    const user = await getUser(id);
+    const orders = await getOrders(user.id);
+    render(orders);
+  } catch (err) {
+    handle(err);
+  } finally {
+    hideSpinner();
+  }
+}</code></pre>
+    <h3>ترکیب‌کننده‌های Promise</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>رفتار</th></tr></thead>
+      <tbody>
+        <tr><td><code>Promise.all</code></td><td>موازی؛ با موفقیت همه resolve و با <strong>اولین شکست</strong> reject می‌شود</td></tr>
+        <tr><td><code>Promise.allSettled</code></td><td>منتظر همه؛ آرایه‌ای از <code>{status, value|reason}</code>؛ هرگز reject نمی‌شود</td></tr>
+        <tr><td><code>Promise.race</code></td><td>اولین settle شده (موفق یا ناموفق) — مثلاً برای timeout</td></tr>
+        <tr><td><code>Promise.any</code></td><td>اولین <em>موفق</em>؛ اگر همه شکست بخورند <code>AggregateError</code></td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-javascript">// ✗ ترتیبی بی‌دلیل: زمان = مجموع
+const a = await fetchA();
+const b = await fetchB();
+
+// ✓ موازی: زمان = بیشینه
+const [a2, b2] = await Promise.all([fetchA(), fetchB()]);
+
+// ✗ await داخل forEach منتظر نمی‌ماند
+items.forEach(async (i) =&gt; await save(i));
+// ✓ ترتیبی
+for (const i of items) await save(i);
+// ✓ موازی
+await Promise.all(items.map(save));</code></pre>
+    <h3>مدیریت خطا</h3>
+    <ul>
+      <li><code>try/catch/finally</code> برای کد همگام و <code>await</code>؛ <code>.catch()</code> برای زنجیرهٔ Promise. خطای پرتاب‌شده در callbackهای ناهمگام (مثل setTimeout) با try/catch بیرونی گرفته نمی‌شود.</li>
+      <li>Promise ردشده بدون handler ⇐ رویداد <code>unhandledrejection</code> (در Node نسخه‌های جدید پروسه را متوقف می‌کند).</li>
+      <li>کلاس خطای سفارشی: <code>class ValidationError extends Error {}</code> و در صورت نیاز <code>new Error('msg', { cause: err })</code> برای زنجیرهٔ علت.</li>
+      <li>فقط نمونه‌های <code>Error</code> را throw کنید (نه string) تا stack trace داشته باشید.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="js-dom-fetch" data-title="DOM، رویدادها، fetch و ماژول‌ها">
+    <h2>DOM، رویدادها، fetch و ماژول‌ها</h2>
+    <h3>DOM</h3>
+    <p><strong>DOM</strong> نمایش درختی و شیءگرای سند HTML است که مرورگر می‌سازد و JS از طریق آن صفحه را می‌خواند و تغییر می‌دهد.</p>
+    <pre><code class="language-javascript">const list = document.querySelector('#orders');          // اولین تطابق یا null
+const rows = document.querySelectorAll('.order-row');    // NodeList ایستا
+
+const li = document.createElement('li');
+li.textContent = order.title;          // امن: به‌عنوان متن درج می‌شود
+li.dataset.id = order.id;              // data-id
+li.classList.add('order', 'is-new');
+list.append(li);
+
+// ✗ خطرناک با دادهٔ کاربر: XSS
+list.innerHTML += `&lt;li&gt;${order.title}&lt;/li&gt;`;
+
+// برای درج تعداد زیاد: یک‌جا با DocumentFragment تا reflow کمتر شود
+const frag = document.createDocumentFragment();
+orders.forEach(o =&gt; { const el = document.createElement('li'); el.textContent = o.title; frag.append(el); });
+list.append(frag);</code></pre>
+
+    <h3>رویدادها: capturing، target، bubbling</h3>
+    <pre class="diagram">          window
+            │  ▲
+ capturing  │  │  bubbling
+   (1)      ▼  │    (3)
+         document
+            │  ▲
+            ▼  │
+          &lt;ul&gt;
+            │  ▲
+            ▼  │
+         &lt;button&gt;   ← target phase (2)</pre>
+    <ul>
+      <li>رویداد ابتدا از window به سمت هدف پایین می‌رود (<strong>capturing</strong>)، روی هدف اجرا می‌شود و سپس به سمت بالا <strong>bubble</strong> می‌کند. listenerها به‌طور پیش‌فرض در فاز bubbling اجرا می‌شوند؛ با <code>{ capture: true }</code> در فاز capturing.</li>
+      <li><code>event.target</code>: عنصری که رویداد از آن شروع شد؛ <code>event.currentTarget</code>: عنصری که listener روی آن است.</li>
+      <li><code>stopPropagation()</code>: توقف انتشار؛ <code>preventDefault()</code>: لغو رفتار پیش‌فرض (ارسال فرم، دنبال کردن لینک) — این دو مستقل‌اند.</li>
+      <li>برخی رویدادها bubble نمی‌کنند (<code>focus</code>/<code>blur</code>؛ معادل‌های bubble‌شونده: <code>focusin</code>/<code>focusout</code>).</li>
+    </ul>
+    <h3>Event delegation</h3>
+    <pre><code class="language-javascript">// به‌جای یک listener برای هر ردیف (حافظهٔ بیشتر، ردیف‌های جدید listener ندارند):
+document.querySelector('#orders').addEventListener('click', (e) =&gt; {
+  const btn = e.target.closest('button[data-action="delete"]');
+  if (!btn || !e.currentTarget.contains(btn)) return;
+  deleteOrder(btn.closest('li').dataset.id);
+});
+
+form.addEventListener('submit', async (e) =&gt; {
+  e.preventDefault();                      // جلوگیری از reload صفحه
+  await submit(new FormData(form));
+});
+
+window.addEventListener('scroll', onScroll, { passive: true }); // بهبود کارایی scroll</code></pre>
+    <p><strong>Delegation</strong> از bubbling استفاده می‌کند: یک listener روی والد، رویداد همهٔ فرزندان (حتی آن‌هایی که بعداً اضافه می‌شوند) را مدیریت می‌کند.</p>
+
+    <h3>fetch API</h3>
+    <pre><code class="language-javascript">async function createOrder(payload) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() =&gt; controller.abort(), 8000);
+
+  try {
+    const res = await fetch('/api/v1/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-XSRF-TOKEN': getCookie('XSRF-TOKEN'),   // برای Sanctum SPA
+      },
+      credentials: 'include',      // ارسال cookie در درخواست cross-origin
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {                 // ⚠ fetch برای 4xx/5xx reject نمی‌شود!
+      const problem = await res.json().catch(() =&gt; ({}));
+      throw new Error(problem.title ?? `HTTP ${res.status}`);
+    }
+    return await res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}</code></pre>
+    <div class="callout exam"><p><code>fetch</code> فقط در خطای <strong>شبکه</strong> (یا abort) reject می‌شود؛ پاسخ 404 یا 500 یک Promise <em>موفق</em> با <code>res.ok === false</code> است و باید دستی بررسی شود. بدنه فقط یک‌بار قابل خواندن است (<code>res.json()</code>، <code>res.text()</code>). پیش‌فرض <code>credentials</code> برابر <code>same-origin</code> است.</p></div>
+
+    <h3>ماژول‌ها (ES Modules)</h3>
+    <pre><code class="language-javascript">// math.js
+export const PI = 3.14159;
+export function area(r) { return PI * r * r; }
+export default class Calculator {}
+
+// app.js
+import Calculator, { area, PI as pi } from './math.js';
+const { Chart } = await import('./chart.js');   // dynamic import ⇒ code splitting / lazy load</code></pre>
+    <pre><code class="language-xml">&lt;script type="module" src="/app.js"&gt;&lt;/script&gt;   &lt;!-- به‌طور پیش‌فرض defer، strict mode، scope ماژول --&gt;</code></pre>
+    <ul>
+      <li>ESM <strong>استاتیک</strong> است: importها پیش از اجرا تحلیل می‌شوند ⇐ امکان <strong>tree shaking</strong> در bundlerها (Vite در Laravel). در مقابل CommonJS (<code>require</code>/<code>module.exports</code>) پویا و همگام است.</li>
+      <li>هر ماژول scope خودش را دارد (متغیرها global نمی‌شوند)، فقط یک‌بار اجرا و cache می‌شود و importها <strong>live binding</strong> هستند.</li>
+      <li>top-level <code>await</code> در ماژول‌ها مجاز است.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="browser-rendering" data-title="رندر مرورگر، ذخیره‌سازی، کارایی و XSS">
+    <h2>رندر مرورگر، ذخیره‌سازی، کارایی و XSS</h2>
+    <h3>Critical Rendering Path</h3>
+    <pre class="diagram">HTML ──parse──► DOM ─┐
+                     ├──► Render Tree ──► Layout (reflow) ──► Paint ──► Composite ──► pixels
+CSS  ──parse──► CSSOM┘     (فقط عناصر قابل‌مشاهده؛   (هندسه:      (رنگ،      (ترکیب layerها
+                            display:none حذف)        اندازه/مکان)  متن، سایه)  روی GPU)
+JS می‌تواند DOM و CSSOM را تغییر دهد ⇒ مراحل بعدی دوباره اجرا می‌شوند</pre>
+    <ul>
+      <li><strong>CSS render-blocking است:</strong> مرورگر تا CSSOM کامل نشود چیزی رسم نمی‌کند (تا محتوای بی‌استایل نمایش ندهد).</li>
+      <li><strong>اسکریپت معمولی parser-blocking است:</strong> parse HTML متوقف می‌شود تا اسکریپت دانلود و اجرا شود (و اسکریپت منتظر CSS قبلی می‌ماند).</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>حالت</th><th>دانلود</th><th>اجرا</th><th>ترتیب</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td><code>&lt;script&gt;</code></td><td>parse را متوقف می‌کند</td><td>فوری</td><td>حفظ</td><td>به‌ندرت؛ یا در انتهای body</td></tr>
+        <tr><td><code>async</code></td><td>موازی با parse</td><td>به‌محض دانلود (parse را قطع می‌کند)</td><td>تضمین نمی‌شود</td><td>اسکریپت‌های مستقل: analytics</td></tr>
+        <tr><td><code>defer</code></td><td>موازی با parse</td><td>پس از اتمام parse، قبل از <code>DOMContentLoaded</code></td><td>حفظ</td><td>اسکریپت‌های اصلی اپ</td></tr>
+        <tr><td><code>type="module"</code></td><td>موازی</td><td>مثل defer (مگر async)</td><td>حفظ</td><td>کد ماژولار مدرن</td></tr>
+      </tbody>
+    </table></div>
+    <h3>Reflow و Repaint</h3>
+    <ul>
+      <li><strong>Reflow (layout):</strong> محاسبهٔ دوبارهٔ هندسه؛ با تغییر width، height، margin، font-size، افزودن/حذف عنصر، تغییر اندازهٔ پنجره. پرهزینه، چون ممکن است به فرزندان و همسایه‌ها سرایت کند.</li>
+      <li><strong>Repaint:</strong> رسم دوبارهٔ پیکسل‌ها بدون تغییر هندسه؛ مثلاً <code>color</code>، <code>background</code>، <code>visibility</code>.</li>
+      <li><strong>Composite-only:</strong> <code>transform</code> و <code>opacity</code> معمولاً فقط در مرحلهٔ composite (روی GPU) اعمال می‌شوند ⇐ بهترین انتخاب برای انیمیشن.</li>
+      <li><strong>Layout thrashing:</strong> خواندن و نوشتن متناوب مقادیر layout در حلقه (مثلاً خواندن <code>offsetHeight</code> بعد از تغییر style) مرورگر را به reflow همگام اجباری وادار می‌کند. راه‌حل: اول همهٔ خواندن‌ها، بعد همهٔ نوشتن‌ها (batch)، یا <code>requestAnimationFrame</code>.</li>
+    </ul>
+    <pre><code class="language-javascript">// ✗ thrashing: هر دور یک reflow
+boxes.forEach(b =&gt; { b.style.width = (b.offsetWidth + 10) + 'px'; });
+// ✓ batch
+const widths = boxes.map(b =&gt; b.offsetWidth);                  // همهٔ خواندن‌ها
+boxes.forEach((b, i) =&gt; { b.style.width = (widths[i] + 10) + 'px'; }); // همهٔ نوشتن‌ها</code></pre>
+
+    <h3>Web Storage</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>Cookie</th><th>localStorage</th><th>sessionStorage</th><th>IndexedDB</th></tr></thead>
+      <tbody>
+        <tr><td>ظرفیت تقریبی</td><td>~۴KB برای هر cookie</td><td>چند مگابایت برای هر origin (معمولاً حدود ۵MB)</td><td>مشابه localStorage</td><td>بسیار بیشتر (بر اساس سهمیهٔ دیسک)</td></tr>
+        <tr><td>عمر</td><td>تا Expires/Max-Age یا پایان session</td><td>دائمی تا پاک شدن</td><td>تا بستن tab</td><td>دائمی</td></tr>
+        <tr><td>دامنهٔ دسترسی</td><td>دامنه/مسیر؛ در هر درخواست به سرور ارسال می‌شود</td><td>origin؛ همهٔ tabها</td><td>origin + همان tab</td><td>origin</td></tr>
+        <tr><td>API</td><td><code>document.cookie</code> (اگر HttpOnly نباشد)</td><td>همگام؛ فقط string</td><td>همگام؛ فقط string</td><td>ناهمگام؛ object، ایندکس، transaction</td></tr>
+        <tr><td>دسترسی JS</td><td>نه اگر HttpOnly</td><td>بله</td><td>بله</td><td>بله</td></tr>
+        <tr><td>مناسب</td><td>session id، تنظیمات مورد نیاز سرور</td><td>ترجیحات UI، تم، پیش‌نویس</td><td>وضعیت موقت فرم چندمرحله‌ای</td><td>داده‌های آفلاین حجیم، cache اپ (PWA)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>هر چیزی در localStorage/sessionStorage/IndexedDB با یک XSS قابل خواندن است. توکن‌های احراز هویت حساس را ترجیحاً در cookie با <code>HttpOnly; Secure; SameSite</code> نگه دارید. localStorage همگام است و استفادهٔ سنگین از آن thread اصلی را مسدود می‌کند.</p></div>
+
+    <h3>مبانی کارایی وب</h3>
+    <ul>
+      <li><strong>Core Web Vitals:</strong> <strong>LCP</strong> (زمان رندر بزرگ‌ترین محتوا؛ هدف کمتر از ۲٫۵ ثانیه)، <strong>INP</strong> (پاسخ‌گویی به تعامل؛ جایگزین FID از سال ۲۰۲۴؛ هدف کمتر از ۲۰۰ms)، <strong>CLS</strong> (جابه‌جایی ناخواستهٔ layout؛ هدف کمتر از ۰٫۱).</li>
+      <li>کاهش حجم: minify، فشرده‌سازی (Brotli/gzip)، tree shaking، code splitting، تصاویر بهینه (WebP/AVIF، <code>srcset</code>، lazy loading).</li>
+      <li>کاهش رفت‌وبرگشت: CDN، HTTP/2+، cache طولانی برای فایل‌های hash‌دار، <code>&lt;link rel="preload"&gt;</code> برای منابع حیاتی، <code>preconnect</code> برای originهای ثالث.</li>
+      <li>سمت سرور: کاهش TTFB با cache (Redis، OPcache، <code>php artisan optimize</code>)، کوئری‌های بهینه و eager loading.</li>
+      <li>JS کمتر روی thread اصلی؛ <code>defer</code>؛ پرهیز از long taskها (بیش از ۵۰ms).</li>
+    </ul>
+
+    <h3>XSS (Cross-Site Scripting)</h3>
+    <p><strong>XSS</strong> یعنی مهاجم بتواند اسکریپت دلخواه خود را در صفحه‌ای که کاربر دیگری می‌بیند اجرا کند؛ در نتیجه به هر چیزی که JS آن صفحه دسترسی دارد (DOM، localStorage، درخواست با cookie کاربر) دست پیدا می‌کند.</p>
+    <ul>
+      <li><strong>Stored:</strong> payload در دیتابیس ذخیره می‌شود (کامنت، نام کاربری) و به همه نمایش داده می‌شود — خطرناک‌ترین.</li>
+      <li><strong>Reflected:</strong> payload در URL است و سرور آن را بدون escape در پاسخ برمی‌گرداند (<code>?q=&lt;script&gt;...</code>).</li>
+      <li><strong>DOM-based:</strong> کد سمت client داده را از منبعی مثل <code>location.hash</code> مستقیماً در sink خطرناک (<code>innerHTML</code>، <code>eval</code>) می‌ریزد؛ ممکن است اصلاً به سرور نرسد.</li>
+    </ul>
+    <pre><code class="language-php">{{-- Blade: escape خودکار با htmlspecialchars ⇒ امن --}}
+&lt;p&gt;{{ $comment-&gt;body }}&lt;/p&gt;
+
+{{-- ✗ بدون escape: فقط برای HTML کاملاً مورد اعتماد یا sanitize شده --}}
+&lt;p&gt;{!! $comment-&gt;body !!}&lt;/p&gt;
+
+{{-- ✓ انتقال داده به JS --}}
+&lt;script&gt; const user = @json($user-&gt;only('id', 'name')); &lt;/script&gt;</code></pre>
+    <p><strong>دفاع‌ها:</strong></p>
+    <ol>
+      <li><strong>Output encoding متناسب با context</strong> (HTML body، attribute، URL، JS) — اصلی‌ترین دفاع؛ موتورهای قالب مثل Blade و فریم‌ورک‌هایی مثل React/Vue به‌طور پیش‌فرض escape می‌کنند.</li>
+      <li>در JS از <code>textContent</code> به‌جای <code>innerHTML</code> استفاده کنید؛ اگر HTML کاربر لازم است، با کتابخانهٔ sanitizer معتبر (مثل DOMPurify یا HTML Purifier در سرور) پاک‌سازی کنید.</li>
+      <li><strong>Content-Security-Policy</strong> (مثلاً <code>script-src 'self'</code> با nonce و بدون <code>unsafe-inline</code>) به‌عنوان لایهٔ دفاعی دوم.</li>
+      <li>cookie session با <code>HttpOnly</code> تا سرقت آن دشوار شود.</li>
+      <li>اعتبارسنجی ورودی (مثلاً فقط URLهای <code>https:</code> در <code>href</code>؛ جلوگیری از <code>javascript:</code>).</li>
+    </ol>
+    <div class="callout exam"><p>تفاوت <strong>XSS</strong> و <strong>CSRF</strong>: در XSS کد مهاجم <em>درون</em> سایت قربانی اجرا می‌شود و می‌تواند همه‌چیز را بخواند؛ در CSRF سایت مهاجم مرورگر کاربر را وادار می‌کند درخواستی (با cookie کاربر) به سایت قربانی بفرستد ولی پاسخ را نمی‌تواند بخواند. CSRF token در برابر XSS بی‌اثر است، چون اسکریپت مهاجم می‌تواند token را از صفحه بخواند.</p></div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-web-fundamentals-1">
+      <summary>ساختار یک پیام درخواست و پاسخ HTTP را با مثال شرح دهید. HTTP stateless است یعنی چه و چگونه با وجود آن کاربر login شده را تشخیص می‌دهیم؟</summary>
+      <div class="answer">
+        <p><strong>درخواست:</strong> سه بخش دارد:</p>
+        <ul>
+          <li><strong>Request line:</strong> متد، request-target (مسیر و query) و نسخه: <code>GET /products?page=2 HTTP/1.1</code></li>
+          <li><strong>هدرها:</strong> زوج‌های نام/مقدار مثل <code>Host</code> (در 1.1 اجباری)، <code>Accept</code>، <code>Content-Type</code>، <code>Authorization</code>، <code>Cookie</code>؛ سپس یک خط خالی.</li>
+          <li><strong>بدنه (اختیاری):</strong> برای POST/PUT/PATCH، با قالبی که <code>Content-Type</code> مشخص می‌کند (JSON، form-urlencoded، multipart).</li>
+        </ul>
+        <p><strong>پاسخ:</strong> <strong>status line</strong> (<code>HTTP/1.1 200 OK</code>)، هدرها (<code>Content-Type</code>، <code>Set-Cookie</code>، <code>Cache-Control</code>، <code>Location</code>) و بدنه.</p>
+        <p><strong>Stateless:</strong> هر درخواست مستقل است و پروتکل هیچ حافظه‌ای از درخواست‌های قبلی ندارد؛ سرور به‌طور ذاتی نمی‌داند دو درخواست از یک کاربرند. این ویژگی scale افقی و سادگی را ممکن می‌کند.</p>
+        <p><strong>تشخیص کاربر:</strong> state را در لایهٔ application با اطلاعاتی که هر درخواست حمل می‌کند بازسازی می‌کنیم:</p>
+        <ul>
+          <li><strong>Session + cookie:</strong> پس از login، سرور یک session id تصادفی در store (فایل، دیتابیس، Redis) می‌سازد و با <code>Set-Cookie</code> (با <code>HttpOnly</code>، <code>Secure</code>، <code>SameSite</code>) به مرورگر می‌دهد؛ مرورگر آن را در هر درخواست برمی‌گرداند و سرور با lookup کاربر را پیدا می‌کند.</li>
+          <li><strong>Token:</strong> client توکن (opaque یا JWT) را در هدر <code>Authorization: Bearer</code> می‌فرستد.</li>
+        </ul>
+        <p>در هر دو حالت، خود HTTP stateless می‌ماند؛ «state» در store سرور یا در توکن حمل می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-2">
+      <summary>attributeهای HttpOnly، Secure، SameSite، Domain، Path و Max-Age در cookie را توضیح دهید. یک cookie نشست امن را چگونه تنظیم می‌کنید و هر attribute در برابر چه حمله‌ای محافظت می‌کند؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>HttpOnly:</strong> cookie از طریق <code>document.cookie</code> قابل خواندن نیست ⇐ اگر XSS رخ دهد، مهاجم نمی‌تواند session id را بدزدد و جای دیگری استفاده کند (هرچند همچنان می‌تواند در همان صفحه از طرف کاربر درخواست بزند؛ پس XSS را باید جداگانه رفع کرد).</li>
+          <li><strong>Secure:</strong> فقط روی HTTPS ارسال می‌شود ⇐ محافظت در برابر شنود در شبکه (Wi-Fi عمومی، MITM).</li>
+          <li><strong>SameSite:</strong> کنترل ارسال در درخواست‌های cross-site ⇐ دفاع در برابر <strong>CSRF</strong>. <code>Strict</code> هیچ‌وقت؛ <code>Lax</code> فقط در navigation سطح بالا با متد امن (کلیک روی لینک)؛ <code>None</code> همیشه (نیازمند Secure؛ برای embed یا SSO). Chromium در نبود این attribute رفتار Lax را پیش‌فرض می‌گیرد.</li>
+          <li><strong>Domain:</strong> اگر تنظیم نشود cookie فقط برای همان host است (امن‌تر)؛ اگر تنظیم شود زیردامنه‌ها هم آن را دریافت می‌کنند و زیردامنهٔ آلوده می‌تواند آن را بخواند یا بازنویسی کند.</li>
+          <li><strong>Path:</strong> محدودیت ارسال به مسیرهای مشخص؛ مرز امنیتی قوی نیست.</li>
+          <li><strong>Max-Age/Expires:</strong> عمر cookie؛ بدون آن‌ها session cookie است. عمر کوتاه پنجرهٔ سوءاستفاده را کم می‌کند.</li>
+        </ul>
+        <p><strong>تنظیم پیشنهادی:</strong></p>
+        <pre><code class="language-http">Set-Cookie: __Host-session=&lt;random-256bit&gt;; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=7200</code></pre>
+        <p>پیشوند <code>__Host-</code> تضمین می‌کند cookie بدون Domain، با Secure و Path=/ تنظیم شده است. علاوه بر این: session id تصادفی و غیرقابل‌حدس، <strong>regenerate</strong> پس از login (ضد session fixation)، invalidate در logout، و CSRF token برای درخواست‌های تغییردهنده. در Laravel این تنظیمات در <code>config/session.php</code> (<code>secure</code>، <code>http_only</code>، <code>same_site</code>، <code>lifetime</code>) قرار دارند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-3">
+      <summary>CORS و درخواست preflight را توضیح دهید. چرا یک درخواست <code>fetch</code> با <code>Content-Type: application/json</code> قبل از ارسال، یک درخواست OPTIONS می‌فرستد؟</summary>
+      <div class="answer">
+        <p><strong>Same-Origin Policy:</strong> مرورگر اجازه نمی‌دهد اسکریپت یک origin (scheme + host + port) پاسخ درخواست به origin دیگری را بخواند. این سیاست جلوی آن را می‌گیرد که سایت مخرب با cookieهای کاربر، داده‌های او را از سایت‌های دیگر بخواند.</p>
+        <p><strong>CORS:</strong> مکانیزمی که سرور مقصد با هدرهای پاسخ (<code>Access-Control-Allow-Origin</code>، <code>-Methods</code>، <code>-Headers</code>، <code>-Credentials</code>) اعلام کند کدام originها مجاز به خواندن پاسخ‌اند.</p>
+        <p><strong>Simple request</strong> (بدون preflight): متد GET/HEAD/POST، فقط هدرهای مجاز ساده، و Content-Type یکی از <code>text/plain</code>، <code>application/x-www-form-urlencoded</code> یا <code>multipart/form-data</code>. این‌ها همان درخواست‌هایی هستند که یک فرم HTML معمولی هم از قبل می‌توانست بفرستد، پس CORS آن‌ها را ارسال می‌کند و فقط خواندن پاسخ را کنترل می‌کند.</p>
+        <p><strong>Preflight:</strong> اگر درخواست از این محدوده خارج شود — مثل <code>application/json</code>، هدر <code>Authorization</code> یا متد PUT/DELETE — مرورگر نمی‌تواند فرض کند سرور قدیمی برای چنین درخواست cross-originی آماده است. پس ابتدا <code>OPTIONS</code> با <code>Origin</code>، <code>Access-Control-Request-Method</code> و <code>Access-Control-Request-Headers</code> می‌فرستد؛ فقط اگر سرور با هدرهای مجوز پاسخ دهد، درخواست اصلی ارسال می‌شود. <code>Access-Control-Max-Age</code> نتیجهٔ preflight را برای مدتی cache می‌کند.</p>
+        <p><strong>نکات مهم:</strong></p>
+        <ul>
+          <li>CORS را مرورگر اجرا می‌کند؛ curl و Postman تحت تأثیر نیستند — پس CORS جایگزین احراز هویت نیست.</li>
+          <li>برای ارسال cookie، client باید <code>credentials: 'include'</code> بگذارد و سرور origin دقیق (نه <code>*</code>) و <code>Allow-Credentials: true</code> برگرداند.</li>
+          <li>middleware احراز هویت نباید preflight را 401 کند. در Laravel، <code>HandleCors</code> با <code>config/cors.php</code> این را مدیریت می‌کند.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-4">
+      <summary>HTML معنایی (Semantic HTML) چیست و چه مزایایی دارد؟ ساختار معنایی یک صفحهٔ وبلاگ را بنویسید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> استفاده از عناصر HTML بر اساس <strong>معنای محتوا</strong> نه ظاهر آن: <code>&lt;nav&gt;</code> برای ناوبری، <code>&lt;article&gt;</code> برای محتوای مستقل، <code>&lt;button&gt;</code> برای عمل، به‌جای استفاده از <code>&lt;div&gt;</code> و <code>&lt;span&gt;</code> برای همه‌چیز.</p>
+        <p><strong>مزایا:</strong></p>
+        <ul>
+          <li><strong>دسترس‌پذیری:</strong> screen readerها landmarkها (<code>main</code>، <code>nav</code>) و headingها را برای پرش سریع استفاده می‌کنند؛ عناصر بومی فوکوس و کیبورد را رایگان دارند.</li>
+          <li><strong>SEO:</strong> موتور جستجو محتوای اصلی، عنوان‌ها و ساختار را بهتر می‌فهمد.</li>
+          <li><strong>نگه‌داری و خوانایی:</strong> ساختار کد خودتوصیف است.</li>
+          <li><strong>رفتار پیش‌فرض:</strong> مثلاً button در form، ارسال را انجام می‌دهد و با Enter/Space فعال می‌شود.</li>
+        </ul>
+        <pre><code class="language-xml">&lt;body&gt;
+  &lt;header&gt;
+    &lt;a href="/"&gt;وبلاگ من&lt;/a&gt;
+    &lt;nav aria-label="اصلی"&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="/posts"&gt;مطالب&lt;/a&gt;&lt;/li&gt;&lt;/ul&gt;&lt;/nav&gt;
+  &lt;/header&gt;
+  &lt;main&gt;
+    &lt;article&gt;
+      &lt;header&gt;
+        &lt;h1&gt;آشنایی با Event Loop&lt;/h1&gt;
+        &lt;p&gt;نوشتهٔ علی — &lt;time datetime="2026-11-07"&gt;۱۶ آبان ۱۴۰۵&lt;/time&gt;&lt;/p&gt;
+      &lt;/header&gt;
+      &lt;section&gt;&lt;h2&gt;Call stack&lt;/h2&gt;&lt;p&gt;...&lt;/p&gt;&lt;/section&gt;
+      &lt;figure&gt;&lt;img src="loop.png" alt="نمودار event loop"&gt;&lt;figcaption&gt;...&lt;/figcaption&gt;&lt;/figure&gt;
+      &lt;footer&gt;برچسب‌ها: ...&lt;/footer&gt;
+    &lt;/article&gt;
+    &lt;section aria-labelledby="comments-title"&gt;&lt;h2 id="comments-title"&gt;نظرات&lt;/h2&gt;...&lt;/section&gt;
+  &lt;/main&gt;
+  &lt;aside&gt;مطالب مرتبط&lt;/aside&gt;
+  &lt;footer&gt;© ۱۴۰۵&lt;/footer&gt;
+&lt;/body&gt;</code></pre>
+        <p>نکات: یک <code>h1</code> و سلسله‌مراتب heading بدون پرش، <code>alt</code> برای تصاویر، <code>lang</code> و <code>dir</code> روی html، و <code>&lt;title&gt;</code> و meta description یکتا.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-5">
+      <summary>اعتبارسنجی فرم در سمت client (HTML5) چگونه انجام می‌شود و چرا کافی نیست؟ دسترس‌پذیری یک فرم را چگونه تضمین می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>Validation داخلی HTML:</strong> با type مناسب (<code>email</code>، <code>url</code>، <code>number</code>، <code>tel</code>) و attributeهای <code>required</code>، <code>min</code>/<code>max</code>، <code>minlength</code>/<code>maxlength</code>، <code>pattern</code> و <code>step</code>. مرورگر پیش از submit بررسی و پیام خطا نمایش می‌دهد. در CSS با <code>:invalid</code>/<code>:user-invalid</code> و در JS با Constraint Validation API (<code>checkValidity()</code>، <code>setCustomValidity()</code>، <code>validity</code>) قابل کنترل است.</p>
+        <p><strong>چرا کافی نیست؟</strong> کد client کاملاً تحت کنترل کاربر است: می‌توان attributeها را در DevTools حذف کرد، <code>novalidate</code> گذاشت یا درخواست را مستقیماً با curl فرستاد. پس validation سمت client فقط برای <strong>تجربهٔ کاربری</strong> (بازخورد سریع) است و <strong>اعتبارسنجی واقعی و امنیتی باید در سرور</strong> انجام شود (Form Request در Laravel، با پاسخ 422 یا بازگشت با خطاها).</p>
+        <p><strong>دسترس‌پذیری فرم:</strong></p>
+        <ul>
+          <li>هر فیلد یک <code>&lt;label for="id"&gt;</code> مرتبط داشته باشد؛ placeholder جایگزین label نیست.</li>
+          <li>گروه‌های radio/checkbox در <code>&lt;fieldset&gt;</code> با <code>&lt;legend&gt;</code>.</li>
+          <li>پیام راهنما و خطا با <code>aria-describedby</code> به فیلد وصل شود؛ فیلد نامعتبر <code>aria-invalid="true"</code>؛ خلاصهٔ خطاها در ناحیهٔ <code>role="alert"</code> یا <code>aria-live</code> اعلام شود و فوکوس به اولین فیلد نامعتبر برود.</li>
+          <li>خطا فقط با رنگ قرمز نشان داده نشود؛ متن صریح داشته باشد.</li>
+          <li>همهٔ کنترل‌ها با کیبورد قابل دسترسی و فوکوس قابل‌مشاهده باشد؛ از عناصر بومی (<code>button</code>، <code>select</code>) به‌جای div سفارشی استفاده شود.</li>
+          <li><code>autocomplete</code> مناسب و type درست برای کیبورد موبایل.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-6">
+      <summary>Cascade و Specificity در CSS را توضیح دهید. Specificity هر یک از selectorهای <code>#nav .item a</code>، <code>.menu li.active a:hover</code> و <code>div p</code> را محاسبه کنید و بگویید کدام برنده است.</summary>
+      <div class="answer">
+        <p><strong>Cascade:</strong> الگوریتمی که وقتی چند declaration برای یک property روی یک عنصر رقابت می‌کنند، برنده را تعیین می‌کند. معیارها به ترتیب: (۱) <strong>origin و importance</strong> (استایل مرورگر، کاربر، نویسنده؛ و <code>!important</code> که ترتیب را برعکس می‌کند)، (۲) <strong>cascade layers</strong> (<code>@layer</code>)، (۳) <strong>specificity</strong>، (۴) <strong>ترتیب ظاهر شدن</strong> (آخری برنده). استایل inline قوی‌تر از هر selector است.</p>
+        <p><strong>Specificity:</strong> سه‌تایی (A, B, C): A = تعداد ID، B = تعداد class/attribute/pseudo-class، C = تعداد type/pseudo-element. مقایسه ستون‌به‌ستون از چپ است. <code>*</code> و combinatorها و <code>:where()</code> صفرند؛ <code>:is()</code>/<code>:not()</code>/<code>:has()</code> بیشترین آرگومانشان را می‌گیرند.</p>
+        <ul>
+          <li><code>#nav .item a</code> ⇐ یک ID، یک class، یک type ⇐ <strong>(1,1,1)</strong></li>
+          <li><code>.menu li.active a:hover</code> ⇐ classها: <code>.menu</code>، <code>.active</code>، pseudo-class <code>:hover</code> = ۳؛ typeها: <code>li</code>، <code>a</code> = ۲ ⇐ <strong>(0,3,2)</strong></li>
+          <li><code>div p</code> ⇐ <strong>(0,0,2)</strong></li>
+        </ul>
+        <p><strong>برنده:</strong> <code>#nav .item a</code>، چون در ستون اول (ID) یک دارد و بقیه صفر؛ تعداد classها اهمیتی ندارد. (البته به شرطی که هر سه بر یک عنصر منطبق باشند و در یک origin/layer قرار داشته باشند.)</p>
+        <p><strong>توصیهٔ عملی:</strong> specificity بالا باعث «جنگ specificity» و استفادهٔ بیش از حد از <code>!important</code> می‌شود. از classهای تک‌سطحی (BEM یا utility)، <code>:where()</code> برای استایل‌های پایه و <code>@layer</code> برای مدیریت اولویت کتابخانه‌ها استفاده کنید. همچنین <strong>inheritance</strong> را با cascade اشتباه نگیرید: مقدار ارث‌رسیده هیچ specificityای ندارد و هر قانون مستقیمی بر آن غلبه می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-7">
+      <summary>Box model را توضیح دهید و تفاوت <code>content-box</code> و <code>border-box</code> را با محاسبه نشان دهید. تفاوت position‌های relative، absolute، fixed و sticky چیست؟</summary>
+      <div class="answer">
+        <p><strong>Box model:</strong> هر عنصر یک جعبه است متشکل از <strong>content</strong>، <strong>padding</strong> (فاصلهٔ داخلی، با پس‌زمینهٔ عنصر)، <strong>border</strong> و <strong>margin</strong> (فاصلهٔ بیرونی، شفاف). marginهای عمودی بلوک‌های مجاور collapse می‌شوند (بزرگ‌ترین می‌ماند).</p>
+        <p><strong>مثال:</strong> <code>width: 300px; padding: 20px; border: 5px solid;</code></p>
+        <ul>
+          <li><code>content-box</code> (پیش‌فرض): width فقط content ⇐ عرض نهایی = 300 + 2×20 + 2×5 = <strong>350px</strong>.</li>
+          <li><code>border-box</code>: width شامل padding و border ⇐ عرض نهایی = <strong>300px</strong> و content = 300 − 40 − 10 = 250px.</li>
+        </ul>
+        <p>به همین دلیل معمولاً <code>*, *::before, *::after { box-sizing: border-box; }</code> سراسری تنظیم می‌شود: ستون‌های ۵۰٪ با padding از والد بیرون نمی‌زنند.</p>
+        <p><strong>position:</strong></p>
+        <ul>
+          <li><strong>relative:</strong> در جریان سند می‌ماند و فضای اصلی‌اش حفظ می‌شود؛ <code>top/left</code> آن را نسبت به جای عادی‌اش جابه‌جا می‌کند. کاربرد اصلی: مرجع شدن برای فرزندان absolute.</li>
+          <li><strong>absolute:</strong> از جریان خارج می‌شود (فضا نمی‌گیرد) و نسبت به نزدیک‌ترین جد positioned (غیر static) قرار می‌گیرد. کاربرد: badge، dropdown.</li>
+          <li><strong>fixed:</strong> از جریان خارج و نسبت به viewport ثابت است و با scroll حرکت نمی‌کند (مگر جدی <code>transform</code> داشته باشد که containing block جدید می‌سازد). کاربرد: هدر ثابت، modal.</li>
+          <li><strong>sticky:</strong> مثل relative رفتار می‌کند تا هنگام scroll به آستانه (مثلاً <code>top: 0</code>) برسد، سپس درون scroll container والدش می‌چسبد. کاربرد: هدر جدول. اگر والد <code>overflow: hidden</code> داشته باشد یا ارتفاع کافی نداشته باشد، کار نمی‌کند.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-8">
+      <summary>Flexbox و Grid را مقایسه کنید. هر کدام برای چه سناریویی مناسب‌ترند؟ یک گالری محصول واکنش‌گرا را بدون media query پیاده کنید.</summary>
+      <div class="answer">
+        <p><strong>Flexbox:</strong> سیستم layout <strong>یک‌بعدی</strong>: آیتم‌ها را در یک محور (ردیف یا ستون) می‌چیند و فضای خالی را بین آن‌ها توزیع می‌کند. <strong>Content-first</strong> است: اندازهٔ آیتم‌ها از محتوا و <code>flex-grow/shrink/basis</code> تعیین می‌شود. ویژگی‌های کلیدی: <code>flex-direction</code>، <code>justify-content</code> (محور اصلی)، <code>align-items</code> (محور عمود)، <code>flex-wrap</code>، <code>gap</code>.</p>
+        <p><strong>Grid:</strong> سیستم layout <strong>دوبعدی</strong>: ردیف‌ها و ستون‌ها هم‌زمان کنترل می‌شوند. <strong>Layout-first</strong> است: ابتدا شبکه (<code>grid-template-columns/rows/areas</code>) تعریف و آیتم‌ها در آن جای‌گذاری می‌شوند. واحد <code>fr</code>، تابع‌های <code>repeat</code> و <code>minmax</code>.</p>
+        <p><strong>سناریوها:</strong></p>
+        <ul>
+          <li>Flex: نوار ناوبری، ردیف دکمه‌ها، وسط‌چین کردن، کارت با footer چسبیده به پایین، چیدمان آیتم‌ها با اندازهٔ نامشخص.</li>
+          <li>Grid: اسکلت کل صفحه (header/sidebar/main/footer)، داشبورد، گالری با ستون‌های هم‌تراز، فرم‌های چندستونه.</li>
+          <li>ترکیب: Grid برای ماکرو-layout و Flex برای اجزای داخلی.</li>
+        </ul>
+        <p><strong>گالری بدون media query:</strong></p>
+        <pre><code class="language-css">.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.gallery img { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; }</code></pre>
+        <p>مرورگر هر تعداد ستون با حداقل عرض ۲۲۰px که جا شود می‌سازد و فضای باقی‌مانده را با <code>1fr</code> بین آن‌ها تقسیم می‌کند؛ در موبایل یک ستون و در دسکتاپ چند ستون. با <code>auto-fit</code> به‌جای <code>auto-fill</code>، وقتی آیتم‌ها کم‌اند، ستون‌های خالی حذف و آیتم‌ها کش می‌آیند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-9">
+      <summary>تفاوت واحدهای rem، em، %، vh و px چیست؟ رویکرد Mobile-first در طراحی واکنش‌گرا را توضیح دهید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>px:</strong> واحد مطلق CSS؛ مناسب border و جزئیات دقیق. برای فونت توصیه نمی‌شود چون تنظیم اندازهٔ فونت کاربر در مرورگر را نادیده می‌گیرد.</li>
+          <li><strong>rem:</strong> نسبت به font-size عنصر ریشه (<code>html</code>؛ معمولاً ۱۶px). یکنواخت و پیش‌بینی‌پذیر، با تنظیمات دسترس‌پذیری کاربر مقیاس می‌گیرد ⇐ انتخاب اصلی برای فونت و فاصله‌ها.</li>
+          <li><strong>em:</strong> نسبت به font-size خود عنصر (و برای خود font-size نسبت به والد). در ساختار تودرتو ضرب می‌شود (۱٫۲em داخل ۱٫۲em = ۱٫۴۴ برابر). مناسب برای padding دکمه که باید با اندازهٔ متن همان دکمه متناسب باشد.</li>
+          <li><strong>%:</strong> نسبت به containing block (برای width عرض والد؛ نکته: padding و margin درصدی، حتی عمودی، نسبت به <em>عرض</em> والدند).</li>
+          <li><strong>vw/vh:</strong> ۱٪ عرض/ارتفاع viewport. در موبایل <code>100vh</code> به دلیل نوار آدرس پویا ممکن است بیشتر از فضای قابل‌مشاهده باشد ⇐ <code>100dvh</code>.</li>
+        </ul>
+        <p><strong>Mobile-first:</strong> استایل پایه برای کوچک‌ترین صفحه نوشته می‌شود و سپس با <code>@media (min-width: ...)</code> برای صفحات بزرگ‌تر قابلیت‌ها و ستون‌ها <em>اضافه</em> می‌شوند.</p>
+        <pre><code class="language-css">.layout { display: grid; gap: 1rem; }                       /* موبایل: یک ستون */
+@media (min-width: 768px) { .layout { grid-template-columns: 240px 1fr; } } /* تبلت به بالا */</code></pre>
+        <p><strong>چرا؟</strong> دستگاه‌های ضعیف‌تر CSS ساده‌تر را پردازش می‌کنند؛ تیم مجبور می‌شود محتوای اصلی را اولویت‌بندی کند؛ افزودن پیچیدگی آسان‌تر از حذف آن است. پیش‌نیاز: <code>&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;</code>، layout سیال با flex/grid و تصاویر با <code>max-width: 100%</code> و <code>srcset</code>. امروز <strong>container query</strong> هم امکان واکنش‌گرایی بر اساس اندازهٔ والد را می‌دهد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-10">
+      <summary>تفاوت <code>==</code> و <code>===</code> در JavaScript چیست؟ خروجی عبارات زیر را با دلیل بنویسید: <code>0 == ''</code>، <code>null == undefined</code>، <code>null == 0</code>، <code>NaN === NaN</code>، <code>'5' + 3</code>، <code>'5' - 3</code>، <code>[] + {}</code>.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> <code>===</code> (strict equality) بدون تبدیل نوع مقایسه می‌کند: اگر نوع‌ها متفاوت باشند false. <code>==</code> (loose equality) پیش از مقایسه با قواعد Abstract Equality تبدیل نوع ضمنی (<strong>coercion</strong>) انجام می‌دهد؛ معمولاً هر دو طرف به عدد تبدیل می‌شوند، و objectها به primitive. objectها در هر دو حالت با reference مقایسه می‌شوند.</p>
+        <ul>
+          <li><code>0 == ''</code> ⇐ <strong>true</strong>: رشتهٔ خالی به عدد 0 تبدیل می‌شود.</li>
+          <li><code>null == undefined</code> ⇐ <strong>true</strong>: قاعدهٔ ویژه؛ این دو فقط با هم (و با خودشان) loose-equal هستند.</li>
+          <li><code>null == 0</code> ⇐ <strong>false</strong>: در <code>==</code>، null به عدد تبدیل نمی‌شود (هرچند <code>null &gt;= 0</code> true است چون مقایسهٔ رابطه‌ای آن را به 0 تبدیل می‌کند — نمونهٔ ناسازگاری).</li>
+          <li><code>NaN === NaN</code> ⇐ <strong>false</strong>: طبق IEEE 754، NaN با هیچ چیز حتی خودش برابر نیست؛ از <code>Number.isNaN()</code> یا <code>Object.is()</code> استفاده کنید.</li>
+          <li><code>'5' + 3</code> ⇐ <strong>'53'</strong>: عملگر <code>+</code> اگر یک طرف رشته باشد، الحاق رشته انجام می‌دهد.</li>
+          <li><code>'5' - 3</code> ⇐ <strong>2</strong>: عملگر <code>-</code> فقط عددی است و رشته را به عدد تبدیل می‌کند.</li>
+          <li><code>[] + {}</code> ⇐ <strong>'[object Object]'</strong>: هر دو به primitive (رشته) تبدیل می‌شوند: <code>''</code> و <code>'[object Object]'</code>.</li>
+        </ul>
+        <p><strong>نتیجه‌گیری:</strong> <code>==</code> حتی transitive نیست (<code>0 == ''</code> و <code>0 == '0'</code> ولی <code>'' != '0'</code>)، پس همیشه از <code>===</code> استفاده کنید؛ تنها استثنای پذیرفته‌شده <code>x == null</code> برای بررسی هم‌زمان null و undefined است. برای مقدار پیش‌فرض از <code>??</code> استفاده کنید تا مقادیر falsy معتبر مثل <code>0</code> حذف نشوند. TypeScript و ESLint (<code>eqeqeq</code>) این خطاها را زودتر می‌گیرند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-11">
+      <summary>تفاوت var، let و const را از نظر scope، hoisting و TDZ توضیح دهید. خروجی کد زیر چیست و چرا؟ <code>for (var i = 0; i &lt; 3; i++) setTimeout(() =&gt; console.log(i));</code></summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Scope:</strong> <code>var</code> function-scoped است (block مثل if/for را نمی‌شناسد)؛ <code>let</code> و <code>const</code> block-scoped.</li>
+          <li><strong>Hoisting:</strong> هر سه hoist می‌شوند، یعنی هنگام ورود به scope ثبت می‌شوند؛ اما <code>var</code> با <code>undefined</code> مقداردهی اولیه می‌شود، در حالی که <code>let/const</code> تا رسیدن به خط تعریف <strong>مقداردهی نشده</strong> می‌مانند.</li>
+          <li><strong>TDZ (Temporal Dead Zone):</strong> فاصلهٔ بین شروع block و خط تعریف <code>let/const/class</code> که دسترسی به متغیر در آن <code>ReferenceError</code> می‌دهد. این رفتار باگ استفادهٔ زودهنگام را آشکار می‌کند، برخلاف var که بی‌صدا undefined می‌دهد.</li>
+          <li><strong>دیگر تفاوت‌ها:</strong> var اجازهٔ تعریف مجدد دارد و در سطح بالای script روی <code>window</code> property می‌سازد؛ <code>const</code> انتساب مجدد را منع می‌کند ولی محتوای object/array قابل تغییر است.</li>
+        </ul>
+        <p><strong>خروجی کد:</strong> <code>3 3 3</code>.</p>
+        <p><strong>دلیل:</strong> با var فقط <strong>یک</strong> متغیر <code>i</code> برای کل حلقه وجود دارد. callbackهای <code>setTimeout</code> macrotask هستند و پس از اتمام کامل کد همگام اجرا می‌شوند؛ تا آن زمان حلقه تمام شده و <code>i</code> برابر ۳ است. هر سه closure به همان یک متغیر ارجاع دارند.</p>
+        <p><strong>رفع:</strong></p>
+        <pre><code class="language-javascript">for (let i = 0; i &lt; 3; i++) setTimeout(() =&gt; console.log(i)); // 0 1 2
+// let در هر تکرار binding جدید می‌سازد؛ هر closure مقدار خودش را دارد
+
+// روش قدیمی با IIFE
+for (var i = 0; i &lt; 3; i++) ((j) =&gt; setTimeout(() =&gt; console.log(j)))(i);</code></pre>
+        <p>این سوال هم‌زمان closure، scope و event loop را می‌سنجد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-12">
+      <summary>Closure را تعریف کنید و دو کاربرد عملی آن را با کد نشان دهید. چه خطری می‌تواند داشته باشد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> closure ترکیب یک تابع با <strong>محیط lexical</strong>ی است که در آن تعریف شده. به لطف lexical scope، تابع داخلی حتی پس از بازگشت تابع بیرونی، به متغیرهای آن دسترسی دارد؛ این متغیرها (نه کپی‌شان) زنده می‌مانند.</p>
+        <p><strong>کاربرد ۱ — داده و state خصوصی (encapsulation):</strong></p>
+        <pre><code class="language-javascript">function createWallet(initial) {
+  let balance = initial;                 // از بیرون قابل دسترسی نیست
+  return {
+    deposit(x) { if (x &lt;= 0) throw new Error('invalid'); balance += x; },
+    get balance() { return balance; },
+  };
+}
+const w = createWallet(100);
+w.deposit(50);
+w.balance;   // 150 — تغییر مستقیم balance ممکن نیست</code></pre>
+        <p><strong>کاربرد ۲ — توابع مرتبهٔ بالا (debounce، memoize، factory):</strong></p>
+        <pre><code class="language-javascript">function debounce(fn, ms) {
+  let timer;                                   // در closure بین فراخوانی‌ها حفظ می‌شود
+  return (...args) =&gt; { clearTimeout(timer); timer = setTimeout(() =&gt; fn(...args), ms); };
+}
+input.addEventListener('input', debounce(e =&gt; search(e.target.value), 300));
+
+function memoize(fn) {
+  const cache = new Map();
+  return (n) =&gt; cache.has(n) ? cache.get(n) : (cache.set(n, fn(n)), cache.get(n));
+}</code></pre>
+        <p>کاربردهای دیگر: callbackها و event handlerها که به متغیرهای بیرونی نیاز دارند، partial application، module pattern پیش از ESM.</p>
+        <p><strong>خطرها:</strong></p>
+        <ul>
+          <li><strong>Memory leak:</strong> closure کل محیطی را که ارجاع می‌دهد زنده نگه می‌دارد؛ listener یا interval پاک‌نشده که به آرایهٔ بزرگ یا عنصر DOM حذف‌شده ارجاع دارد، مانع garbage collection می‌شود. راه‌حل: <code>removeEventListener</code>، <code>clearInterval</code>، <code>AbortController</code> برای listenerها.</li>
+          <li><strong>داده‌های کهنه (stale closure):</strong> مثل حلقه با var یا در React، closure مقدار قدیمی را نگه می‌دارد.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-13">
+      <summary>مقدار <code>this</code> در JavaScript چگونه تعیین می‌شود؟ تفاوت arrow function با تابع معمولی در این زمینه چیست؟ کد زیر چه مشکلی دارد؟ <code>class Timer { constructor(){ this.s = 0; setInterval(function(){ this.s++; }, 1000); } }</code></summary>
+      <div class="answer">
+        <p><strong>قاعدهٔ کلی:</strong> در تابع معمولی، <code>this</code> هنگام <strong>فراخوانی</strong> و بر اساس <strong>نحوهٔ فراخوانی</strong> تعیین می‌شود. چهار قاعده به ترتیب اولویت:</p>
+        <ol>
+          <li><strong>new:</strong> <code>new Fn()</code> ⇐ شیء تازه.</li>
+          <li><strong>Explicit:</strong> <code>call</code>، <code>apply</code>، <code>bind</code> ⇐ شیء داده‌شده.</li>
+          <li><strong>Implicit:</strong> <code>obj.fn()</code> ⇐ <code>obj</code>.</li>
+          <li><strong>Default:</strong> <code>fn()</code> ⇐ <code>undefined</code> در strict mode (کلاس‌ها و ماژول‌ها همیشه strict هستند)؛ در غیر این صورت global object.</li>
+        </ol>
+        <p>همچنین در event listener با تابع معمولی، <code>this</code> برابر <code>currentTarget</code> است.</p>
+        <p><strong>Arrow function</strong> <code>this</code> خودش را ندارد و آن را <strong>lexically</strong> از scope دربرگیرنده در زمان تعریف می‌گیرد؛ call/apply/bind آن را تغییر نمی‌دهند و با <code>new</code> قابل فراخوانی نیست. بنابراین برای callbackهای داخل متد عالی است ولی برای متد شیء (که به this شیء نیاز دارد) نامناسب.</p>
+        <p><strong>مشکل کد:</strong> callback با <code>function</code> معمولی توسط setInterval به‌صورت ساده (default binding) فراخوانی می‌شود؛ پس <code>this</code> داخل آن نمونهٔ Timer نیست (در مرورگر window، یا undefined در strict mode). نتیجه: <code>this.s</code> نمونه هرگز افزایش نمی‌یابد (یا TypeError).</p>
+        <pre><code class="language-javascript">class Timer {
+  s = 0;
+  #id;
+  start() {
+    this.#id = setInterval(() =&gt; { this.s++; }, 1000);   // ✓ arrow: this = نمونه
+    // یا: setInterval(function () { this.s++; }.bind(this), 1000);
+  }
+  stop() { clearInterval(this.#id); }                    // جلوگیری از نشت
+}</code></pre>
+        <p>بهبود جانبی: شروع interval در constructor و نداشتن راه توقف، نشت حافظه و منبع ایجاد می‌کند؛ متد <code>stop</code> اضافه شد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-14">
+      <summary>Event loop در JavaScript را شرح دهید و تفاوت microtask و macrotask را بگویید. خروجی کد زیر را با توضیح مرحله‌به‌مرحله بنویسید.</summary>
+      <div class="answer">
+        <pre><code class="language-javascript">console.log('A');
+setTimeout(() =&gt; console.log('B'), 0);
+Promise.resolve()
+  .then(() =&gt; console.log('C'))
+  .then(() =&gt; console.log('D'));
+(async () =&gt; { console.log('E'); await undefined; console.log('F'); })();
+setTimeout(() =&gt; Promise.resolve().then(() =&gt; console.log('G')), 0);
+console.log('H');</code></pre>
+        <p><strong>مفاهیم:</strong> JS یک call stack و یک thread اصلی دارد. عملیات ناهمگام به محیط میزبان سپرده می‌شوند و callbackهایشان در صف قرار می‌گیرند:</p>
+        <ul>
+          <li><strong>Macrotask (task):</strong> setTimeout، setInterval، رویدادهای UI، I/O، اجرای اولیهٔ script.</li>
+          <li><strong>Microtask:</strong> واکنش‌های Promise (then/catch/finally)، ادامهٔ بعد از <code>await</code>، <code>queueMicrotask</code>، MutationObserver.</li>
+        </ul>
+        <p><strong>الگوریتم:</strong> یک macrotask اجرا می‌شود ⇐ سپس <strong>همهٔ</strong> microtaskها تا خالی شدن صف (شامل microtaskهای تازه اضافه‌شده) ⇐ فرصت render ⇐ macrotask بعدی.</p>
+        <p><strong>اجرای مرحله‌به‌مرحله:</strong></p>
+        <ol>
+          <li>کد همگام: <code>A</code>؛ timer اول ثبت؛ then اول (C) در صف microtask؛ تابع async اجرا و <code>E</code> چاپ، سپس در await متوقف و ادامه‌اش (F) در صف microtask؛ timer دوم ثبت؛ <code>H</code>.</li>
+          <li>تخلیهٔ microtaskها: <code>C</code> ⇐ resolve شدنش then بعدی (D) را به انتهای صف می‌افزاید؛ <code>F</code>؛ سپس <code>D</code>.</li>
+          <li>macrotask اول: <code>B</code>.</li>
+          <li>macrotask دوم: یک Promise.then در صف microtask می‌گذارد که بلافاصله پس از این task اجرا می‌شود: <code>G</code>.</li>
+        </ol>
+        <p><strong>خروجی:</strong> <code>A E H C F D B G</code></p>
+        <p><strong>پیامد عملی:</strong> <code>setTimeout(fn, 0)</code> «فوری» نیست؛ کد همگام طولانی UI را قفل می‌کند (long task)؛ و زنجیرهٔ بی‌پایان microtask می‌تواند rendering را گرسنه نگه دارد. کار CPU-سنگین باید به Web Worker منتقل یا تکه‌تکه شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-15">
+      <summary>سیر تکامل برنامه‌نویسی ناهمگام از callback به Promise و async/await را توضیح دهید. کد زیر چه مشکلاتی دارد و چگونه اصلاح می‌شود؟</summary>
+      <div class="answer">
+        <pre><code class="language-javascript">async function loadDashboard(ids) {
+  const user = await fetch('/api/me').then(r =&gt; r.json());
+  const stats = await fetch('/api/stats').then(r =&gt; r.json());
+  ids.forEach(async (id) =&gt; {
+    await fetch(`/api/widgets/${id}`, { method: 'POST' });
+  });
+  console.log('done');
+}</code></pre>
+        <p><strong>تکامل:</strong></p>
+        <ul>
+          <li><strong>Callback:</strong> تابعی که پس از اتمام کار صدا زده می‌شود. مشکلات: تودرتویی (callback hell)، مدیریت خطای پراکنده، inversion of control (اعتماد به اینکه کتابخانه callback را دقیقاً یک‌بار صدا بزند).</li>
+          <li><strong>Promise:</strong> شیئی نمایندهٔ نتیجهٔ آینده با وضعیت‌های pending/fulfilled/rejected که فقط یک‌بار settle می‌شود؛ زنجیره‌سازی با then، یک catch برای کل زنجیره، ترکیب با <code>all</code>/<code>allSettled</code>/<code>race</code>/<code>any</code>.</li>
+          <li><strong>async/await:</strong> syntactic sugar روی Promise؛ کد ناهمگام با ظاهر همگام و مدیریت خطا با try/catch معمولی. تابع async همیشه Promise برمی‌گرداند.</li>
+        </ul>
+        <p><strong>مشکلات کد:</strong></p>
+        <ol>
+          <li><code>user</code> و <code>stats</code> مستقل‌اند ولی <strong>ترتیبی</strong> await شده‌اند ⇐ زمان کل = مجموع زمان‌ها.</li>
+          <li><code>fetch</code> برای 4xx/5xx reject نمی‌شود و <code>res.ok</code> بررسی نشده است.</li>
+          <li><code>forEach</code> Promise برگشتی callback را نادیده می‌گیرد ⇐ <code>'done'</code> قبل از اتمام درخواست‌ها چاپ می‌شود و خطاهایشان <strong>unhandled rejection</strong> می‌شوند.</li>
+          <li>هیچ مدیریت خطا یا timeoutی وجود ندارد.</li>
+        </ol>
+        <pre><code class="language-javascript">async function getJson(url, init) {
+  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+  return res.status === 204 ? null : res.json();
+}
+
+async function loadDashboard(ids) {
+  try {
+    const [user, stats] = await Promise.all([getJson('/api/me'), getJson('/api/stats')]);
+    const results = await Promise.allSettled(
+      ids.map(id =&gt; getJson(`/api/widgets/${id}`, { method: 'POST' }))
+    );
+    const failed = results.filter(r =&gt; r.status === 'rejected');
+    if (failed.length) console.warn(`${failed.length} widgets failed`);
+    return { user, stats };
+  } catch (err) {
+    showError(err);
+    throw err;
+  }
+}</code></pre>
+        <p>اگر ترتیب درخواست‌ها مهم بود یا باید تعداد هم‌زمان را محدود کرد، از <code>for...of</code> با await یا یک concurrency limiter استفاده کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-16">
+      <summary>Event bubbling، capturing و event delegation را توضیح دهید. چرا delegation برای فهرستی با هزاران ردیف که پویا اضافه می‌شوند مناسب است؟</summary>
+      <div class="answer">
+        <p><strong>انتشار رویداد</strong> سه فاز دارد:</p>
+        <ol>
+          <li><strong>Capturing:</strong> از <code>window</code> به سمت پایین تا والد هدف.</li>
+          <li><strong>Target:</strong> روی خود عنصر هدف.</li>
+          <li><strong>Bubbling:</strong> از هدف به سمت بالا تا <code>window</code>.</li>
+        </ol>
+        <p>listenerها به‌طور پیش‌فرض در فاز bubbling اجرا می‌شوند؛ با <code>addEventListener(type, fn, { capture: true })</code> در فاز capturing. <code>event.target</code> عنصر اصلی رویداد و <code>event.currentTarget</code> عنصری است که listener روی آن ثبت شده. <code>stopPropagation()</code> انتشار را متوقف و <code>preventDefault()</code> رفتار پیش‌فرض را لغو می‌کند (این دو مستقل‌اند).</p>
+        <p><strong>Event delegation:</strong> به‌جای ثبت listener روی تک‌تک فرزندان، یک listener روی والد مشترک ثبت می‌شود و به لطف bubbling، با بررسی <code>event.target</code> تشخیص داده می‌شود کدام فرزند هدف بوده است.</p>
+        <pre><code class="language-javascript">table.addEventListener('click', (e) =&gt; {
+  const btn = e.target.closest('[data-action]');
+  if (!btn || !table.contains(btn)) return;
+  const id = btn.closest('tr').dataset.id;
+  if (btn.dataset.action === 'delete') removeRow(id);
+  if (btn.dataset.action === 'edit') openEditor(id);
+});</code></pre>
+        <p><strong>چرا برای فهرست بزرگ و پویا؟</strong></p>
+        <ul>
+          <li><strong>حافظه و کارایی:</strong> یک listener به‌جای هزاران؛ زمان راه‌اندازی کمتر.</li>
+          <li><strong>عناصر پویا:</strong> ردیف‌هایی که بعداً (مثلاً با AJAX یا infinite scroll) اضافه می‌شوند، بدون ثبت listener جدید کار می‌کنند.</li>
+          <li><strong>عدم نشت:</strong> با حذف ردیف‌ها نیازی به پاک کردن listenerهایشان نیست.</li>
+        </ul>
+        <p><strong>محدودیت‌ها:</strong> رویدادهایی که bubble نمی‌کنند (<code>focus</code>، <code>blur</code> ⇐ از <code>focusin</code>/<code>focusout</code> استفاده کنید)؛ استفاده از <code>closest()</code> چون target ممکن است فرزند داخلی دکمه (مثلاً آیکون) باشد؛ و اگر کدی در مسیر <code>stopPropagation</code> کند، رویداد به والد نمی‌رسد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-17">
+      <summary>Critical rendering path مرورگر را شرح دهید. reflow و repaint چه تفاوتی دارند و تفاوت <code>async</code> و <code>defer</code> در تگ script چیست؟ برای بهبود سرعت بارگذاری اولیهٔ یک صفحه چه می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>مراحل:</strong></p>
+        <ol>
+          <li>parse HTML ⇐ <strong>DOM</strong>؛ parse CSS ⇐ <strong>CSSOM</strong>.</li>
+          <li>ترکیب آن‌ها ⇐ <strong>Render tree</strong> (فقط عناصر قابل‌مشاهده؛ <code>display:none</code> حذف می‌شود).</li>
+          <li><strong>Layout (reflow):</strong> محاسبهٔ اندازه و موقعیت هر جعبه.</li>
+          <li><strong>Paint:</strong> رسم پیکسل‌ها (متن، رنگ، تصویر، سایه) در layerها.</li>
+          <li><strong>Composite:</strong> ترکیب layerها (اغلب روی GPU) و نمایش.</li>
+        </ol>
+        <p>CSS <strong>render-blocking</strong> است و script معمولی <strong>parser-blocking</strong>.</p>
+        <p><strong>Reflow در برابر repaint:</strong> reflow هندسه را دوباره محاسبه می‌کند (تغییر اندازه، فونت، افزودن عنصر، خواندن <code>offsetHeight</code> پس از نوشتن) و معمولاً repaint هم به دنبال دارد — پرهزینه‌تر. repaint فقط ظاهر را بدون تغییر هندسه دوباره رسم می‌کند (رنگ، background). <code>transform</code> و <code>opacity</code> اغلب فقط composite لازم دارند ⇐ مناسب انیمیشن. از layout thrashing (خواندن/نوشتن متناوب) با batch کردن پرهیز کنید.</p>
+        <p><strong>async در برابر defer:</strong> هر دو اسکریپت را موازی با parse دانلود می‌کنند. <code>async</code> به‌محض دانلود اجرا می‌شود (parse را قطع می‌کند و ترتیب تضمین نمی‌شود) ⇐ اسکریپت‌های مستقل مثل analytics. <code>defer</code> پس از اتمام parse و قبل از <code>DOMContentLoaded</code>، به ترتیب نوشته‌شده اجرا می‌شود ⇐ اسکریپت‌های اصلی اپ. <code>type="module"</code> به‌طور پیش‌فرض مثل defer است.</p>
+        <p><strong>بهبود بارگذاری اولیه:</strong></p>
+        <ul>
+          <li>CSS حیاتی کوچک و inline، بقیه با بارگذاری غیر مسدودکننده؛ JS با <code>defer</code> و code splitting.</li>
+          <li>فشرده‌سازی (Brotli)، minify، cache طولانی با نام hash‌دار (Vite)، CDN، HTTP/2+.</li>
+          <li>تصاویر بهینه (WebP/AVIF، <code>srcset</code>، <code>loading="lazy"</code> برای پایین صفحه، ابعاد مشخص برای جلوگیری از CLS)، <code>preload</code> برای تصویر LCP و فونت.</li>
+          <li>کاهش TTFB در سرور: cache صفحه/داده، OPcache، کوئری بهینه.</li>
+          <li>اندازه‌گیری با Lighthouse و Core Web Vitals (LCP، INP، CLS).</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-web-fundamentals-18">
+      <summary>localStorage، sessionStorage، cookie و IndexedDB را مقایسه کنید. یک سناریو: تیم frontend می‌خواهد توکن احراز هویت را در localStorage ذخیره کند؛ نظر شما چیست و XSS چگونه در این تصمیم نقش دارد؟</summary>
+      <div class="answer">
+        <p><strong>مقایسه:</strong></p>
+        <ul>
+          <li><strong>Cookie:</strong> حدود ۴KB؛ با هر درخواست منطبق خودکار به سرور ارسال می‌شود (سربار شبکه)؛ قابل تنظیم با HttpOnly/Secure/SameSite/Expires؛ تنها گزینه‌ای که سرور مستقیماً می‌خواند.</li>
+          <li><strong>localStorage:</strong> چند مگابایت برای هر origin، دائمی، API همگام و فقط string، مشترک بین همهٔ tabهای همان origin؛ به سرور ارسال نمی‌شود؛ برای همهٔ اسکریپت‌های صفحه قابل خواندن است.</li>
+          <li><strong>sessionStorage:</strong> مثل localStorage ولی محدود به همان tab و تا بسته شدن آن.</li>
+          <li><strong>IndexedDB:</strong> پایگاه‌دادهٔ کلید-مقدار تراکنشی، ناهمگام، با ظرفیت بالا و پشتیبانی از object و ایندکس ⇐ داده‌های آفلاین و حجیم (PWA).</li>
+        </ul>
+        <p><strong>تحلیل سناریو:</strong> هر داده‌ای در localStorage با <strong>XSS</strong> قابل سرقت است: یک کتابخانهٔ ثالث آلوده یا یک نقطهٔ escape‌نشده کافی است تا <code>localStorage.getItem('token')</code> به سرور مهاجم ارسال شود و مهاجم تا انقضای توکن، از هر جایی به‌جای کاربر عمل کند.</p>
+        <p><strong>پیشنهاد:</strong></p>
+        <ul>
+          <li>برای SPA first-party روی همان دامنهٔ اصلی: <strong>احراز هویت مبتنی بر cookie</strong> با <code>HttpOnly; Secure; SameSite=Lax</code> (مثلاً Laravel Sanctum SPA mode) + CSRF token. JS اصلاً به توکن دسترسی ندارد.</li>
+          <li>اگر توکن Bearer ضروری است (cross-domain): access token کوتاه‌عمر <strong>در حافظه</strong> (متغیر JS) و refresh token در cookie HttpOnly با rotation.</li>
+          <li>در هر حال <strong>XSS را ریشه‌ای رفع کنید</strong>: escape خروجی (Blade <code>{{ }}</code>، عدم استفاده از <code>{!! !!}</code> و <code>innerHTML</code> با داده کاربر)، CSP سخت‌گیرانه، و بررسی وابستگی‌ها. HttpOnly فقط <em>سرقت</em> توکن را دشوار می‌کند؛ XSS همچنان می‌تواند در همان صفحه از طرف کاربر درخواست بفرستد.</li>
+          <li>trade-off: cookie نیازمند دفاع CSRF است؛ localStorage CSRF ندارد ولی در برابر XSS آسیب‌پذیرتر است. با SameSite و CSRF token، ریسک CSRF به‌خوبی مهار می‌شود، پس معمولاً cookie HttpOnly انتخاب امن‌تری است.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>HTTP</h3>
+      <ul>
+        <li>Request: method + target + version، هدرها، خط خالی، body. Response: status line، هدرها، body.</li>
+        <li>Stateless ⇒ state با cookie/session یا token.</li>
+        <li>Form: urlencoded (پیش‌فرض)، multipart (فایل)؛ فقط GET/POST ⇒ <code>@method</code> در Laravel.</li>
+        <li>هدرهای امنیتی: HSTS، CSP، nosniff، frame-ancestors، Referrer-Policy.</li>
+      </ul>
+      <h3>Cookie</h3>
+      <ul>
+        <li>HttpOnly ضد سرقت با XSS · Secure فقط HTTPS · SameSite ضد CSRF (Strict/Lax/None+Secure).</li>
+        <li>بدون Domain = host-only (امن‌تر) · بدون Max-Age/Expires = session cookie.</li>
+        <li><code>__Host-</code>: Secure + Path=/ + بدون Domain.</li>
+        <li>Session: فقط id در cookie؛ regenerate بعد از login؛ store مشترک (Redis).</li>
+      </ul>
+      <h3>Cache و CORS</h3>
+      <ul>
+        <li>no-cache = revalidate؛ no-store = هرگز؛ immutable برای فایل‌های hash‌دار.</li>
+        <li>ETag + If-None-Match ⇒ 304.</li>
+        <li>Origin = scheme+host+port. CORS را مرورگر اعمال می‌کند.</li>
+        <li>Preflight OPTIONS برای JSON، Authorization، PUT/DELETE.</li>
+        <li><code>*</code> با credentials ممنوع.</li>
+      </ul>
+      <h3>HTML</h3>
+      <ul>
+        <li><code>&lt;!DOCTYPE html&gt;</code>، <code>lang</code>، <code>charset</code>، viewport.</li>
+        <li>Semantic: header، nav، main، article، section، aside، footer، figure، time، button در برابر a.</li>
+        <li>SEO: title، description، canonical، robots، OG، JSON-LD، headingها.</li>
+        <li>فرم: label for، fieldset/legend، type مناسب، required/pattern/min؛ disabled ارسال نمی‌شود.</li>
+        <li>Validation client = UX؛ server = امنیت.</li>
+        <li>ARIA: اول HTML بومی؛ aria-label، describedby، expanded، live، hidden؛ alt، کیبورد، کنتراست.</li>
+      </ul>
+      <h3>CSS</h3>
+      <ul>
+        <li>Cascade: origin/importance ← layer ← specificity ← ترتیب.</li>
+        <li>Specificity (ID, class/attr/pseudo-class, type/pseudo-element)؛ <code>:where</code> = 0؛ <code>:is/:not/:has</code> = max آرگومان.</li>
+        <li>ارثی: color، font، line-height، text-align؛ غیرارثی: margin، padding، border، width.</li>
+        <li>border-box: width شامل padding+border.</li>
+        <li>position: relative (مرجع)، absolute (جد positioned)، fixed (viewport)، sticky (آستانه).</li>
+        <li>z-index در stacking context؛ transform/opacity context می‌سازند.</li>
+        <li>Flex = ۱بعدی (justify روی main، align روی cross)؛ Grid = ۲بعدی (fr، repeat، minmax، areas).</li>
+        <li><code>repeat(auto-fill, minmax(200px, 1fr))</code> = گالری بدون media query.</li>
+        <li>rem (ریشه)، em (خود/والد)، % (والد)، vw/vh/dvh، ch.</li>
+        <li>Mobile-first: پایه + <code>min-width</code>. Container queries.</li>
+        <li>Custom properties: runtime، ارثی، theming.</li>
+      </ul>
+      <h3>JS</h3>
+      <ul>
+        <li>۷ primitive + object؛ <code>typeof null === 'object'</code>.</li>
+        <li><code>===</code> همیشه؛ <code>x == null</code> استثنا؛ <code>??</code> در برابر <code>||</code>.</li>
+        <li>Falsy: false، 0، -0، 0n، ''، null، undefined، NaN.</li>
+        <li>var: function scope، hoist با undefined. let/const: block scope، TDZ.</li>
+        <li>Closure = تابع + محیط lexical؛ state خصوصی، debounce؛ خطر leak.</li>
+        <li>this: new &gt; call/apply/bind &gt; obj.fn() &gt; default (undefined در strict). Arrow: lexical this.</li>
+        <li>class = sugar روی prototype chain؛ <code>#private</code>.</li>
+      </ul>
+      <h3>Async</h3>
+      <ul>
+        <li>Sync ⇒ همهٔ microtaskها ⇒ render ⇒ یک macrotask ⇒ …</li>
+        <li>Microtask: then، await، queueMicrotask. Macrotask: setTimeout، events، I/O.</li>
+        <li>Promise.all (اولین شکست)، allSettled (همه)، race (اولین settle)، any (اولین موفق).</li>
+        <li>مستقل‌ها را موازی (<code>Promise.all</code>)؛ await در forEach کار نمی‌کند.</li>
+        <li>fetch روی 4xx/5xx reject نمی‌شود ⇒ <code>res.ok</code>؛ AbortController برای timeout.</li>
+      </ul>
+      <h3>DOM</h3>
+      <ul>
+        <li>capturing ⇒ target ⇒ bubbling؛ target در برابر currentTarget.</li>
+        <li>stopPropagation ≠ preventDefault.</li>
+        <li>Delegation: یک listener روی والد + <code>closest()</code>.</li>
+        <li>textContent امن؛ innerHTML با داده کاربر = XSS.</li>
+        <li>ESM: static، tree shaking، dynamic import، <code>type="module"</code> = defer.</li>
+      </ul>
+      <h3>مرورگر</h3>
+      <ul>
+        <li>DOM + CSSOM ⇒ Render tree ⇒ Layout ⇒ Paint ⇒ Composite.</li>
+        <li>CSS render-blocking؛ script parser-blocking؛ async (مستقل، بی‌ترتیب)، defer (بعد از parse، با ترتیب).</li>
+        <li>Reflow (هندسه) &gt; Repaint (ظاهر) &gt; Composite (transform/opacity).</li>
+        <li>Storage: cookie ~4KB به سرور می‌رود؛ local دائمی؛ session تا بستن tab؛ IndexedDB حجیم و async.</li>
+        <li>Web Vitals: LCP، INP، CLS.</li>
+        <li>XSS: stored/reflected/DOM؛ دفاع: escape متناسب با context، textContent، sanitize، CSP، HttpOnly.</li>
+        <li>XSS ≠ CSRF؛ CSRF token در برابر XSS بی‌اثر است.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

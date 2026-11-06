@@ -1,0 +1,2121 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laravel — Architecture &amp; Basics — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="laravel-basics">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Laravel — Architecture &amp; Basics</h1>
+    <p class="lead">معماری Laravel از چرخه عمر درخواست تا Service Container، و ابزارهای روزمره مثل Routing، Middleware، Controller، Validation، Blade، Session، احراز هویت و Migration؛ با تمرکز بر نسخه‌های ۱۱ و ۱۲ و تفاوت‌هایشان با نسخه‌های قدیمی‌تر.</p>
+  </header>
+
+  <!-- ===================================================== 1 -->
+  <section class="lesson" id="intro-mvc" data-title="Laravel و الگوی MVC">
+    <h2>Laravel و الگوی MVC</h2>
+    <p><strong>Laravel</strong> یک فریم‌ورک full-stack و متن‌باز PHP است که روی اجزای Symfony (مثل <code>HttpFoundation</code>، <code>Console</code> و <code>Routing</code>) و Composer ساخته شده است. هسته آن یک <strong>Service Container</strong> است و تقریباً همه اجزا (Router، Cache، Queue، Mail و…) به صورت سرویس‌هایی در این container ثبت می‌شوند. فلسفه Laravel «<strong>Convention over Configuration</strong>» و «Developer Experience» است: پیش‌فرض‌های معقول، API خوانا و ابزارهای آماده برای کارهای تکراری.</p>
+
+    <h3>MVC در Laravel</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>لایه</th><th>در Laravel</th><th>مسئولیت</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Model</strong></td><td>کلاس‌های Eloquent در <code>app/Models</code></td><td>نمایش داده و قواعد مرتبط با آن، ارتباط با دیتابیس (Active Record)</td></tr>
+        <tr><td><strong>View</strong></td><td>قالب‌های Blade در <code>resources/views</code> (یا Inertia/React/Vue، یا JSON در API)</td><td>نمایش؛ نباید منطق تجاری یا کوئری داشته باشد</td></tr>
+        <tr><td><strong>Controller</strong></td><td>کلاس‌های <code>app/Http/Controllers</code></td><td>دریافت ورودی، فراخوانی منطق، برگرداندن پاسخ؛ «لایه نازک هماهنگ‌کننده»</td></tr>
+      </tbody>
+    </table></div>
+    <p>اما Laravel فقط MVC نیست. کنار این سه لایه، لایه‌های دیگری هم دارد که در طراحی خوب استفاده می‌شوند: <strong>Route</strong> (نگاشت URL به کد)، <strong>Middleware</strong> (فیلترهای HTTP)، <strong>Form Request</strong> (اعتبارسنجی و مجوز)، <strong>Policy</strong> (منطق دسترسی)، <strong>Job/Event/Listener</strong> (کار غیرهمزمان و decoupling)، <strong>API Resource</strong> (لایه تبدیل خروجی) و کلاس‌های Service/Action دلخواه برای منطق تجاری.</p>
+
+    <pre class="diagram">Browser ──HTTP──► Route ──► Middleware ──► Controller ──► Service / Action
+                                              │                 │
+                                              │                 ▼
+                                              │             Model (Eloquent) ──► DB
+                                              ▼
+                                    View (Blade) / JSON Resource ──► Response</pre>
+
+    <div class="callout exam"><p>سوال کلاسیک: «منطق تجاری را کجا می‌نویسید؟» پاسخ خوب: نه در View و ترجیحاً نه در Controller. Controller باید <strong>Thin</strong> باشد: ورودی را از Form Request بگیرد، یک Service/Action را صدا بزند و پاسخ برگرداند. منطق مرتبط با یک موجودیت (scope، accessor، relation) در Model و منطق چندمرحله‌ای یا بین‌موجودیتی در Service/Action قرار می‌گیرد. هدف: تست‌پذیری و استفاده مجدد (مثلاً از همان Action در Controller، Command و Job).</p></div>
+
+    <h3>ویژگی‌های کلیدی که باید بتوانید نام ببرید</h3>
+    <ul>
+      <li><strong>Service Container و Dependency Injection خودکار</strong> با Reflection.</li>
+      <li><strong>Eloquent ORM</strong> مبتنی بر Active Record (جزئیات در صفحه Eloquent).</li>
+      <li><strong>Routing</strong> گویا، Route Model Binding، Middleware.</li>
+      <li><strong>Blade</strong> به عنوان موتور قالب کامپایل‌شونده.</li>
+      <li><strong>Artisan</strong> CLI، Migration، Seeder، Factory.</li>
+      <li>زیرسیستم‌های آماده: Queue، Event، Cache، Mail، Notification، Scheduler، Broadcasting (جزئیات در صفحه Laravel Deeper).</li>
+      <li>امنیت پیش‌فرض: CSRF، escape خروجی، hash رمز عبور، رمزنگاری cookie، محافظت از mass assignment.</li>
+      <li>تست‌پذیری: PHPUnit/Pest، HTTP tests، Fakeها.</li>
+    </ul>
+
+    <div class="callout note"><p>نسخه‌ها: Laravel از نسخه ۹ به بعد هر سال یک نسخه major منتشر می‌کند (۱۱ در ۲۰۲۴ با PHP ≥ 8.2، ۱۲ در ۲۰۲۵). Laravel 12 عمدتاً یک «maintenance release» بود و ساختار اسکلت ۱۱ را حفظ کرد؛ تغییر اصلی‌اش starter kitهای جدید بود. بنابراین هرچه در این صفحه برای «Laravel 11+» گفته می‌شود برای ۱۲ هم صادق است.</p></div>
+  </section>
+
+  <!-- ===================================================== 2 -->
+  <section class="lesson" id="directory-structure" data-title="ساختار پوشه‌ها">
+    <h2>ساختار پوشه‌ها</h2>
+    <p>از Laravel 11 اسکلت پروژه <strong>slim</strong> شد: فایل‌های Kernel، بسیاری از Middlewareها، Service Providerهای متعدد و حتی بعضی فایل‌های config از اسکلت حذف شدند (ولی در خود فریم‌ورک وجود دارند) و پیکربندی اصلی به <code>bootstrap/app.php</code> منتقل شد.</p>
+    <pre class="diagram">my-app/
+├── app/
+│   ├── Http/
+│   │   └── Controllers/        Controller.php (کلاس abstract خالی)
+│   ├── Models/                 User.php
+│   └── Providers/              AppServiceProvider.php (تنها provider پیش‌فرض)
+├── bootstrap/
+│   ├── app.php                 ★ پیکربندی routing / middleware / exceptions
+│   ├── providers.php           لیست service providerهای برنامه
+│   └── cache/                  فایل‌های cache شده (config, routes, packages, services)
+├── config/                     app.php, auth.php, database.php, ... (کمتر از قبل)
+├── database/
+│   ├── factories/  migrations/  seeders/
+│   └── database.sqlite         دیتابیس پیش‌فرض در Laravel 11
+├── public/                     ★ document root؛ index.php و assetهای build شده
+├── resources/                  views/ (Blade)، css/، js/
+├── routes/
+│   ├── web.php                 routeهای وب (stateful: session, CSRF)
+│   ├── console.php             commandهای closure و Schedule
+│   ├── api.php                 فقط بعد از php artisan install:api
+│   └── channels.php            فقط بعد از php artisan install:broadcasting
+├── storage/
+│   ├── app/  (public/ برای فایل‌های عمومی)
+│   ├── framework/ (cache, sessions, views کامپایل‌شده)
+│   └── logs/  laravel.log
+├── tests/   Feature/  Unit/
+├── vendor/
+├── .env  .env.example  artisan  composer.json  phpunit.xml  vite.config.js</pre>
+
+    <h3>تفاوت با Laravel 10 و قبل‌تر</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>موضوع</th><th>Laravel ≤ 10</th><th>Laravel 11+</th></tr></thead>
+      <tbody>
+        <tr><td>Middleware سراسری/گروه/alias</td><td><code>app/Http/Kernel.php</code> با <code>$middleware</code>، <code>$middlewareGroups</code>، <code>$middlewareAliases</code> (<code>$routeMiddleware</code> در ≤۹)</td><td><code>withMiddleware()</code> در <code>bootstrap/app.php</code></td></tr>
+        <tr><td>Exception handling</td><td><code>app/Exceptions/Handler.php</code></td><td><code>withExceptions()</code> در <code>bootstrap/app.php</code></td></tr>
+        <tr><td>زمان‌بندی (Schedule)</td><td>متد <code>schedule()</code> در <code>app/Console/Kernel.php</code></td><td><code>routes/console.php</code> با <code>Schedule</code> facade</td></tr>
+        <tr><td>بارگذاری فایل‌های route</td><td><code>RouteServiceProvider</code></td><td><code>withRouting(web:, api:, commands:, health:)</code></td></tr>
+        <tr><td>Providers</td><td>آرایه <code>providers</code> در <code>config/app.php</code> و ۵ provider در اسکلت</td><td><code>bootstrap/providers.php</code> و فقط <code>AppServiceProvider</code></td></tr>
+        <tr><td>API routes</td><td><code>routes/api.php</code> پیش‌فرض با Sanctum</td><td>با <code>php artisan install:api</code> اضافه می‌شود</td></tr>
+        <tr><td>Casts مدل</td><td>property <code>$casts</code></td><td>متد <code>casts()</code> (property هنوز کار می‌کند)</td></tr>
+        <tr><td>دیتابیس/Session/Cache/Queue پیش‌فرض</td><td>MySQL، file، file، sync</td><td>SQLite، database، database، database</td></tr>
+        <tr><td>Health check</td><td>ندارد</td><td>route <code>/up</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p>اگر پرسیدند «در Laravel 11 فایل <code>Kernel.php</code> کجاست؟»: کلاس <code>Illuminate\Foundation\Http\Kernel</code> همچنان در فریم‌ورک وجود دارد و همان نقش را در چرخه عمر ایفا می‌کند؛ فقط فایل قابل ویرایش آن از اسکلت برنامه حذف شده و تنظیماتش از طریق API روان <code>Application::configure()</code> در <code>bootstrap/app.php</code> انجام می‌شود. برنامه‌های ارتقایافته از نسخه ۱۰ می‌توانند ساختار قدیمی را نگه دارند.</p></div>
+
+    <div class="callout tip"><p>فایل‌های config حذف‌شده در Laravel 11 همچنان در فریم‌ورک هستند و مقادیرشان از <code>.env</code> خوانده می‌شود. برای سفارشی‌سازی، با <code>php artisan config:publish</code> (یا <code>config:publish --all</code>) آن‌ها را منتشر کنید.</p></div>
+
+    <p>پوشه‌هایی مثل <code>app/Jobs</code>، <code>app/Events</code>، <code>app/Policies</code>، <code>app/Http/Middleware</code> و <code>app/Console/Commands</code> به صورت پیش‌فرض وجود ندارند و با اجرای اولین دستور <code>make:*</code> مربوطه ساخته می‌شوند. تنها پوشه‌ای که باید مستقیماً از وب در دسترس باشد <code>public/</code> است؛ اگر document root وب‌سرور ریشه پروژه باشد، فایل <code>.env</code> و کد منبع در معرض دید قرار می‌گیرد.</p>
+  </section>
+
+  <!-- ===================================================== 3 -->
+  <section class="lesson" id="request-lifecycle" data-title="چرخه عمر درخواست">
+    <h2>چرخه عمر درخواست (Request Lifecycle)</h2>
+    <p>فهم دقیق این مسیر هم برای debugging و هم برای پاسخ به سوالات تشریحی ضروری است. مراحل در Laravel 11+ به این ترتیب است:</p>
+    <ol>
+      <li><strong>Web server</strong> (Nginx/Apache) همه درخواست‌ها را به <code>public/index.php</code> می‌فرستد (front controller).</li>
+      <li><strong><code>public/index.php</code></strong>: ثابت <code>LARAVEL_START</code> را تعریف می‌کند، اگر برنامه در <strong>maintenance mode</strong> باشد فایل <code>storage/framework/maintenance.php</code> را اجرا می‌کند، Composer autoloader را بار می‌کند و <code>bootstrap/app.php</code> را require می‌کند.</li>
+      <li><strong><code>bootstrap/app.php</code></strong>: یک نمونه از <code>Illuminate\Foundation\Application</code> (که خودش <strong>Service Container</strong> است) می‌سازد و routing، middleware و exception handling را پیکربندی می‌کند.</li>
+      <li><code>$app-&gt;handleRequest(Request::capture())</code>: درخواست از superglobalها به شیء <code>Illuminate\Http\Request</code> تبدیل می‌شود و <strong>HTTP Kernel</strong> از container resolve می‌شود.</li>
+      <li><strong>Bootstrapping کرنل</strong>: کرنل لیستی از bootstrapperها را اجرا می‌کند: بارگذاری <code>.env</code> (<code>LoadEnvironmentVariables</code>)، بارگذاری config (<code>LoadConfiguration</code>)، تنظیم error handling (<code>HandleExceptions</code>)، ثبت facadeها (<code>RegisterFacades</code>)، <strong>register</strong> کردن همه providerها (<code>RegisterProviders</code>) و سپس <strong>boot</strong> کردن آن‌ها (<code>BootProviders</code>).</li>
+      <li><strong>Global middleware</strong>: درخواست از طریق کلاس <code>Pipeline</code> از middlewareهای سراسری عبور می‌کند (مثل <code>TrimStrings</code>، <code>ConvertEmptyStringsToNull</code>، <code>ValidatePostSize</code>، <code>PreventRequestsDuringMaintenance</code>، <code>HandleCors</code>، <code>TrustProxies</code>).</li>
+      <li><strong>Router</strong>: route مطابق با متد و URI پیدا می‌شود (یا <code>404</code>/<code>405</code>).</li>
+      <li><strong>Route middleware</strong>: middlewareهای گروه (مثلاً <code>web</code>: cookie encryption، session، CSRF، <code>SubstituteBindings</code>) و middlewareهای خود route اجرا می‌شوند. Route Model Binding در <code>SubstituteBindings</code> انجام می‌شود.</li>
+      <li><strong>Controller/Closure</strong>: container کلاس controller را می‌سازد و وابستگی‌های constructor و متد را تزریق می‌کند؛ Form Requestها در همین نقطه validate می‌شوند.</li>
+      <li><strong>تبدیل به Response</strong>: مقدار برگشتی به <code>Response</code> تبدیل می‌شود (رشته → HTML، آرایه/مدل/Collection → <code>JsonResponse</code>، View → رندر).</li>
+      <li><strong>مسیر برگشت</strong>: Response به ترتیب معکوس از middlewareها عبور می‌کند (بخش «after» هر middleware).</li>
+      <li><strong>ارسال</strong>: <code>$response-&gt;send()</code> هدرها و بدنه را می‌فرستد.</li>
+      <li><strong>Terminate</strong>: <code>$kernel-&gt;terminate()</code> متد <code>terminate()</code> middlewareهای terminable و callbackهای <code>app()-&gt;terminating()</code> را اجرا می‌کند. زیر PHP-FPM پاسخ قبل از این مرحله به کاربر flush شده است.</li>
+    </ol>
+
+    <pre class="diagram">HTTP Request
+     │
+     ▼
+public/index.php ── maintenance? ── autoload ── require bootstrap/app.php
+     │                                              │
+     │                          Application (Service Container) + configure()
+     ▼
+$app-&gt;handleRequest(Request::capture())
+     │
+     ▼
+HTTP Kernel::handle()
+     │  bootstrap: .env → config → exceptions → facades
+     │             → providers::register() (همه) → providers::boot() (همه)
+     ▼
+┌──────────────── Pipeline: Global Middleware ────────────────┐
+│  TrimStrings → ConvertEmptyStringsToNull → TrustProxies ... │
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼
+                    Router: match(method, uri)
+                               │
+┌───────────── Pipeline: Group + Route Middleware ────────────┐
+│ EncryptCookies → StartSession → ValidateCsrfToken →         │
+│ SubstituteBindings (Route Model Binding) → auth → ...       │
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼
+          Controller@method  (DI توسط Container، FormRequest validate)
+                               │ return view / array / model / Response
+                               ▼
+                 prepareResponse() → Response object
+                               │
+          ◄──── بازگشت از middlewareها به ترتیب معکوس (after) ────
+                               ▼
+                       $response-&gt;send()
+                               ▼
+         Kernel::terminate() → terminable middleware، terminating callbacks</pre>
+
+    <h3>کد واقعی index.php در Laravel 11</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
+
+define('LARAVEL_START', microtime(true));
+
+// Determine if the application is in maintenance mode...
+if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
+    require $maintenance;
+}
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Application $app */
+$app = require_once __DIR__.'/../bootstrap/app.php';
+
+$app-&gt;handleRequest(Request::capture());</code></pre>
+
+    <h3>در Laravel 10 و قبل</h3>
+    <pre><code class="language-php">&lt;?php
+$app = require_once __DIR__.'/../bootstrap/app.php';
+
+$kernel = $app-&gt;make(Illuminate\Contracts\Http\Kernel::class);
+
+$response = $kernel-&gt;handle(
+    $request = Illuminate\Http\Request::capture()
+)-&gt;send();
+
+$kernel-&gt;terminate($request, $response);</code></pre>
+
+    <div class="callout exam"><p>دو نکته که ممتحن دنبالش است: (۱) <strong>همه</strong> providerها ابتدا <code>register</code> و <strong>بعد</strong> همه <code>boot</code> می‌شوند؛ پس در <code>boot</code> می‌توان مطمئن بود سرویس‌های سایر providerها ثبت شده‌اند. (۲) Middlewareها یک <strong>پیاز (onion)</strong> می‌سازند: کد قبل از <code>$next($request)</code> در مسیر رفت و کد بعد از آن در مسیر برگشت اجرا می‌شود.</p></div>
+
+    <div class="callout note"><p>در اجرای عادی PHP-FPM، این چرخه برای <strong>هر درخواست</strong> از صفر تکرار می‌شود (share-nothing). به همین دلیل cache کردن config و route در production اهمیت دارد. در <strong>Octane</strong> برنامه یک‌بار boot شده و در حافظه می‌ماند (جزئیات در صفحه Laravel Deeper). درخواست‌های Console هم مسیری مشابه با <strong>Console Kernel</strong> دارند (<code>artisan</code> → <code>$app-&gt;handleCommand()</code>).</p></div>
+  </section>
+
+  <!-- ===================================================== 4 -->
+  <section class="lesson" id="container-facades" data-title="Container، Provider و Facade (مقدماتی)">
+    <h2>Container، Provider و Facade (مقدماتی)</h2>
+    <p>این سه مفهوم ستون فقرات Laravel هستند. در این صفحه تعریف و کاربرد روزمره آن‌ها را می‌بینیم؛ جزئیات (singleton/scoped، contextual binding، deferred provider، درون‌کاوی facade) در صفحه <strong>Laravel Deeper</strong> آمده است.</p>
+
+    <h3>Service Container</h3>
+    <p><strong>Service Container</strong> (یا IoC Container) ابزاری برای <strong>مدیریت وابستگی‌ها و تزریق آن‌ها (Dependency Injection)</strong> است. شما «دستور ساخت» یک سرویس را ثبت می‌کنید (binding) و هر جا آن سرویس لازم شد، container آن را می‌سازد. نکته قدرتمند <strong>auto-resolution</strong> است: اگر کلاسی به interface وابسته نباشد، container بدون هیچ ثبتی و با استفاده از <strong>Reflection</strong> وابستگی‌های constructor را تشخیص داده و به صورت بازگشتی می‌سازد.</p>
+    <pre><code class="language-php">&lt;?php
+// Auto-resolution: هیچ bindingی لازم نیست
+class ReportController extends Controller
+{
+    public function __construct(private ReportService $reports) {}   // ساخته و تزریق می‌شود
+}
+
+// binding interface به پیاده‌سازی (در AppServiceProvider::register)
+$this-&gt;app-&gt;bind(PaymentGateway::class, StripeGateway::class);
+$this-&gt;app-&gt;singleton(CurrencyConverter::class, fn ($app) =&gt; new CurrencyConverter(
+    config('services.fx.key')
+));
+
+// resolve دستی (ترجیحاً کم استفاده شود)
+$gateway = app(PaymentGateway::class);
+$gateway = app()-&gt;make(PaymentGateway::class);
+$gateway = resolve(PaymentGateway::class);</code></pre>
+
+    <h3>Service Provider</h3>
+    <p><strong>Service Provider</strong> محل مرکزی <strong>bootstrap</strong> کردن برنامه و پکیج‌هاست: ثبت bindingها در container، ثبت event listenerها، middleware، routeها، view composerها و… هر provider دو متد اصلی دارد:</p>
+    <div class="grid-2">
+      <div class="card"><h4><code>register()</code></h4><ul><li>فقط <strong>ثبت</strong> binding در container.</li><li>نباید از سرویس‌های دیگر استفاده کند؛ چون ممکن است هنوز ثبت نشده باشند.</li></ul></div>
+      <div class="card"><h4><code>boot()</code></h4><ul><li>بعد از register شدن <strong>همه</strong> providerها اجرا می‌شود.</li><li>جای مناسب برای <code>Gate::define</code>، <code>RateLimiter::for</code>، <code>Model::preventLazyLoading</code>، <code>View::composer</code>، <code>Route::model</code>، و… .</li><li>امکان type-hint وابستگی‌ها در امضای متد.</li></ul></div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+namespace App\Providers;
+
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\ServiceProvider;
+
+class AppServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this-&gt;app-&gt;bind(PaymentGateway::class, StripeGateway::class);
+    }
+
+    public function boot(): void
+    {
+        Gate::define('access-admin', fn (User $user) =&gt; $user-&gt;is_admin);
+    }
+}
+
+// bootstrap/providers.php  (Laravel 11+)
+return [
+    App\Providers\AppServiceProvider::class,
+];</code></pre>
+    <p>دستور <code>php artisan make:provider BillingServiceProvider</code> در Laravel 11 provider را خودکار به <code>bootstrap/providers.php</code> اضافه می‌کند. providerهای پکیج‌ها از طریق <strong>package auto-discovery</strong> (بخش <code>extra.laravel</code> در <code>composer.json</code> پکیج) ثبت می‌شوند.</p>
+
+    <h3>Facade</h3>
+    <p><strong>Facade</strong> یک «رابط static» برای سرویس‌های داخل container است. <code>Cache::get('key')</code> در ظاهر static است، اما در واقع:</p>
+    <ol>
+      <li>کلاس <code>Illuminate\Support\Facades\Cache</code> متد <code>get</code> ندارد؛ پس متد جادویی <code>__callStatic</code> کلاس پایه <code>Facade</code> فراخوانی می‌شود.</li>
+      <li><code>getFacadeAccessor()</code> کلید سرویس را برمی‌گرداند (برای Cache رشته <code>'cache'</code>).</li>
+      <li>Facade نمونه واقعی را از container resolve می‌کند (و آن را cache می‌کند).</li>
+      <li>متد <code>get</code> روی همان <strong>شیء واقعی</strong> (<code>CacheManager</code>) صدا زده می‌شود.</li>
+    </ol>
+    <pre><code class="language-php">&lt;?php
+// سه روش معادل برای استفاده از یک سرویس:
+Cache::put('k', 'v', 60);                  // Facade
+cache()-&gt;put('k', 'v', 60);                // helper
+public function __construct(private \Illuminate\Contracts\Cache\Repository $cache) {} // DI</code></pre>
+    <div class="callout exam"><p>«آیا Facade همان static method است و تست‌پذیری را از بین می‌برد؟» خیر. Facade فقط یک proxy به شیء داخل container است؛ بنابراین می‌توان آن را در تست جایگزین کرد: <code>Cache::shouldReceive('get')-&gt;andReturn(...)</code> یا <code>Mail::fake()</code>، <code>Queue::fake()</code>. عیب واقعی Facade این است که <strong>وابستگی‌ها پنهان</strong> می‌شوند (در constructor دیده نمی‌شوند) و کلاس ممکن است بی‌صدا بیش از حد بزرگ شود.</p></div>
+  </section>
+
+  <!-- ===================================================== 5 -->
+  <section class="lesson" id="config-env" data-title="پیکربندی، .env و محیط‌ها">
+    <h2>پیکربندی، <code>.env</code> و محیط‌ها</h2>
+    <p>Laravel پیکربندی را در دو لایه نگه می‌دارد:</p>
+    <ul>
+      <li><strong><code>.env</code></strong>: مقادیر <strong>وابسته به محیط و محرمانه</strong> (رمز دیتابیس، کلیدهای API، <code>APP_KEY</code>). این فایل نباید commit شود؛ <code>.env.example</code> به عنوان الگو commit می‌شود.</li>
+      <li><strong><code>config/*.php</code></strong>: آرایه‌های PHP که ساختار پیکربندی را تعریف می‌کنند و مقادیرشان را با <code>env('KEY', default)</code> از محیط می‌خوانند.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+// config/services.php
+return [
+    'payment' =&gt; [
+        'key'     =&gt; env('PAYMENT_KEY'),
+        'timeout' =&gt; (int) env('PAYMENT_TIMEOUT', 10),
+    ],
+];
+
+// در کد برنامه — همیشه config() نه env()
+$key = config('services.payment.key');
+$timeout = config('services.payment.timeout', 5);   // مقدار پیش‌فرض
+config(['app.locale' =&gt; 'fa']);                      // تنظیم در runtime (فقط برای همان درخواست)</code></pre>
+
+    <h3>چرا <code>env()</code> فقط در فایل‌های config؟</h3>
+    <p>در production دستور <code>php artisan config:cache</code> همه فایل‌های config را یک‌بار اجرا کرده و نتیجه را در یک فایل PHP (<code>bootstrap/cache/config.php</code>) ذخیره می‌کند. وقتی config cache شده باشد، <strong>Laravel دیگر فایل <code>.env</code> را بارگذاری نمی‌کند</strong>؛ در نتیجه هر <code>env()</code> که خارج از فایل‌های config صدا زده شود <code>null</code> (یا مقدار پیش‌فرض) برمی‌گرداند — مگر اینکه متغیر به صورت واقعی در محیط سیستم‌عامل/سرور تعریف شده باشد. این باگ فقط در production ظاهر می‌شود و پیدا کردنش سخت است.</p>
+    <div class="callout warn"><p>اشتباه رایج: <code>if (env('APP_ENV') === 'production')</code> در یک Controller یا Service. صحیح: <code>app()-&gt;environment('production')</code> یا <code>App::isProduction()</code> یا <code>config('app.env')</code>.</p></div>
+
+    <h3>Config caching و تغییرات .env</h3>
+    <ul>
+      <li><code>php artisan config:cache</code>: ساخت cache؛ سرعت بارگذاری را بالا می‌برد چون به جای ده‌ها فایل، یک فایل خوانده می‌شود و <code>.env</code> parse نمی‌شود.</li>
+      <li><code>php artisan config:clear</code>: حذف cache. اگر بعد از تغییر <code>.env</code> در production تغییری دیده نمی‌شود، علتش cache بودن config است؛ باید دوباره <code>config:cache</code> اجرا شود.</li>
+      <li>در محیط توسعه config را cache نکنید.</li>
+    </ul>
+
+    <h3>محیط‌ها و Debug mode</h3>
+    <dl class="terms">
+      <dt><code>APP_ENV</code></dt><dd>نام محیط (<code>local</code>، <code>testing</code>، <code>staging</code>، <code>production</code>). با <code>app()-&gt;environment(['local','staging'])</code> بررسی می‌شود. هنگام اجرای تست، فایل <code>.env.testing</code> (در صورت وجود) و متغیرهای <code>phpunit.xml</code> استفاده می‌شوند.</dd>
+      <dt><code>APP_DEBUG</code></dt><dd>اگر <code>true</code> باشد خطاها با stack trace کامل، کوئری‌ها و حتی بخشی از متغیرهای محیطی نمایش داده می‌شوند. <strong>در production حتماً <code>false</code></strong>؛ وگرنه نشت اطلاعات حساس (رمز دیتابیس، کلیدها، مسیر فایل‌ها) رخ می‌دهد.</dd>
+      <dt><code>APP_KEY</code></dt><dd>کلید ۳۲ بایتی برای <strong>رمزنگاری</strong> (cookie، session رمز شده، <code>Crypt</code>، URLهای امضاشده). با <code>php artisan key:generate</code> ساخته می‌شود. برای hash رمز عبور استفاده <strong>نمی‌شود</strong>؛ تغییر آن cookieها و داده‌های رمزشده قبلی را نامعتبر می‌کند (Laravel 11 با <code>APP_PREVIOUS_KEYS</code> چرخش کلید را پشتیبانی می‌کند).</dd>
+      <dt><code>APP_URL</code></dt><dd>برای تولید URL در محیط Console (مثلاً لینک داخل ایمیل صف‌شده) استفاده می‌شود.</dd>
+    </dl>
+    <pre><code class="language-bash"># Maintenance mode
+php artisan down --secret="let-me-in" --render="errors::503" --retry=60
+php artisan up
+
+# اطلاعات کلی برنامه و وضعیت cacheها
+php artisan about
+
+# رمزنگاری فایل .env برای نگهداری در مخزن
+php artisan env:encrypt
+php artisan env:decrypt --key=...</code></pre>
+    <div class="callout exam"><p>جمع‌بندی برای پاسخ تشریحی: <strong>«env() فقط داخل config، config() در همه جای دیگر، config:cache در deploy، APP_DEBUG=false در production.»</strong></p></div>
+  </section>
+
+  <!-- ===================================================== 6 -->
+  <section class="lesson" id="routing" data-title="Routing">
+    <h2>Routing</h2>
+    <p>Routeها در <code>routes/web.php</code> (با middleware گروه <code>web</code>: session، cookie، CSRF) و <code>routes/api.php</code> (با گروه <code>api</code>، stateless و با پیشوند خودکار <code>/api</code>) تعریف می‌شوند. بارگذاری این فایل‌ها در <code>bootstrap/app.php</code> انجام می‌شود:</p>
+    <pre><code class="language-php">&lt;?php
+// bootstrap/app.php
+return Application::configure(basePath: dirname(__DIR__))
+    -&gt;withRouting(
+        web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',        // بعد از install:api
+        commands: __DIR__.'/../routes/console.php',
+        health: '/up',                            // health check برای load balancer
+        // apiPrefix: 'api/v1',
+    )
+    -&gt;withMiddleware(function (Middleware $middleware) { /* ... */ })
+    -&gt;withExceptions(function (Exceptions $exceptions) { /* ... */ })
+    -&gt;create();</code></pre>
+
+    <h3>متدها و انواع route</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\Route;
+
+Route::get('/posts', [PostController::class, 'index']);
+Route::post('/posts', [PostController::class, 'store']);
+Route::put('/posts/{post}', ...);  Route::patch(...);  Route::delete(...);  Route::options(...);
+Route::match(['get', 'post'], '/search', SearchController::class);
+Route::any('/webhook', WebhookController::class);
+
+Route::view('/about', 'pages.about', ['title' =&gt; 'About']);   // فقط نمایش view
+Route::redirect('/old', '/new');            // 302
+Route::permanentRedirect('/old', '/new');   // 301</code></pre>
+    <div class="callout note"><p>فرم‌های HTML فقط GET و POST دارند. برای PUT/PATCH/DELETE فرم با POST ارسال و فیلد مخفی <code>_method</code> اضافه می‌شود (<code>@method('PUT')</code> در Blade) — به این کار <strong>method spoofing</strong> می‌گویند.</p></div>
+
+    <h3>پارامترها و محدودیت‌ها (Constraints)</h3>
+    <pre><code class="language-php">&lt;?php
+Route::get('/users/{id}', fn (string $id) =&gt; ...)-&gt;where('id', '[0-9]+');
+Route::get('/users/{id}/{slug}', ...)-&gt;where(['id' =&gt; '[0-9]+', 'slug' =&gt; '[a-z-]+']);
+
+// helperهای آماده
+Route::get('/orders/{id}', ...)-&gt;whereNumber('id');
+Route::get('/tags/{name}', ...)-&gt;whereAlpha('name');
+Route::get('/files/{uuid}', ...)-&gt;whereUuid('uuid');   // whereUlid هم هست
+Route::get('/cat/{type}', ...)-&gt;whereIn('type', ['movie', 'song']);
+
+// پارامتر اختیاری — حتماً مقدار پیش‌فرض در closure/متد
+Route::get('/users/{name?}', fn (?string $name = 'guest') =&gt; $name);
+
+// محدودیت سراسری (در AppServiceProvider::boot)
+Route::pattern('id', '[0-9]+');</code></pre>
+    <p>اگر constraint برقرار نباشد، route match نمی‌شود و پاسخ <code>404</code> است. پارامترها به ترتیب (نه بر اساس نام) به closure داده می‌شوند، ولی در controller، وابستگی‌های type-hint شده جدا از پارامترهای route resolve می‌شوند.</p>
+
+    <h3>Named routes</h3>
+    <pre><code class="language-php">&lt;?php
+Route::get('/users/{user}/profile', [ProfileController::class, 'show'])-&gt;name('profile.show');
+
+$url = route('profile.show', ['user' =&gt; 1, 'tab' =&gt; 'posts']);  // /users/1/profile?tab=posts
+return redirect()-&gt;route('profile.show', $user);                 // مدل هم قابل پاس دادن است
+if ($request-&gt;routeIs('profile.*')) { /* ... */ }</code></pre>
+    <div class="callout tip"><p>همیشه از نام route استفاده کنید نه URL خام. تغییر URL فقط در یک جا (تعریف route) انجام می‌شود و همه لینک‌ها و redirectها خودکار به‌روز می‌شوند.</p></div>
+
+    <h3>Route Groups و Prefix</h3>
+    <pre><code class="language-php">&lt;?php
+Route::middleware(['auth', 'verified'])
+    -&gt;prefix('admin')                 // URI: /admin/...
+    -&gt;name('admin.')                  // name: admin.users.index
+    -&gt;group(function () {
+        Route::get('/dashboard', DashboardController::class)-&gt;name('dashboard');
+        Route::resource('users', Admin\UserController::class);
+    });
+
+// گروه بر اساس controller
+Route::controller(OrderController::class)-&gt;group(function () {
+    Route::get('/orders/{id}', 'show');
+    Route::post('/orders', 'store');
+});
+
+// Subdomain routing
+Route::domain('{account}.example.com')-&gt;group(function () {
+    Route::get('/users/{id}', fn (string $account, string $id) =&gt; ...);
+});</code></pre>
+
+    <h3>Resource routes</h3>
+    <pre><code class="language-php">&lt;?php
+Route::resource('photos', PhotoController::class);            // ۷ route
+Route::apiResource('photos', PhotoController::class);         // ۵ route (بدون create/edit)
+Route::resource('photos', PhotoController::class)-&gt;only(['index', 'show']);
+Route::resource('photos', PhotoController::class)-&gt;except(['destroy']);
+Route::resources(['photos' =&gt; PhotoController::class, 'posts' =&gt; PostController::class]);
+
+// nested و shallow
+Route::resource('posts.comments', CommentController::class)-&gt;shallow();
+// /posts/{post}/comments  (index, store)  ولی  /comments/{comment} (show, update, destroy)</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Verb</th><th>URI</th><th>Action</th><th>Route name</th><th>apiResource؟</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/photos</code></td><td>index</td><td>photos.index</td><td>✓</td></tr>
+        <tr><td>GET</td><td><code>/photos/create</code></td><td>create</td><td>photos.create</td><td>✗ (فرم HTML)</td></tr>
+        <tr><td>POST</td><td><code>/photos</code></td><td>store</td><td>photos.store</td><td>✓</td></tr>
+        <tr><td>GET</td><td><code>/photos/{photo}</code></td><td>show</td><td>photos.show</td><td>✓</td></tr>
+        <tr><td>GET</td><td><code>/photos/{photo}/edit</code></td><td>edit</td><td>photos.edit</td><td>✗ (فرم HTML)</td></tr>
+        <tr><td>PUT/PATCH</td><td><code>/photos/{photo}</code></td><td>update</td><td>photos.update</td><td>✓</td></tr>
+        <tr><td>DELETE</td><td><code>/photos/{photo}</code></td><td>destroy</td><td>photos.destroy</td><td>✓</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>ترتیب routeها مهم است: اگر <code>Route::get('/photos/popular', ...)</code> را <strong>بعد از</strong> <code>Route::resource('photos', ...)</code> تعریف کنید، درخواست <code>/photos/popular</code> با <code>photos.show</code> و پارامتر <code>popular</code> match می‌شود. routeهای اضافی را قبل از resource تعریف کنید.</p></div>
+
+    <h3>Fallback route</h3>
+    <pre><code class="language-php">&lt;?php
+// باید آخرین route باشد؛ برای 404 سفارشی یا SPA catch-all
+Route::fallback(fn () =&gt; response()-&gt;view('errors.not-found', [], 404));</code></pre>
+
+    <h3>Route caching و ابزارها</h3>
+    <ul>
+      <li><code>php artisan route:list</code> (با <code>--name=</code>، <code>--path=</code>، <code>-v</code> برای دیدن middlewareها) برای debug.</li>
+      <li><code>php artisan route:cache</code>: همه routeها را serialize کرده و در <code>bootstrap/cache</code> ذخیره می‌کند؛ ثبت صدها route را به یک بارگذاری فایل تبدیل می‌کند. پس از cache، تغییرات فایل‌های route تا اجرای مجدد <code>route:cache</code> (یا <code>route:clear</code>) اعمال <strong>نمی‌شوند</strong>.</li>
+      <li>نام routeها باید یکتا باشند؛ در غیر این صورت هنگام cache خطا رخ می‌دهد.</li>
+    </ul>
+  </section>
+
+  <!-- ===================================================== 7 -->
+  <section class="lesson" id="route-model-binding" data-title="Route Model Binding و Rate Limiting">
+    <h2>Route Model Binding و Rate Limiting</h2>
+    <p><strong>Route Model Binding</strong> یعنی Laravel به جای اینکه شناسه خام را به شما بدهد، خودش مدل متناظر را از دیتابیس واکشی کرده و تزریق می‌کند؛ اگر پیدا نشود، به طور خودکار <code>404</code> برمی‌گرداند. این کار در middleware <code>SubstituteBindings</code> (عضو گروه‌های <code>web</code> و <code>api</code>) انجام می‌شود.</p>
+
+    <h3>Implicit binding</h3>
+    <p>شرط: نام پارامتر route با نام متغیر type-hint شده یکسان باشد.</p>
+    <pre><code class="language-php">&lt;?php
+Route::get('/posts/{post}', function (Post $post) {   // {post} ⇔ $post
+    return $post;          // معادل Post::findOrFail($id)
+});
+
+// کلید سفارشی در خود route
+Route::get('/posts/{post:slug}', fn (Post $post) =&gt; $post);
+
+// کلید سفارشی برای همه routeها — در مدل
+class Post extends Model
+{
+    public function getRouteKeyName(): string
+    {
+        return 'slug';
+    }
+}
+
+// شامل رکوردهای soft-deleted
+Route::get('/users/{user}', ...)-&gt;withTrashed();
+
+// رفتار سفارشی به جای 404
+Route::get('/locations/{location:slug}', [LocationController::class, 'show'])
+    -&gt;missing(fn (Request $request) =&gt; redirect()-&gt;route('locations.index'));</code></pre>
+
+    <h3>Scoped binding</h3>
+    <p>در routeهای تودرتو، معمولاً می‌خواهیم مدل فرزند حتماً متعلق به والد باشد (جلوگیری از دسترسی به post کاربر دیگر از طریق URL). وقتی برای فرزند کلید سفارشی تعیین شود، Laravel خودکار از رابطه والد استفاده می‌کند؛ در غیر این صورت <code>scopeBindings()</code> را صدا بزنید:</p>
+    <pre><code class="language-php">&lt;?php
+// $user-&gt;posts()-&gt;where('slug', ...)-&gt;firstOrFail()  — خودکار scoped
+Route::get('/users/{user}/posts/{post:slug}', fn (User $user, Post $post) =&gt; $post);
+
+Route::get('/users/{user}/posts/{post}', fn (User $user, Post $post) =&gt; $post)
+    -&gt;scopeBindings();   // Laravel رابطه posts را روی User حدس می‌زند</code></pre>
+
+    <h3>Explicit binding و منطق سفارشی</h3>
+    <pre><code class="language-php">&lt;?php
+// AppServiceProvider::boot()
+Route::model('member', User::class);    // پارامتر {member} → User
+
+Route::bind('user', function (string $value) {
+    return User::where('username', $value)-&gt;where('active', true)-&gt;firstOrFail();
+});
+
+// یا override در خود مدل
+public function resolveRouteBinding($value, $field = null)
+{
+    return $this-&gt;where($field ?? 'id', $value)-&gt;where('tenant_id', tenant()-&gt;id)-&gt;firstOrFail();
+}</code></pre>
+    <p>Enumهای backed هم قابل bind هستند: <code>Route::get('/categories/{category}', fn (Category $category) =&gt; ...)</code> که <code>Category</code> یک <code>enum</code> با مقدار string است؛ مقدار نامعتبر به <code>404</code> می‌انجامد.</p>
+    <div class="callout exam"><p>تفاوت‌ها به زبان امتحانی: <strong>Implicit</strong> = بر اساس قرارداد نام و type-hint، بدون پیکربندی. <strong>Explicit</strong> = نگاشت صریح پارامتر به مدل یا منطق resolve دلخواه با <code>Route::model</code>/<code>Route::bind</code>. <strong>Custom key</strong> = جستجو با ستونی غیر از کلید اصلی (<code>{post:slug}</code> یا <code>getRouteKeyName</code>). <strong>Scoped</strong> = محدود کردن فرزند به والد برای امنیت.</p></div>
+    <div class="callout warn"><p>Route Model Binding جایگزین <strong>authorization</strong> نیست. اینکه <code>{post}</code> وجود دارد به این معنا نیست که کاربر فعلی مجاز به ویرایش آن است؛ باید Policy (<code>can:update,post</code>) هم اعمال شود.</p></div>
+
+    <h3>Rate Limiting (مقدماتی)</h3>
+    <p>محدودکننده‌ها با نام تعریف و با middleware <code>throttle</code> به route متصل می‌شوند. وقتی سقف رد شود، پاسخ <code>429 Too Many Requests</code> با هدرهای <code>Retry-After</code> و <code>X-RateLimit-*</code> برمی‌گردد.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Support\Facades\RateLimiter;
+
+// AppServiceProvider::boot()
+RateLimiter::for('api', function (Request $request) {
+    return Limit::perMinute(60)-&gt;by($request-&gt;user()?-&gt;id ?: $request-&gt;ip());
+});
+
+RateLimiter::for('login', fn (Request $request) =&gt; [
+    Limit::perMinute(5)-&gt;by($request-&gt;input('email').'|'.$request-&gt;ip()),
+]);
+
+Route::middleware('throttle:api')-&gt;group(function () { /* ... */ });
+Route::post('/login', ...)-&gt;middleware('throttle:login');
+Route::get('/quick', ...)-&gt;middleware('throttle:10,1');   // ۱۰ درخواست در ۱ دقیقه</code></pre>
+    <p>شمارنده‌ها در <strong>cache</strong> نگه داشته می‌شوند؛ پس در چند سرور باید cache مشترک (Redis) باشد. جزئیات بیشتر در صفحه Laravel Deeper.</p>
+  </section>
+
+  <!-- ===================================================== 8 -->
+  <section class="lesson" id="middleware" data-title="Middleware">
+    <h2>Middleware</h2>
+    <p><strong>Middleware</strong> یک لایه فیلتر روی درخواست HTTP است که قبل و/یا بعد از رسیدن درخواست به controller اجرا می‌شود؛ پیاده‌سازی الگوی <strong>Chain of Responsibility / Pipeline</strong>. کاربردها: احراز هویت، CSRF، CORS، تنظیم locale، لاگ، افزودن header، محدودیت نرخ.</p>
+    <pre><code class="language-bash">php artisan make:middleware EnsureUserHasRole   # app/Http/Middleware/EnsureUserHasRole.php</code></pre>
+
+    <h3>Before، After و پارامتر</h3>
+    <pre><code class="language-php">&lt;?php
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+class EnsureUserHasRole
+{
+    // پارامترها بعد از $next می‌آیند:  -&gt;middleware('role:editor,admin')
+    public function handle(Request $request, Closure $next, string ...$roles): Response
+    {
+        // ---- BEFORE: قبل از controller
+        if (! $request-&gt;user() || ! in_array($request-&gt;user()-&gt;role, $roles, true)) {
+            abort(403);               // short-circuit: $next صدا زده نمی‌شود
+        }
+
+        $response = $next($request);  // عبور به لایه بعدی
+
+        // ---- AFTER: بعد از controller، روی پاسخ
+        $response-&gt;headers-&gt;set('X-Checked-Role', 'yes');
+
+        return $response;
+    }
+}</code></pre>
+
+    <h3>Terminable middleware</h3>
+    <p>اگر middleware متد <code>terminate($request, $response)</code> داشته باشد، <strong>بعد از ارسال پاسخ</strong> اجرا می‌شود؛ مناسب کارهای سبکی مثل ثبت آمار که نباید کاربر را منتظر بگذارد (کارهای سنگین را به Queue بسپارید).</p>
+    <pre><code class="language-php">&lt;?php
+class LogRequestDuration
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        return $next($request);
+    }
+
+    public function terminate(Request $request, Response $response): void
+    {
+        Log::info('duration', ['ms' =&gt; (microtime(true) - LARAVEL_START) * 1000]);
+    }
+}
+// Laravel برای terminate یک نمونه جدید از container می‌سازد؛ برای استفاده از
+// همان نمونه handle، آن را در AppServiceProvider::register به صورت singleton ثبت کنید.</code></pre>
+
+    <h3>انواع و ثبت در Laravel 11+</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>محدوده</th><th>ثبت</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Global</strong></td><td>همه درخواست‌ها، قبل از routing</td><td><code>$middleware-&gt;append()</code> / <code>prepend()</code></td></tr>
+        <tr><td><strong>Group</strong></td><td>همه routeهای یک گروه (<code>web</code>، <code>api</code> یا گروه سفارشی)</td><td><code>$middleware-&gt;web(append: [...])</code>، <code>api(prepend: [...])</code>، <code>group('name', [...])</code></td></tr>
+        <tr><td><strong>Route</strong></td><td>route یا گروه route مشخص</td><td><code>-&gt;middleware(...)</code> روی route؛ با <code>alias()</code> نام کوتاه می‌گیرد</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+// bootstrap/app.php
+-&gt;withMiddleware(function (Middleware $middleware) {
+    $middleware-&gt;append(LogRequestDuration::class);               // global
+
+    $middleware-&gt;web(append: [SetLocale::class]);                 // به گروه web
+    $middleware-&gt;api(prepend: [ForceJsonResponse::class]);        // به گروه api
+
+    $middleware-&gt;alias([
+        'role' =&gt; EnsureUserHasRole::class,
+    ]);
+
+    $middleware-&gt;group('partner', [VerifyPartnerSignature::class, 'throttle:60,1']);
+
+    $middleware-&gt;validateCsrfTokens(except: ['stripe/*']);
+    $middleware-&gt;redirectGuestsTo('/login');
+    $middleware-&gt;trustProxies(at: '*');
+    $middleware-&gt;priority([/* ترتیب اجباری اجرای middlewareها */]);
+})
+
+// routes/web.php
+Route::put('/posts/{post}', ...)-&gt;middleware(['auth', 'role:editor,admin']);
+Route::middleware('auth')-&gt;group(function () {
+    Route::get('/public-report', ...)-&gt;withoutMiddleware(['auth']);
+});</code></pre>
+    <div class="callout note"><p>در Laravel ≤ 10 همین تنظیمات در <code>app/Http/Kernel.php</code> انجام می‌شد: آرایه <code>$middleware</code> (global)، <code>$middlewareGroups</code> (web/api) و <code>$middlewareAliases</code> (در ≤ 9 با نام <code>$routeMiddleware</code>)، و آرایه <code>$middlewarePriority</code>.</p></div>
+
+    <h3>Middleware در controller (Laravel 11)</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
+
+class PostController extends Controller implements HasMiddleware
+{
+    public static function middleware(): array
+    {
+        return [
+            'auth',
+            new Middleware('role:editor', only: ['store', 'update']),
+            new Middleware('throttle:10,1', except: ['index']),
+        ];
+    }
+}
+// Laravel ≤ 10: $this-&gt;middleware('auth')-&gt;only(['store']);  در constructor</code></pre>
+    <div class="callout exam"><p>گروه <code>web</code> شامل: <code>EncryptCookies</code>، <code>AddQueuedCookiesToResponse</code>، <code>StartSession</code>، <code>ShareErrorsFromSession</code>، <code>ValidateCsrfToken</code> (نام قبلی <code>VerifyCsrfToken</code>) و <code>SubstituteBindings</code>. گروه <code>api</code> به صورت پیش‌فرض فقط <code>SubstituteBindings</code> دارد (throttle به صورت اختیاری) — به همین دلیل API بدون session و CSRF است.</p></div>
+  </section>
+
+  <!-- ===================================================== 9 -->
+  <section class="lesson" id="controllers-responses" data-title="Controller و Response">
+    <h2>Controller و Response</h2>
+    <p><strong>Controller</strong> منطق رسیدگی به درخواست‌های مرتبط را در یک کلاس گروه‌بندی می‌کند. در Laravel 11 کلاس پایه <code>App\Http\Controllers\Controller</code> یک کلاس abstract <strong>خالی</strong> است (traitهای <code>AuthorizesRequests</code> و <code>ValidatesRequests</code> دیگر به صورت پیش‌فرض در آن نیستند؛ اگر <code>$this-&gt;authorize()</code> لازم دارید، trait را اضافه کنید یا از <code>Gate::authorize()</code> استفاده کنید).</p>
+    <pre><code class="language-bash">php artisan make:controller PostController                       # خالی
+php artisan make:controller PostController --resource --model=Post  # ۷ متد + type-hint مدل
+php artisan make:controller Api/PostController --api               # ۵ متد
+php artisan make:controller ProvisionServer --invokable            # single action
+php artisan make:controller PostController --resource --requests   # همراه Form Requestها</code></pre>
+
+    <h3>Single Action (Invokable) Controller</h3>
+    <pre><code class="language-php">&lt;?php
+class ProvisionServer extends Controller
+{
+    public function __invoke(ProvisionRequest $request, ServerProvisioner $provisioner)
+    {
+        $server = $provisioner-&gt;provision($request-&gt;validated());
+        return response()-&gt;json($server, 201);
+    }
+}
+
+Route::post('/servers', ProvisionServer::class);   // بدون نام متد</code></pre>
+    <p>وقتی یک عمل پیچیده است و جزو CRUD نمی‌گنجد (مثلاً «انتشار مقاله» یا «پرداخت سفارش»)، invokable controller کد را متمرکز و کوچک نگه می‌دارد. یک روش رایج طراحی این است که به جای افزودن متدهای غیر استاندارد به resource controller، یک resource جدید یا invokable controller بسازید (مثلاً <code>PublishPostController</code>).</p>
+
+    <h3>Dependency Injection در constructor و متد</h3>
+    <pre><code class="language-php">&lt;?php
+class OrderController extends Controller
+{
+    // constructor injection — وابستگی مشترک همه actionها
+    public function __construct(private readonly OrderService $orders) {}
+
+    // method injection — وابستگی‌ها قبل، پارامترهای route بعد
+    public function update(UpdateOrderRequest $request, Order $order)
+    {
+        $this-&gt;orders-&gt;update($order, $request-&gt;validated());
+        return redirect()-&gt;route('orders.show', $order)-&gt;with('status', 'به‌روزرسانی شد');
+    }
+
+    public function show(Request $request, string $id) { /* $id از route */ }
+}</code></pre>
+    <div class="callout tip"><p>کلاس‌های controller توسط container ساخته می‌شوند؛ پس هر چیزی که container بتواند resolve کند (کلاس concrete، interface دارای binding، <code>Request</code>، Form Request، مدل در binding) قابل تزریق است. وابستگی‌ای که فقط یک action لازم دارد را در همان متد تزریق کنید.</p></div>
+
+    <h3>Responseها</h3>
+    <pre><code class="language-php">&lt;?php
+// تبدیل خودکار
+return 'Hello';                     // text/html، 200
+return ['ok' =&gt; true];              // JSON
+return $user;                       // مدل Eloquent → JSON (با رعایت $hidden)
+return User::paginate();            // JSON همراه meta و links
+
+// JSON صریح
+return response()-&gt;json(['data' =&gt; $post], 201);
+return response()-&gt;json(['message' =&gt; 'Not found'], 404);
+return response()-&gt;noContent();     // 204
+
+// View
+return view('posts.show', ['post' =&gt; $post]);
+return view('posts.show', compact('post'));
+return response()-&gt;view('errors.custom', $data, 500);
+
+// Redirect
+return redirect('/home');
+return redirect()-&gt;route('posts.show', $post);
+return redirect()-&gt;action([PostController::class, 'index']);
+return back()-&gt;withInput()-&gt;withErrors(['email' =&gt; 'نامعتبر']);
+return redirect()-&gt;away('https://example.com');
+return to_route('posts.index');                // کوتاه‌نویس
+return redirect()-&gt;route('posts.index')-&gt;with('status', 'ذخیره شد');   // flash
+
+// فایل
+return response()-&gt;download(storage_path('app/report.pdf'), 'report.pdf');
+return response()-&gt;file($path);                 // نمایش در مرورگر (inline)
+return response()-&gt;streamDownload(function () { echo $csv; }, 'export.csv');
+return Storage::download('invoices/1.pdf');
+
+// header و cookie
+return response($content, 200)
+    -&gt;header('Content-Type', 'text/plain')
+    -&gt;cookie('theme', 'dark', 60);</code></pre>
+
+    <h3>Status codeهای مهم در Laravel</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>کد</th><th>معنی</th><th>چه زمانی Laravel تولید می‌کند</th></tr></thead>
+      <tbody>
+        <tr><td>200 / 201 / 204</td><td>OK / Created / No Content</td><td>پاسخ عادی، ایجاد منبع، حذف بدون بدنه</td></tr>
+        <tr><td>301 / 302</td><td>Redirect دائم / موقت</td><td><code>redirect()</code> پیش‌فرض 302؛ و پس از خطای validation در وب</td></tr>
+        <tr><td>401</td><td>Unauthenticated</td><td><code>AuthenticationException</code> در درخواست JSON (در وب: redirect به login)</td></tr>
+        <tr><td>403</td><td>Forbidden</td><td><code>AuthorizationException</code>، <code>authorize()</code> در Form Request، <code>abort(403)</code></td></tr>
+        <tr><td>404</td><td>Not Found</td><td>route یافت نشد، <code>ModelNotFoundException</code> (findOrFail/binding)</td></tr>
+        <tr><td>405</td><td>Method Not Allowed</td><td>URI درست ولی متد HTTP اشتباه</td></tr>
+        <tr><td>419</td><td>Page Expired</td><td>توکن CSRF نامعتبر یا session منقضی (<code>TokenMismatchException</code>)</td></tr>
+        <tr><td>422</td><td>Unprocessable Content</td><td>خطای validation در درخواست JSON</td></tr>
+        <tr><td>429</td><td>Too Many Requests</td><td>middleware <code>throttle</code></td></tr>
+        <tr><td>500</td><td>Server Error</td><td>exception گزارش‌نشده</td></tr>
+        <tr><td>503</td><td>Service Unavailable</td><td>maintenance mode (<code>artisan down</code>)</td></tr>
+      </tbody>
+    </table></div>
+    <p>برای ساختار JSON استاندارد و پنهان کردن ستون‌های داخلی در API از <strong>API Resource</strong> استفاده کنید (جزئیات در صفحه Eloquent).</p>
+  </section>
+
+  <!-- ===================================================== 10 -->
+  <section class="lesson" id="validation" data-title="Request و Validation">
+    <h2>Request و Validation</h2>
+    <h3>کار با Request</h3>
+    <pre><code class="language-php">&lt;?php
+$request-&gt;input('name', 'default');     // از body یا query string
+$request-&gt;query('page');                // فقط query string
+$request-&gt;input('items.0.qty');          // dot notation
+$request-&gt;only(['name', 'email']);  $request-&gt;except(['password']);
+$request-&gt;has('name');  $request-&gt;filled('name');  $request-&gt;missing('x');
+$request-&gt;boolean('active');  $request-&gt;integer('per_page');  $request-&gt;date('from');
+$request-&gt;file('avatar')-&gt;store('avatars');
+$request-&gt;user();  $request-&gt;ip();  $request-&gt;header('X-Api-Key');
+$request-&gt;isMethod('post');  $request-&gt;is('admin/*');  $request-&gt;routeIs('admin.*');
+$request-&gt;expectsJson();  $request-&gt;wantsJson();</code></pre>
+
+    <h3>validate() درون controller</h3>
+    <pre><code class="language-php">&lt;?php
+public function store(Request $request)
+{
+    $validated = $request-&gt;validate([
+        'title'   =&gt; ['required', 'string', 'max:255', 'unique:posts,title'],
+        'body'    =&gt; ['required'],
+        'tags'    =&gt; ['array', 'max:5'],
+        'tags.*'  =&gt; ['integer', 'exists:tags,id'],
+        'publish_at' =&gt; ['nullable', 'date', 'after:today'],
+    ]);
+
+    // فقط فیلدهای validate شده — امن برای create
+    $post = $request-&gt;user()-&gt;posts()-&gt;create($validated);
+    return to_route('posts.show', $post);
+}</code></pre>
+    <p>اگر validation شکست بخورد، <code>ValidationException</code> پرتاب می‌شود و ادامه متد اجرا نمی‌شود. پاسخ بسته به نوع درخواست فرق دارد:</p>
+    <div class="grid-2">
+      <div class="card"><h4>درخواست وب (فرم)</h4><ul><li><strong>Redirect 302</strong> به صفحه قبل.</li><li>خطاها در session flash می‌شوند و در view با متغیر <code>$errors</code> (<code>MessageBag</code>) و <code>@error</code> در دسترس‌اند.</li><li>ورودی‌ها flash می‌شوند تا <code>old('title')</code> فرم را دوباره پر کند.</li></ul></div>
+      <div class="card"><h4>درخواست JSON / API</h4><ul><li>اگر <code>$request-&gt;expectsJson()</code> درست باشد (هدر <code>Accept: application/json</code> یا درخواست AJAX).</li><li>پاسخ <strong>422</strong> با بدنه JSON شامل <code>message</code> و <code>errors</code>.</li><li>بدون redirect و بدون session.</li></ul></div>
+    </div>
+    <pre><code class="language-json">{
+  "message": "The title field is required. (and 1 more error)",
+  "errors": {
+    "title": ["The title field is required."],
+    "tags.0": ["The selected tags.0 is invalid."]
+  }
+}</code></pre>
+    <div class="callout warn"><p>باگ رایج: کلاینت API (مثلاً Postman یا اپ موبایل) هدر <code>Accept: application/json</code> نمی‌فرستد و در پاسخ خطای validation به جای 422، یک <strong>redirect 302</strong> به صفحه اصلی یا HTML می‌گیرد. راه‌حل: کلاینت هدر را بفرستد، یا یک middleware در گروه <code>api</code> که <code>$request-&gt;headers-&gt;set('Accept', 'application/json')</code> را تنظیم کند، یا <code>shouldRenderJsonWhen</code> در <code>withExceptions</code>.</p></div>
+
+    <h3>Form Request</h3>
+    <p><strong>Form Request</strong> کلاسی مستقل برای <strong>authorization + validation + آماده‌سازی ورودی</strong> یک درخواست است. قبل از اجرای متد controller، توسط container resolve و validate می‌شود؛ controller فقط داده تمیز را دریافت می‌کند.</p>
+    <pre><code class="language-bash">php artisan make:request StorePostRequest   # app/Http/Requests/StorePostRequest.php</code></pre>
+    <pre><code class="language-php">&lt;?php
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+
+class StorePostRequest extends FormRequest
+{
+    protected $stopOnFirstFailure = false;   // true: توقف روی اولین خطا
+
+    // false → AuthorizationException → 403
+    public function authorize(): bool
+    {
+        return $this-&gt;user()-&gt;can('create', Post::class);
+    }
+
+    // قبل از validation: نرمال‌سازی ورودی
+    protected function prepareForValidation(): void
+    {
+        $this-&gt;merge([
+            'slug' =&gt; Str::slug($this-&gt;slug ?? $this-&gt;title),
+        ]);
+    }
+
+    public function rules(): array
+    {
+        return [
+            'title'    =&gt; ['required', 'string', 'max:255'],
+            'slug'     =&gt; ['required', Rule::unique('posts', 'slug')],
+            'status'   =&gt; ['required', Rule::enum(PostStatus::class)],
+            'category' =&gt; ['required', Rule::in(['news', 'blog'])],
+            'cover'    =&gt; ['nullable', 'image', 'mimes:jpg,png', 'max:2048'],  // کیلوبایت
+        ];
+    }
+
+    public function messages(): array
+    {
+        return ['title.required' =&gt; 'عنوان الزامی است.'];
+    }
+
+    public function attributes(): array
+    {
+        return ['title' =&gt; 'عنوان'];
+    }
+
+    // بعد از موفقیت rules — قواعد وابسته به چند فیلد
+    public function after(): array
+    {
+        return [function (\Illuminate\Validation\Validator $validator) {
+            if ($this-&gt;somethingElseIsInvalid()) {
+                $validator-&gt;errors()-&gt;add('title', 'مشکل دیگری وجود دارد.');
+            }
+        }];
+    }
+}
+
+// Controller
+public function store(StorePostRequest $request)
+{
+    $post = Post::create($request-&gt;validated());
+    $only = $request-&gt;safe()-&gt;only(['title', 'slug']);
+}</code></pre>
+
+    <h3>قواعد پرکاربرد</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>قاعده</th><th>توضیح</th></tr></thead>
+      <tbody>
+        <tr><td><code>required</code> / <code>nullable</code> / <code>sometimes</code></td><td>الزامی / می‌تواند null باشد / فقط اگر فیلد ارسال شده بود validate کن (مناسب PATCH)</td></tr>
+        <tr><td><code>bail</code></td><td>توقف روی اولین خطای <strong>همان فیلد</strong></td></tr>
+        <tr><td><code>string</code>، <code>integer</code>، <code>numeric</code>، <code>boolean</code>، <code>array</code>، <code>email</code>، <code>url</code>، <code>uuid</code>، <code>date</code></td><td>نوع داده</td></tr>
+        <tr><td><code>min</code>، <code>max</code>، <code>between</code>، <code>size</code></td><td>برای رشته: طول؛ عدد: مقدار؛ آرایه: تعداد؛ فایل: کیلوبایت</td></tr>
+        <tr><td><code>unique:table,column</code></td><td>یکتایی؛ در update: <code>Rule::unique('users')-&gt;ignore($user-&gt;id)</code></td></tr>
+        <tr><td><code>exists:table,column</code></td><td>وجود رکورد (مثلاً کلید خارجی)</td></tr>
+        <tr><td><code>confirmed</code></td><td>وجود فیلد <code>password_confirmation</code> با همان مقدار</td></tr>
+        <tr><td><code>in</code>، <code>not_in</code>، <code>Rule::enum</code></td><td>مقادیر مجاز</td></tr>
+        <tr><td><code>required_if</code>، <code>required_with</code>، <code>prohibited</code>، <code>exclude_if</code></td><td>شرطی</td></tr>
+        <tr><td><code>after:today</code>، <code>before:field</code>، <code>date_format</code></td><td>تاریخ</td></tr>
+        <tr><td><code>file</code>، <code>image</code>، <code>mimes</code>، <code>dimensions</code></td><td>فایل</td></tr>
+        <tr><td><code>Password::min(8)-&gt;letters()-&gt;mixedCase()-&gt;numbers()-&gt;uncompromised()</code></td><td>قواعد رمز عبور</td></tr>
+        <tr><td><code>items.*.qty</code></td><td>validate هر عضو آرایه</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Rule سفارشی</h3>
+    <pre><code class="language-php">&lt;?php
+// php artisan make:rule IranianNationalCode
+namespace App\Rules;
+
+use Closure;
+use Illuminate\Contracts\Validation\ValidationRule;
+
+class IranianNationalCode implements ValidationRule
+{
+    public function validate(string $attribute, mixed $value, Closure $fail): void
+    {
+        if (! preg_match('/^\d{10}$/', (string) $value) || ! $this-&gt;checksum($value)) {
+            $fail('کد ملی :attribute معتبر نیست.');
+        }
+    }
+
+    private function checksum(string $code): bool { /* ... */ return true; }
+}
+
+// استفاده
+'national_code' =&gt; ['required', new IranianNationalCode],
+
+// Closure rule برای موارد یک‌باره
+'coupon' =&gt; ['nullable', function (string $attribute, mixed $value, Closure $fail) {
+    if (! Coupon::active()-&gt;where('code', $value)-&gt;exists()) {
+        $fail("The {$attribute} is invalid.");
+    }
+}],</code></pre>
+
+    <h3>Validator دستی</h3>
+    <pre><code class="language-php">&lt;?php
+$validator = Validator::make($data, $rules, $messages);
+if ($validator-&gt;fails()) {
+    return back()-&gt;withErrors($validator)-&gt;withInput();
+}
+$validated = $validator-&gt;validated();   // یا $validator-&gt;validate() که exception پرتاب می‌کند</code></pre>
+    <div class="callout exam"><p>چرا <code>$request-&gt;validated()</code> و نه <code>$request-&gt;all()</code>؟ <code>all()</code> شامل فیلدهای ناخواسته‌ای است که کاربر می‌تواند اضافه کند (مثلاً <code>is_admin=1</code>)؛ ترکیب آن با <code>create()</code> حتی با وجود <code>$fillable</code> ریسک‌زاست. <code>validated()</code> فقط کلیدهایی را برمی‌گرداند که برایشان rule تعریف شده است.</p></div>
+  </section>
+
+  <!-- ===================================================== 11 -->
+  <section class="lesson" id="blade" data-title="Blade">
+    <h2>Blade</h2>
+    <p><strong>Blade</strong> موتور قالب Laravel است. فایل‌های <code>*.blade.php</code> یک‌بار به PHP خام <strong>کامپایل</strong> و در <code>storage/framework/views</code> ذخیره می‌شوند و تا وقتی فایل منبع تغییر نکند دوباره کامپایل نمی‌شوند؛ پس سربار اجرایی تقریباً صفر است. در Blade می‌توان PHP معمولی هم نوشت، ولی نباید منطق تجاری یا کوئری در view قرار گیرد.</p>
+
+    <h3>Escaping: <code>{{ }}</code> در برابر <code>{!! !!}</code></h3>
+    <pre><code class="language-xml">{{-- escape شده با htmlspecialchars (تابع e()) — امن در برابر XSS --}}
+&lt;p&gt;{{ $comment-&gt;body }}&lt;/p&gt;
+
+{{-- بدون escape — فقط برای HTML مورد اعتماد (مثلاً خروجی sanitizer یا markdown کنترل‌شده) --}}
+&lt;div&gt;{!! $trustedHtml !!}&lt;/div&gt;
+
+{{-- خروجی لفظی برای فریم‌ورک‌های JS --}}
+&lt;span&gt;@{{ vueVariable }}&lt;/span&gt;
+@verbatim &lt;div&gt;{{ chunk.of.js.template }}&lt;/div&gt; @endverbatim
+
+{{-- پاس دادن داده به JS --}}
+&lt;script&gt; const user = {{ Js::from($user) }}; &lt;/script&gt;</code></pre>
+    <div class="callout exam"><p><code>{{ $x }}</code> معادل <code>&lt;?php echo e($x); ?&gt;</code> است و کاراکترهای <code>&lt; &gt; &amp; " '</code> را به entity تبدیل می‌کند. استفاده از <code>{!! !!}</code> روی داده کاربر = <strong>Stored XSS</strong>. اگر HTML کاربر لازم است، ابتدا با کتابخانه‌ای مثل HTML Purifier پاک‌سازی کنید.</p></div>
+
+    <h3>Directiveهای پرکاربرد</h3>
+    <pre><code class="language-xml">@if ($orders-&gt;isEmpty()) ... @elseif (...) ... @else ... @endif
+@unless (Auth::check()) لطفاً وارد شوید @endunless
+@isset($title) ... @endisset      @empty($items) ... @endempty
+@auth ... @endauth                 @guest ... @endguest
+@env('local') ... @endenv          @production ... @endproduction
+
+@foreach ($users as $user)
+    {{ $loop-&gt;iteration }} / {{ $loop-&gt;count }}
+    @if ($loop-&gt;first) اولین @endif
+    @continue($user-&gt;banned)
+@endforeach
+
+@forelse ($posts as $post)
+    &lt;li&gt;{{ $post-&gt;title }}&lt;/li&gt;
+@empty
+    &lt;li&gt;مطلبی وجود ندارد&lt;/li&gt;
+@endforelse
+
+@switch($status) @case('paid') پرداخت شد @break @default نامشخص @endswitch
+
+@include('partials.alert', ['type' =&gt; 'error'])
+@each('partials.item', $items, 'item', 'partials.empty')
+
+@can('update', $post) &lt;a href="{{ route('posts.edit', $post) }}"&gt;ویرایش&lt;/a&gt; @endcan
+
+&lt;div @class(['card', 'card--active' =&gt; $isActive])&gt;&lt;/div&gt;
+&lt;input type="checkbox" @checked($user-&gt;subscribed)&gt;
+&lt;option @selected($v === old('type'))&gt;...&lt;/option&gt;
+&lt;button @disabled($locked)&gt;ارسال&lt;/button&gt;
+
+@push('scripts') &lt;script src="/chart.js"&gt;&lt;/script&gt; @endpush   {{-- در layout: @stack('scripts') --}}
+@once ... @endonce
+@php $total = 0; @endphp</code></pre>
+
+    <h3>فرم: <code>@csrf</code>، <code>@method</code>، <code>@error</code> و <code>old()</code></h3>
+    <pre><code class="language-xml">&lt;form method="POST" action="{{ route('posts.update', $post) }}"&gt;
+    @csrf                     {{-- &lt;input type="hidden" name="_token" value="..."&gt; --}}
+    @method('PUT')            {{-- &lt;input type="hidden" name="_method" value="PUT"&gt; --}}
+
+    &lt;input name="title" value="{{ old('title', $post-&gt;title) }}"
+           class="@error('title') is-invalid @enderror"&gt;
+    @error('title')
+        &lt;div class="error"&gt;{{ $message }}&lt;/div&gt;
+    @enderror
+
+    @if ($errors-&gt;any())
+        &lt;ul&gt;@foreach ($errors-&gt;all() as $e) &lt;li&gt;{{ $e }}&lt;/li&gt; @endforeach&lt;/ul&gt;
+    @endif
+&lt;/form&gt;</code></pre>
+
+    <h3>Layout: وراثت قالب (Template Inheritance)</h3>
+    <pre><code class="language-xml">{{-- resources/views/layouts/app.blade.php --}}
+&lt;html&gt;
+&lt;head&gt;&lt;title&gt;@yield('title', 'سایت من')&lt;/title&gt;&lt;/head&gt;
+&lt;body&gt;
+    @section('sidebar') منوی پیش‌فرض @show
+    &lt;main&gt;@yield('content')&lt;/main&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+
+{{-- resources/views/posts/index.blade.php --}}
+@extends('layouts.app')
+@section('title', 'مطالب')
+@section('sidebar')
+    @parent                    {{-- محتوای والد را هم نگه دار --}}
+    &lt;p&gt;لینک اضافه&lt;/p&gt;
+@endsection
+@section('content') ... @endsection</code></pre>
+
+    <h3>Layout با Component و Slot (روش مدرن)</h3>
+    <pre><code class="language-xml">{{-- resources/views/components/layout.blade.php  (Anonymous component) --}}
+@props(['title' =&gt; 'سایت من'])
+&lt;html&gt;
+&lt;head&gt;&lt;title&gt;{{ $title }}&lt;/title&gt;&lt;/head&gt;
+&lt;body&gt;
+    @isset($header) &lt;header&gt;{{ $header }}&lt;/header&gt; @endisset
+    &lt;main&gt;{{ $slot }}&lt;/main&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+
+{{-- resources/views/components/alert.blade.php --}}
+@props(['type' =&gt; 'info', 'message'])
+&lt;div {{ $attributes-&gt;merge(['class' =&gt; 'alert alert-'.$type]) }}&gt;
+    {{ $message }}
+&lt;/div&gt;
+
+{{-- استفاده --}}
+&lt;x-layout title="داشبورد"&gt;
+    &lt;x-slot:header&gt;خوش آمدید&lt;/x-slot&gt;          {{-- named slot --}}
+    &lt;x-alert type="error" :message="$error" class="mb-4" /&gt;   {{-- : یعنی عبارت PHP --}}
+    محتوای اصلی (default slot)
+&lt;/x-layout&gt;</code></pre>
+    <pre><code class="language-php">&lt;?php
+// Class-based component:  php artisan make:component Alert
+// app/View/Components/Alert.php + resources/views/components/alert.blade.php
+class Alert extends Component
+{
+    public function __construct(public string $type = 'info', public ?string $message = null) {}
+
+    public function render(): View
+    {
+        return view('components.alert');
+    }
+}</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4><code>@extends</code> / <code>@section</code></h4><ul><li>وراثت قالب، یک والد.</li><li>ساده و قدیمی؛ هنوز پشتیبانی می‌شود.</li><li>انتقال داده کمتر صریح.</li></ul></div>
+      <div class="card"><h4>Components / Slots</h4><ul><li>ترکیب (composition)؛ قابل استفاده مجدد مثل React/Vue.</li><li>propهای صریح با <code>@props</code>، <code>$attributes</code> برای merge کلاس‌ها.</li><li>روش پیش‌فرض starter kitهای جدید.</li></ul></div>
+    </div>
+
+    <h3>View Composer و اشتراک داده</h3>
+    <pre><code class="language-php">&lt;?php
+// AppServiceProvider::boot()
+View::share('appName', config('app.name'));                         // همه viewها
+View::composer('partials.sidebar', fn ($view) =&gt; $view-&gt;with('categories', Category::all()));</code></pre>
+    <div class="callout warn"><p>اجرای کوئری در view (مثلاً <code>$post-&gt;comments</code> درون حلقه بدون eager loading) منبع کلاسیک مشکل <strong>N+1</strong> است. داده را در controller آماده کنید (<code>Post::with('comments')</code>) — جزئیات در صفحه Eloquent.</p></div>
+  </section>
+
+  <!-- ===================================================== 12 -->
+  <section class="lesson" id="csrf-session" data-title="CSRF، Session و Flash">
+    <h2>CSRF، Session و Flash data</h2>
+    <h3>CSRF چیست؟</h3>
+    <p><strong>Cross-Site Request Forgery</strong> حمله‌ای است که در آن سایت مخرب، مرورگر کاربرِ لاگین‌شده را وادار می‌کند درخواستی (مثلاً POST انتقال وجه) به سایت ما بفرستد؛ مرورگر cookie session را خودکار ضمیمه می‌کند و سرور درخواست را معتبر تلقی می‌کند.</p>
+    <p><strong>محافظت Laravel:</strong> برای هر session یک توکن تصادفی تولید و در session ذخیره می‌شود. middleware <code>ValidateCsrfToken</code> (در گروه <code>web</code>) برای همه درخواست‌های <strong>تغییردهنده وضعیت</strong> (POST، PUT، PATCH، DELETE) بررسی می‌کند که توکن ارسالی با توکن session یکسان باشد. منابع توکن به ترتیب:</p>
+    <ol>
+      <li>فیلد <code>_token</code> در فرم (<code>@csrf</code>).</li>
+      <li>هدر <code>X-CSRF-TOKEN</code> (مثلاً از <code>&lt;meta name="csrf-token" content="{{ csrf_token() }}"&gt;</code>).</li>
+      <li>هدر <code>X-XSRF-TOKEN</code>: Laravel cookie رمزشده <code>XSRF-TOKEN</code> را در هر پاسخ می‌فرستد و کتابخانه‌هایی مثل Axios آن را خودکار در این هدر برمی‌گردانند.</li>
+    </ol>
+    <p>سایت مهاجم به دلیل <strong>Same-Origin Policy</strong> نمی‌تواند توکن را بخواند، پس نمی‌تواند درخواست معتبر بسازد. عدم تطابق توکن ⇒ <code>TokenMismatchException</code> ⇒ پاسخ <strong>419 Page Expired</strong>.</p>
+    <pre><code class="language-php">&lt;?php
+// استثنا کردن URIها (مثلاً webhookهای سرویس خارجی که توکن ندارند)
+-&gt;withMiddleware(function (Middleware $middleware) {
+    $middleware-&gt;validateCsrfTokens(except: [
+        'stripe/*',
+        'payment/callback',
+    ]);
+})
+// Laravel ≤ 10: آرایه $except در App\Http\Middleware\VerifyCsrfToken</code></pre>
+    <div class="callout exam"><p>چرا routeهای <code>api.php</code> نیاز به CSRF ندارند؟ چون stateless هستند و با <strong>توکن در هدر Authorization</strong> احراز هویت می‌شوند، نه cookie. مرورگر هدر Authorization را خودکار به درخواست‌های cross-site اضافه نمی‌کند، پس CSRF موضوعیت ندارد. اما اگر SPA با <strong>Sanctum cookie-based</strong> احراز هویت کند، CSRF دوباره لازم است (endpoint <code>/sanctum/csrf-cookie</code>).</p></div>
+    <div class="callout tip"><p>یک لایه دفاعی دیگر: cookie session در Laravel به صورت پیش‌فرض <code>SameSite=lax</code> و <code>HttpOnly</code> است (در <code>config/session.php</code>). همچنین درخواست‌های GET نباید هرگز وضعیت را تغییر دهند؛ چون CSRF روی آن‌ها بررسی نمی‌شود.</p></div>
+
+    <h3>Session</h3>
+    <p>HTTP بی‌حالت است؛ <strong>Session</strong> داده کاربر را بین درخواست‌ها نگه می‌دارد. شناسه session در cookie رمزشده ذخیره می‌شود و داده در driver.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Driver</th><th>محل ذخیره</th><th>ملاحظات</th></tr></thead>
+      <tbody>
+        <tr><td><code>file</code></td><td><code>storage/framework/sessions</code></td><td>ساده؛ برای چند سرور مناسب نیست</td></tr>
+        <tr><td><code>cookie</code></td><td>cookie رمزشده سمت کاربر</td><td>محدودیت حجم ~4KB</td></tr>
+        <tr><td><code>database</code></td><td>جدول <code>sessions</code></td><td>پیش‌فرض Laravel 11؛ قابل اشتراک بین سرورها</td></tr>
+        <tr><td><code>redis</code> / <code>memcached</code></td><td>حافظه</td><td>سریع؛ انتخاب رایج production و چند سرور</td></tr>
+        <tr><td><code>array</code></td><td>حافظه همان درخواست</td><td>برای تست</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+$value = $request-&gt;session()-&gt;get('key', 'default');
+session(['cart_id' =&gt; 12]);                // put
+session()-&gt;put('key', 'value');
+session()-&gt;push('user.teams', 'developers');
+$v = session()-&gt;pull('key');               // get + forget
+session()-&gt;forget('key');  session()-&gt;flush();
+session()-&gt;has('key');  session()-&gt;exists('key');   // has: موجود و غیر null
+
+// امنیت
+$request-&gt;session()-&gt;regenerate();         // بعد از login — جلوگیری از Session Fixation
+$request-&gt;session()-&gt;invalidate();         // در logout: حذف داده و شناسه جدید
+$request-&gt;session()-&gt;regenerateToken();    // توکن CSRF جدید</code></pre>
+
+    <h3>Flash data و الگوی PRG</h3>
+    <p><strong>Flash data</strong> داده‌ای است که فقط برای <strong>درخواست بعدی</strong> در session باقی می‌ماند و سپس خودکار حذف می‌شود؛ کاربرد اصلی: پیام موفقیت بعد از redirect.</p>
+    <pre><code class="language-php">&lt;?php
+// Post/Redirect/Get: بعد از POST موفق redirect کنید تا refresh فرم را دوباره ارسال نکند
+public function store(StorePostRequest $request)
+{
+    Post::create($request-&gt;validated());
+    return redirect()-&gt;route('posts.index')-&gt;with('status', 'مطلب ذخیره شد');
+}
+
+session()-&gt;flash('status', '...');   // برای درخواست بعدی
+session()-&gt;now('status', '...');     // فقط همین درخواست
+session()-&gt;reflash();                 // نگه داشتن همه flashها برای یک درخواست دیگر
+session()-&gt;keep(['status']);
+return back()-&gt;withInput();           // flash کردن ورودی‌ها برای old()</code></pre>
+    <pre><code class="language-xml">@if (session('status'))
+    &lt;div class="alert"&gt;{{ session('status') }}&lt;/div&gt;
+@endif</code></pre>
+    <div class="callout note"><p>Session blocking: درخواست‌های همزمان یک کاربر ممکن است داده session هم را بازنویسی کنند. Laravel برای routeهای خاص <code>-&gt;block($lockSeconds = 10, $waitSeconds = 10)</code> دارد که با atomic lock جلوی race condition را می‌گیرد (نیازمند cache driver پشتیبان lock).</p></div>
+  </section>
+
+  <!-- ===================================================== 13 -->
+  <section class="lesson" id="auth" data-title="احراز هویت و مجوز (مرور)">
+    <h2>احراز هویت و مجوز (مرور)</h2>
+    <p>تفکیک مهم: <strong>Authentication</strong> = «تو کیستی؟» (شناسایی)، <strong>Authorization</strong> = «اجازه داری این کار را بکنی؟» (دسترسی). شکست اولی ⇒ <code>401</code> یا redirect به login؛ شکست دومی ⇒ <code>403</code>.</p>
+
+    <h3>Guards و Providers</h3>
+    <dl class="terms">
+      <dt>Guard</dt><dd>تعیین می‌کند کاربر <strong>در هر درخواست چگونه</strong> شناسایی شود: <code>session</code> (cookie + session، برای وب)، یا guardهای مبتنی بر توکن مثل <code>sanctum</code>. guard پیش‌فرض <code>web</code> است.</dd>
+      <dt>Provider</dt><dd>تعیین می‌کند کاربران <strong>از کجا بازیابی</strong> شوند: <code>eloquent</code> (مدل <code>App\Models\User</code>) یا <code>database</code> (Query Builder).</dd>
+    </dl>
+    <pre><code class="language-php">&lt;?php
+// config/auth.php (خلاصه)
+'defaults' =&gt; ['guard' =&gt; 'web', 'passwords' =&gt; 'users'],
+'guards' =&gt; [
+    'web'   =&gt; ['driver' =&gt; 'session', 'provider' =&gt; 'users'],
+    'admin' =&gt; ['driver' =&gt; 'session', 'provider' =&gt; 'admins'],
+],
+'providers' =&gt; [
+    'users'  =&gt; ['driver' =&gt; 'eloquent', 'model' =&gt; App\Models\User::class],
+    'admins' =&gt; ['driver' =&gt; 'eloquent', 'model' =&gt; App\Models\Admin::class],
+],</code></pre>
+
+    <h3>Auth facade — لاگین دستی</h3>
+    <pre><code class="language-php">&lt;?php
+public function login(Request $request)
+{
+    $credentials = $request-&gt;validate([
+        'email'    =&gt; ['required', 'email'],
+        'password' =&gt; ['required'],
+    ]);
+
+    if (Auth::attempt($credentials, $request-&gt;boolean('remember'))) {
+        $request-&gt;session()-&gt;regenerate();          // Session Fixation
+        return redirect()-&gt;intended('/dashboard');  // بازگشت به صفحه درخواستی قبلی
+    }
+
+    return back()-&gt;withErrors(['email' =&gt; 'اطلاعات ورود نادرست است.'])-&gt;onlyInput('email');
+}
+
+public function logout(Request $request)
+{
+    Auth::logout();
+    $request-&gt;session()-&gt;invalidate();
+    $request-&gt;session()-&gt;regenerateToken();
+    return redirect('/');
+}
+
+Auth::user();  Auth::id();  Auth::check();  Auth::guest();
+auth()-&gt;user();  $request-&gt;user();               // همه معادل
+Auth::guard('admin')-&gt;attempt($credentials);
+Auth::login($user);  Auth::loginUsingId(1);  Auth::once($credentials);   // once: بدون session</code></pre>
+    <p><code>Auth::attempt</code> کاربر را با فیلدهای غیر password پیدا می‌کند و رمز را با <code>Hash::check</code> مقایسه می‌کند. رمز همیشه با <code>Hash::make()</code> (bcrypt پیش‌فرض، argon2 قابل انتخاب) ذخیره می‌شود؛ در Laravel 11 مدل <code>User</code> cast <code>'password' =&gt; 'hashed'</code> دارد که هنگام انتساب خودکار hash می‌کند.</p>
+
+    <h3>Middlewareهای مرتبط</h3>
+    <ul>
+      <li><code>auth</code> / <code>auth:sanctum</code> / <code>auth:admin</code>: فقط کاربر احراز هویت‌شده با guard مشخص. مهمان در وب به route <code>login</code> redirect و در JSON پاسخ 401 می‌گیرد.</li>
+      <li><code>guest</code>: فقط مهمان‌ها (صفحه login برای کاربر لاگین‌شده redirect می‌شود).</li>
+      <li><code>verified</code>: ایمیل تأیید شده باشد (مدل <code>MustVerifyEmail</code>).</li>
+      <li><code>password.confirm</code>: تأیید مجدد رمز برای عملیات حساس.</li>
+    </ul>
+
+    <h3>Starter Kits</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Kit</th><th>ویژگی‌ها</th><th>زمان استفاده</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Breeze</strong></td><td>حداقلی: login، register، reset password، email verification، profile؛ stackهای Blade، Livewire، React/Vue (Inertia) و API</td><td>نقطه شروع ساده و قابل فهم (Laravel 10–11)</td></tr>
+        <tr><td><strong>Jetstream</strong></td><td>کامل‌تر: 2FA، مدیریت session، API token، Teams؛ مبتنی بر <strong>Fortify</strong>؛ Livewire یا Inertia</td><td>برنامه‌های SaaS با نیازهای پیشرفته</td></tr>
+        <tr><td><strong>Starter kitهای Laravel 12</strong></td><td>React، Vue (Inertia + TypeScript + shadcn) و Livewire (Flux UI)؛ گزینه احراز هویت <strong>WorkOS AuthKit</strong> (SSO، passkey، social login). Breeze و Jetstream دیگر به‌روزرسانی ویژگی جدید نمی‌گیرند.</td><td>پروژه‌های جدید از Laravel 12</td></tr>
+        <tr><td><strong>Fortify</strong></td><td>backend احراز هویت بدون UI (headless)</td><td>وقتی frontend جداگانه/سفارشی دارید</td></tr>
+        <tr><td><strong>Sanctum</strong> / <strong>Passport</strong></td><td>احراز هویت API: توکن ساده و SPA cookie / سرور کامل OAuth2</td><td>جزئیات در صفحه Laravel Deeper</td></tr>
+        <tr><td><strong>Socialite</strong></td><td>ورود با Google، GitHub و…</td><td>OAuth login کاربران</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Authorization: Gate در برابر Policy</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Gate</h4><ul><li>Closure ساده با نام، معمولاً در <code>AppServiceProvider::boot</code>.</li><li>برای مجوزهای <strong>غیر وابسته به مدل</strong> یا عمومی: «دسترسی به پنل ادمین»، «مشاهده گزارش مالی».</li></ul></div>
+      <div class="card"><h4>Policy</h4><ul><li>کلاسی که مجوزهای <strong>یک مدل</strong> را گروه‌بندی می‌کند: <code>viewAny</code>، <code>view</code>، <code>create</code>، <code>update</code>، <code>delete</code>، <code>restore</code>، <code>forceDelete</code>.</li><li>کشف خودکار بر اساس قرارداد نام (<code>App\Models\Post</code> → <code>App\Policies\PostPolicy</code>).</li></ul></div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+// Gate
+Gate::define('access-admin', fn (User $user) =&gt; $user-&gt;is_admin);
+if (Gate::denies('access-admin')) abort(403);
+
+// Policy:  php artisan make:policy PostPolicy --model=Post
+class PostPolicy
+{
+    public function update(User $user, Post $post): bool
+    {
+        return $user-&gt;id === $post-&gt;user_id;
+    }
+}
+
+// استفاده
+Gate::authorize('update', $post);                 // AuthorizationException → 403
+$request-&gt;user()-&gt;can('update', $post);
+Route::put('/posts/{post}', ...)-&gt;can('update', 'post');   // middleware can:update,post</code></pre>
+    <pre><code class="language-xml">@can('update', $post) ... @endcan   @cannot('delete', $post) ... @endcannot</code></pre>
+    <p>جزئیات بیشتر (متد <code>before</code>، پاسخ <code>Response::deny</code>، guest user، ثبت دستی policy) در صفحه <strong>Laravel Deeper</strong> آمده است.</p>
+  </section>
+
+  <!-- ===================================================== 14 -->
+  <section class="lesson" id="database-basics" data-title="Migration، Seeder و Factory">
+    <h2>Migration، Seeder و Factory</h2>
+    <h3>Migration</h3>
+    <p><strong>Migration</strong> نسخه‌بندی (version control) ساختار دیتابیس است: تغییرات schema به صورت کد PHP نوشته، در git ثبت و در همه محیط‌ها به ترتیب یکسان اجرا می‌شوند. Laravel اجراشده‌ها را در جدول <code>migrations</code> با شماره <strong>batch</strong> ثبت می‌کند.</p>
+    <pre><code class="language-bash">php artisan make:migration create_posts_table          # Laravel از نام، جدول را حدس می‌زند
+php artisan make:migration add_status_to_posts_table --table=posts
+php artisan make:model Post -mfs                        # مدل + migration + factory + seeder</code></pre>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration      // کلاس anonymous — جلوگیری از تداخل نام
+{
+    public function up(): void
+    {
+        Schema::create('posts', function (Blueprint $table) {
+            $table-&gt;id();                                            // BIGINT UNSIGNED AI PK
+            $table-&gt;foreignId('user_id')-&gt;constrained()-&gt;cascadeOnDelete();
+            $table-&gt;string('title');
+            $table-&gt;string('slug')-&gt;unique();
+            $table-&gt;text('body')-&gt;nullable();
+            $table-&gt;enum('status', ['draft', 'published'])-&gt;default('draft');
+            $table-&gt;unsignedInteger('views')-&gt;default(0);
+            $table-&gt;json('meta')-&gt;nullable();
+            $table-&gt;timestamp('published_at')-&gt;nullable()-&gt;index();
+            $table-&gt;timestamps();                                    // created_at, updated_at
+            $table-&gt;softDeletes();                                   // deleted_at
+            $table-&gt;index(['user_id', 'status']);                    // ایندکس ترکیبی
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('posts');
+    }
+};
+
+// تغییر جدول موجود
+Schema::table('posts', function (Blueprint $table) {
+    $table-&gt;string('subtitle')-&gt;nullable()-&gt;after('title');
+    $table-&gt;string('title', 500)-&gt;change();      // Laravel 11: بدون doctrine/dbal؛
+                                                 // همه modifierهای قبلی را دوباره ذکر کنید
+    $table-&gt;renameColumn('body', 'content');
+    $table-&gt;dropColumn('views');
+});</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دستور</th><th>عملکرد</th></tr></thead>
+      <tbody>
+        <tr><td><code>migrate</code></td><td>اجرای migrationهای اجرانشده (در production نیاز به <code>--force</code>)</td></tr>
+        <tr><td><code>migrate:status</code></td><td>وضعیت هر migration</td></tr>
+        <tr><td><code>migrate --pretend</code></td><td>نمایش SQL بدون اجرا</td></tr>
+        <tr><td><code>migrate:rollback</code> / <code>--step=2</code></td><td>برگرداندن آخرین batch / n migration آخر (اجرای <code>down</code>)</td></tr>
+        <tr><td><code>migrate:reset</code></td><td>rollback همه</td></tr>
+        <tr><td><code>migrate:refresh</code></td><td>rollback همه + migrate دوباره (با <code>down</code>ها)</td></tr>
+        <tr><td><code>migrate:fresh --seed</code></td><td><strong>drop همه جداول</strong> + migrate + seed (بدون اجرای down)</td></tr>
+        <tr><td><code>schema:dump --prune</code></td><td>ادغام migrationهای قدیمی در یک فایل schema SQL</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p><code>migrate:fresh</code> و <code>migrate:refresh</code> در production یعنی <strong>از دست رفتن همه داده‌ها</strong>. همچنین migrationی را که در production اجرا شده هرگز ویرایش نکنید؛ برای تغییر، migration جدید بسازید (چون فایل ویرایش‌شده دوباره اجرا نمی‌شود و محیط‌ها ناهمگون می‌شوند).</p></div>
+    <div class="callout tip"><p>Zero-downtime: تغییرات مخرب (حذف/تغییر نام ستون) را در چند مرحله انجام دهید: ستون جدید اضافه کنید → کد را طوری deploy کنید که هر دو را پشتیبانی کند → داده را منتقل کنید → ستون قدیمی را در deploy بعدی حذف کنید. روی جداول بزرگ، افزودن ایندکس ممکن است جدول را قفل کند.</p></div>
+
+    <h3>Factory</h3>
+    <p><strong>Factory</strong> داده جعلی ولی واقع‌گرایانه برای مدل‌ها تولید می‌کند (با کتابخانه Faker از طریق <code>fake()</code>)؛ کاربرد اصلی در <strong>تست</strong> و seeding محیط توسعه.</p>
+    <pre><code class="language-php">&lt;?php
+// database/factories/PostFactory.php
+class PostFactory extends Factory
+{
+    public function definition(): array
+    {
+        return [
+            'user_id' =&gt; User::factory(),          // ساخت خودکار والد
+            'title'   =&gt; fake()-&gt;sentence(),
+            'slug'    =&gt; fake()-&gt;unique()-&gt;slug(),
+            'body'    =&gt; fake()-&gt;paragraphs(3, true),
+            'status'  =&gt; 'draft',
+        ];
+    }
+
+    public function published(): static           // state
+    {
+        return $this-&gt;state(fn () =&gt; ['status' =&gt; 'published', 'published_at' =&gt; now()]);
+    }
+}
+
+Post::factory()-&gt;count(10)-&gt;published()-&gt;create();  // ذخیره در DB
+Post::factory()-&gt;make();                              // بدون ذخیره
+User::factory()-&gt;has(Post::factory()-&gt;count(3))-&gt;create();</code></pre>
+    <p>(states پیشرفته، relationship در factory و sequence در صفحه Eloquent.)</p>
+
+    <h3>Seeder</h3>
+    <pre><code class="language-php">&lt;?php
+// php artisan make:seeder RoleSeeder
+class DatabaseSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $this-&gt;call([RoleSeeder::class, CategorySeeder::class]);   // داده پایه/مرجع
+        User::factory(10)-&gt;create();                                 // داده آزمایشی
+    }
+}</code></pre>
+    <pre><code class="language-bash">php artisan db:seed
+php artisan db:seed --class=RoleSeeder
+php artisan migrate:fresh --seed</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4>Seeder</h4><ul><li>«چه داده‌ای» در دیتابیس قرار گیرد.</li><li>داده مرجع (نقش‌ها، کشورها) یا مجموعه داده توسعه.</li><li>با <code>db:seed</code> اجرا می‌شود.</li></ul></div>
+      <div class="card"><h4>Factory</h4><ul><li>«چطور» یک نمونه مدل با داده جعلی ساخته شود.</li><li>در تست‌ها و داخل Seederها استفاده می‌شود.</li><li>برای داده واقعی production مناسب نیست.</li></ul></div>
+    </div>
+  </section>
+
+  <!-- ===================================================== 15 -->
+  <section class="lesson" id="artisan-errors" data-title="Artisan، خطاها و Logging">
+    <h2>Artisan، مدیریت خطا و Logging</h2>
+    <h3>Artisan</h3>
+    <p><strong>Artisan</strong> رابط خط فرمان Laravel است (مبتنی بر Symfony Console). همه دستورات با <code>php artisan list</code> و راهنمای هر دستور با <code>php artisan help migrate</code> قابل مشاهده است.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دسته</th><th>دستورات</th></tr></thead>
+      <tbody>
+        <tr><td>Generator</td><td><code>make:model</code> (<code>-m -f -s -c -r --policy -a</code>)، <code>make:controller</code>، <code>make:request</code>، <code>make:middleware</code>، <code>make:migration</code>، <code>make:seeder</code>، <code>make:factory</code>، <code>make:policy</code>، <code>make:rule</code>، <code>make:resource</code>، <code>make:component</code>، <code>make:job</code>، <code>make:event</code>، <code>make:listener</code>، <code>make:mail</code>، <code>make:notification</code>، <code>make:command</code>، <code>make:provider</code>، <code>make:observer</code>، <code>make:cast</code>، <code>make:test</code>، و در 11+: <code>make:class</code>، <code>make:enum</code>، <code>make:interface</code>، <code>make:trait</code></td></tr>
+        <tr><td>نصب در 11+</td><td><code>install:api</code> (Sanctum + routes/api.php)، <code>install:broadcasting</code> (Reverb + channels.php)، <code>config:publish</code></td></tr>
+        <tr><td>توسعه</td><td><code>serve</code>، <code>tinker</code> (REPL)، <code>route:list</code>، <code>about</code>، <code>db:show</code>، <code>db:table</code>، <code>model:show Post</code>، <code>pail</code> (tail لاگ)</td></tr>
+        <tr><td>Cache/Deploy</td><td><code>optimize</code> / <code>optimize:clear</code>، <code>config:cache</code>، <code>route:cache</code>، <code>view:cache</code>، <code>event:cache</code>، <code>cache:clear</code></td></tr>
+        <tr><td>سایر</td><td><code>key:generate</code>، <code>storage:link</code>، <code>down</code>/<code>up</code>، <code>queue:work</code>، <code>schedule:run</code>، <code>schedule:list</code>، <code>vendor:publish</code></td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-bash"># مجموعه‌ای کامل برای یک مدل: migration, factory, seeder, policy, resource controller, form requests
+php artisan make:model Post --all
+
+# دستورات deploy رایج
+composer install --no-dev --optimize-autoloader
+php artisan migrate --force
+php artisan optimize          # config + route + view + event cache (11+)
+php artisan queue:restart</code></pre>
+    <p>(ساخت دستور Artisan سفارشی و Scheduler در صفحه Laravel Deeper.)</p>
+
+    <h3>مدیریت خطا (Exception Handling)</h3>
+    <p>همه exceptionها توسط handler مرکزی گرفته می‌شوند که دو کار انجام می‌دهد: <strong>report</strong> (ثبت در لاگ یا ارسال به سرویس‌هایی مثل Sentry) و <strong>render</strong> (تبدیل به پاسخ HTTP). در Laravel 11 این کار در <code>bootstrap/app.php</code> پیکربندی می‌شود:</p>
+    <pre><code class="language-php">&lt;?php
+-&gt;withExceptions(function (Exceptions $exceptions) {
+    // گزارش سفارشی
+    $exceptions-&gt;report(function (PaymentFailedException $e) {
+        Log::channel('payments')-&gt;error($e-&gt;getMessage());
+    });
+
+    // پاسخ سفارشی — مثلاً JSON یکدست برای API
+    $exceptions-&gt;render(function (NotFoundHttpException $e, Request $request) {
+        if ($request-&gt;is('api/*')) {
+            return response()-&gt;json(['message' =&gt; 'Resource not found.'], 404);
+        }
+    });
+
+    $exceptions-&gt;dontReport([InvalidCouponException::class]);
+})</code></pre>
+    <pre><code class="language-php">&lt;?php
+abort(404);  abort(403, 'Unauthorized action.');
+abort_if(! $user-&gt;isAdmin(), 403);
+abort_unless($post-&gt;isPublished(), 404);
+report($e);                  // گزارش بدون توقف اجرای برنامه
+throw ValidationException::withMessages(['email' =&gt; 'این ایمیل مسدود است.']);
+
+// exception با report/render داخلی
+class OrderLimitExceeded extends Exception
+{
+    public function render(Request $request) { return response()-&gt;json(['message' =&gt; $this-&gt;getMessage()], 422); }
+}</code></pre>
+    <ul>
+      <li><strong>صفحات خطای سفارشی:</strong> فایل <code>resources/views/errors/404.blade.php</code> (یا <code>500</code>، <code>419</code>، <code>503</code>) خودکار استفاده می‌شود؛ <code>4xx.blade.php</code> و <code>5xx.blade.php</code> به عنوان fallback.</li>
+      <li>exceptionهای HTTP مثل <code>ModelNotFoundException</code> به 404، <code>AuthorizationException</code> به 403، <code>ValidationException</code> به 422/redirect و <code>AuthenticationException</code> به 401/redirect تبدیل می‌شوند و به صورت پیش‌فرض report نمی‌شوند.</li>
+      <li>در Laravel ≤ 10 همه این‌ها در <code>app/Exceptions/Handler.php</code> با متدهای <code>register()</code>، <code>reportable()</code>، <code>renderable()</code> و آرایه <code>$dontReport</code> انجام می‌شد.</li>
+    </ul>
+
+    <h3>Logging</h3>
+    <p>Logging بر پایه کتابخانه <strong>Monolog</strong> است و در <code>config/logging.php</code> با <strong>channel</strong>ها پیکربندی می‌شود.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Channel driver</th><th>توضیح</th></tr></thead>
+      <tbody>
+        <tr><td><code>stack</code></td><td>ترکیب چند channel (پیش‌فرض؛ در 11 با <code>LOG_STACK</code>)</td></tr>
+        <tr><td><code>single</code> / <code>daily</code></td><td>یک فایل / فایل روزانه با نگهداری n روز (<code>days</code>)</td></tr>
+        <tr><td><code>slack</code></td><td>ارسال به Slack (معمولاً برای سطح critical)</td></tr>
+        <tr><td><code>syslog</code> / <code>errorlog</code> / <code>stderr</code></td><td>لاگ سیستم؛ <code>stderr</code> برای Docker/Kubernetes</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+// سطوح RFC 5424: emergency, alert, critical, error, warning, notice, info, debug
+Log::info('Order placed', ['order_id' =&gt; $order-&gt;id, 'user_id' =&gt; $user-&gt;id]);
+Log::error('Payment failed', ['exception' =&gt; $e]);
+Log::channel('slack')-&gt;critical('Disk almost full');
+Log::stack(['daily', 'slack'])-&gt;warning('...');
+Log::withContext(['request_id' =&gt; $requestId]);   // context برای همه لاگ‌های بعدی این درخواست</code></pre>
+    <div class="callout tip"><p>لاگ ساختاریافته بنویسید: پیام ثابت + آرایه context (نه رشته‌ای که مقادیر را درون خود دارد) تا در ابزارهای جمع‌آوری لاگ قابل جستجو باشد. هرگز رمز، توکن یا اطلاعات کارت را لاگ نکنید. <code>LOG_LEVEL</code> در production معمولاً <code>warning</code> یا <code>error</code> است.</p></div>
+  </section>
+
+  <!-- ===================================================== 16 -->
+  <section class="lesson" id="ecosystem" data-title="اکوسیستم Laravel">
+    <h2>اکوسیستم Laravel</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ابزار</th><th>دسته</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Sail</strong></td><td>محیط توسعه</td><td>محیط توسعه مبتنی بر Docker Compose با PHP، MySQL/PostgreSQL، Redis و…؛ دستور <code>./vendor/bin/sail up</code></td></tr>
+        <tr><td><strong>Herd</strong> / Valet / Homestead</td><td>محیط توسعه</td><td>Herd: محیط native برای macOS/Windows؛ Valet (macOS) و Homestead (Vagrant) قدیمی‌ترند</td></tr>
+        <tr><td><strong>Sanctum</strong></td><td>احراز هویت API</td><td>توکن‌های API سبک (personal access token با abilities) و احراز هویت SPA مبتنی بر cookie</td></tr>
+        <tr><td><strong>Passport</strong></td><td>احراز هویت API</td><td>پیاده‌سازی کامل سرور <strong>OAuth2</strong> (authorization code، client credentials…)؛ وقتی سرویس‌های third-party باید به API شما دسترسی بگیرند</td></tr>
+        <tr><td><strong>Horizon</strong></td><td>صف</td><td>داشبورد و پیکربندی کد-محور workerهای صف <strong>Redis</strong>: متریک، تلاش مجدد jobهای شکست‌خورده، auto-balancing</td></tr>
+        <tr><td><strong>Telescope</strong></td><td>دیباگ</td><td>«دستیار دیباگ» برای محیط توسعه: درخواست‌ها، کوئری‌ها، exceptionها، jobها، mailها، cache</td></tr>
+        <tr><td><strong>Pulse</strong></td><td>مانیتورینگ</td><td>داشبورد سبک <strong>production</strong>: endpointهای کند، کوئری‌های کند، کاربران پرمصرف، وضعیت صف و سرور</td></tr>
+        <tr><td><strong>Octane</strong></td><td>کارایی</td><td>اجرای برنامه روی app serverهای long-running (<strong>FrankenPHP</strong>، Swoole، RoadRunner)؛ boot یک‌باره و سرعت بسیار بالاتر، با ریسک state leakage</td></tr>
+        <tr><td><strong>Reverb</strong></td><td>Real-time</td><td>سرور WebSocket رسمی و first-party برای Broadcasting</td></tr>
+        <tr><td><strong>Forge</strong></td><td>استقرار</td><td>provision و مدیریت سرور (DigitalOcean، AWS، …): Nginx، PHP، SSL، deploy script</td></tr>
+        <tr><td><strong>Vapor</strong></td><td>استقرار</td><td>استقرار <strong>serverless</strong> روی AWS Lambda</td></tr>
+        <tr><td><strong>Envoyer</strong> / <strong>Laravel Cloud</strong></td><td>استقرار</td><td>Envoyer: deploy بدون downtime؛ Laravel Cloud: پلتفرم میزبانی کاملاً مدیریت‌شده (۲۰۲۵)</td></tr>
+        <tr><td><strong>Pint</strong></td><td>کیفیت کد</td><td>code style fixer مبتنی بر PHP-CS-Fixer با preset <code>laravel</code>؛ <code>./vendor/bin/pint</code></td></tr>
+        <tr><td><strong>Pest</strong></td><td>تست</td><td>فریم‌ورک تست با syntax بیانی روی PHPUnit؛ گزینه پیش‌فرض در نصب‌کننده Laravel</td></tr>
+        <tr><td><strong>Dusk</strong></td><td>تست</td><td>تست مرورگر end-to-end با ChromeDriver</td></tr>
+        <tr><td><strong>Scout</strong></td><td>جستجو</td><td>جستجوی full-text روی مدل‌ها با Meilisearch، Algolia، Typesense یا driver دیتابیس</td></tr>
+        <tr><td><strong>Cashier</strong></td><td>پرداخت</td><td>اشتراک و صورتحساب Stripe/Paddle</td></tr>
+        <tr><td><strong>Socialite</strong></td><td>احراز هویت</td><td>ورود OAuth با Google، GitHub و…</td></tr>
+        <tr><td><strong>Livewire</strong> / <strong>Inertia</strong></td><td>Frontend</td><td>Livewire: UI پویا با PHP و Blade؛ Inertia: SPA با React/Vue بدون ساخت API جداگانه</td></tr>
+        <tr><td><strong>Nova</strong> / Filament</td><td>Admin</td><td>Nova: پنل مدیریت رسمی (تجاری)؛ Filament: جایگزین محبوب متن‌باز جامعه</td></tr>
+        <tr><td><strong>Pennant</strong> / <strong>Precognition</strong></td><td>متفرقه</td><td>Feature flag / validation زنده فرم‌ها پیش از submit با همان قواعد backend</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>سه‌گانه‌ای که زیاد با هم اشتباه گرفته می‌شود: <strong>Telescope</strong> = دیباگ دقیق در توسعه (هر درخواست/کوئری)، <strong>Pulse</strong> = مانیتورینگ تجمیعی و کم‌سربار در production، <strong>Horizon</strong> = مدیریت و مانیتورینگ صف‌های Redis. و دوگانه <strong>Sanctum</strong> (API خودی، SPA و موبایل) در برابر <strong>Passport</strong> (نیاز به OAuth2 کامل برای third-party).</p></div>
+  </section>
+
+  <!-- ===================================================== QUESTIONS -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-laravel-basics-1">
+      <summary>چرخه عمر یک درخواست HTTP در Laravel را از لحظه ورود به سرور تا ارسال پاسخ به کاربر به ترتیب شرح دهید.</summary>
+      <div class="answer">
+        <p><strong>خلاصه:</strong> همه درخواست‌ها از یک <strong>front controller</strong> واحد (<code>public/index.php</code>) وارد می‌شوند، از container و kernel می‌گذرند، در یک pipeline از middlewareها به controller می‌رسند و پاسخ از همان مسیر برمی‌گردد.</p>
+        <ol>
+          <li><strong>index.php:</strong> بررسی maintenance mode، بارگذاری Composer autoloader، require کردن <code>bootstrap/app.php</code>.</li>
+          <li><strong>bootstrap/app.php:</strong> ساخت <code>Application</code> که همان <strong>Service Container</strong> است و پیکربندی routing/middleware/exceptions.</li>
+          <li><code>$app-&gt;handleRequest(Request::capture())</code> ⇒ <strong>HTTP Kernel</strong> resolve می‌شود.</li>
+          <li><strong>Bootstrap کرنل:</strong> بارگذاری <code>.env</code> و config، تنظیم exception handler، ثبت facadeها، اجرای <code>register()</code> همه providerها و سپس <code>boot()</code> همه.</li>
+          <li><strong>Global middleware</strong> (TrimStrings، TrustProxies، …) از طریق <code>Pipeline</code>.</li>
+          <li><strong>Router</strong> route مطابق را پیدا می‌کند؛ سپس middlewareهای گروه (<code>web</code>: session، CSRF، <code>SubstituteBindings</code>) و route اجرا می‌شوند.</li>
+          <li><strong>Controller:</strong> با DI ساخته می‌شود؛ Form Request validate می‌شود؛ مقدار برگشتی به <code>Response</code> تبدیل می‌شود.</li>
+          <li>پاسخ از middlewareها به ترتیب معکوس عبور می‌کند (منطق «after»)، <code>send()</code> می‌شود، و در نهایت <code>terminate()</code> برای terminable middlewareها اجرا می‌شود.</li>
+        </ol>
+        <pre><code class="language-plaintext">index.php → app.php (Container) → Kernel::handle → bootstrap(providers register→boot)
+→ global MW → Router → group/route MW → Controller → Response → MW (reverse) → send → terminate</code></pre>
+        <p><strong>نکات تکمیلی:</strong> در Laravel ≤ 10 به جای <code>handleRequest</code>، کرنل صریحاً در <code>index.php</code> ساخته و <code>handle</code>/<code>terminate</code> فراخوانی می‌شد. در PHP-FPM این چرخه برای هر درخواست تکرار می‌شود؛ به همین دلیل <code>config:cache</code> و <code>route:cache</code> در production اهمیت دارند و Octane با نگه‌داشتن برنامه در حافظه این سربار را حذف می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-2">
+      <summary>الگوی MVC در Laravel چگونه پیاده شده است؟ چرا «Fat Controller» یک ضدالگو است و منطق تجاری را کجا قرار می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> در Laravel <strong>Model</strong> = کلاس‌های Eloquent (داده و قواعد آن)، <strong>View</strong> = Blade یا خروجی JSON، <strong>Controller</strong> = هماهنگ‌کننده بین ورودی HTTP و منطق برنامه. Router هم نقش نگاشت URL به controller را دارد.</p>
+        <p><strong>مشکل Fat Controller:</strong> وقتی validation، کوئری، محاسبات، ارسال ایمیل و فراخوانی API همه در یک متد controller باشند:</p>
+        <ul>
+          <li>منطق قابل <strong>استفاده مجدد</strong> نیست (مثلاً از Artisan command یا Job).</li>
+          <li><strong>تست</strong> فقط از طریق HTTP ممکن است.</li>
+          <li>نقض <strong>Single Responsibility</strong>؛ کلاس‌های هزار خطی.</li>
+        </ul>
+        <p><strong>تقسیم مسئولیت پیشنهادی:</strong></p>
+        <ul>
+          <li><strong>Form Request:</strong> validation و authorization ورودی.</li>
+          <li><strong>Service / Action class:</strong> منطق تجاری (مثلاً <code>PlaceOrderAction</code>).</li>
+          <li><strong>Model:</strong> relationها، scopeها، cast و منطق کوچک مربوط به خود موجودیت.</li>
+          <li><strong>Event/Job:</strong> کارهای جانبی یا کند (ایمیل، webhook).</li>
+          <li><strong>API Resource:</strong> شکل خروجی.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+public function store(StoreOrderRequest $request, PlaceOrderAction $placeOrder)
+{
+    $order = $placeOrder-&gt;execute($request-&gt;user(), $request-&gt;validated());
+    return OrderResource::make($order)-&gt;response()-&gt;setStatusCode(201);
+}</code></pre>
+        <p><strong>Trade-off:</strong> برای CRUD ساده، لایه Service اضافه فقط پیچیدگی می‌آورد؛ اصل این است که controller نازک بماند، نه اینکه برای هر چیزی کلاس بسازیم.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-3">
+      <summary>تفاوت <code>env()</code> و <code>config()</code> چیست؟ چرا توصیه می‌شود <code>env()</code> فقط در فایل‌های config استفاده شود؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> <code>env('KEY')</code> مقدار یک متغیر محیطی (بارگذاری‌شده از <code>.env</code> یا محیط سیستم) را می‌خواند. <code>config('file.key')</code> مقداری را از آرایه‌های پیکربندی <code>config/*.php</code> می‌خواند که داخل container نگه داشته می‌شوند.</p>
+        <p><strong>چرا env فقط در config:</strong></p>
+        <ul>
+          <li>دستور <code>php artisan config:cache</code> همه فایل‌های config را اجرا و نتیجه نهایی را در <code>bootstrap/cache/config.php</code> ذخیره می‌کند.</li>
+          <li>وقتی cache وجود دارد، <strong>فایل <code>.env</code> دیگر بارگذاری نمی‌شود</strong>.</li>
+          <li>در نتیجه <code>env()</code> در controller یا service در production مقدار <code>null</code> برمی‌گرداند — باگی که در محیط local (بدون cache) دیده نمی‌شود.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+// ✗ اشتباه
+$key = env('STRIPE_KEY');
+
+// ✓ صحیح — config/services.php
+'stripe' =&gt; ['key' =&gt; env('STRIPE_KEY')],
+// در کد:
+$key = config('services.stripe.key');</code></pre>
+        <p><strong>مزایای جانبی config():</strong> مقدار پیش‌فرض متمرکز، type casting در یک جا، امکان تغییر در تست (<code>config(['services.stripe.key' =&gt; 'test'])</code>)، و مستندسازی همه تنظیمات در یک مکان. برای تشخیص محیط هم <code>app()-&gt;environment('production')</code> به جای <code>env('APP_ENV')</code>.</p>
+        <p><strong>نکته deploy:</strong> پس از تغییر <code>.env</code> روی سرور، باید <code>config:cache</code> دوباره اجرا شود؛ وگرنه تغییرات دیده نمی‌شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-4">
+      <summary>ساختار Laravel 11 در مقایسه با Laravel 10 چه تغییراتی کرده است؟ در یک پروژه Laravel 11 یک middleware سراسری و یک alias را کجا ثبت می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>ایده اصلی:</strong> Laravel 11 اسکلت را <strong>slim</strong> کرد؛ کلاس‌های پایه در فریم‌ورک ماندند و پیکربندی به API روان <code>Application::configure()</code> در <code>bootstrap/app.php</code> منتقل شد.</p>
+        <ul>
+          <li><strong>حذف از اسکلت:</strong> <code>app/Http/Kernel.php</code>، <code>app/Console/Kernel.php</code>، <code>app/Exceptions/Handler.php</code>، اکثر middlewareهای داخل <code>app/Http/Middleware</code> و همه providerها به جز <code>AppServiceProvider</code>.</li>
+          <li><strong>جایگزین‌ها:</strong> <code>withRouting()</code>، <code>withMiddleware()</code>، <code>withExceptions()</code>؛ Schedule در <code>routes/console.php</code>؛ providerها در <code>bootstrap/providers.php</code>.</li>
+          <li><strong>اختیاری شدن:</strong> <code>routes/api.php</code> با <code>install:api</code> و <code>channels.php</code> با <code>install:broadcasting</code>.</li>
+          <li><strong>پیش‌فرض‌ها:</strong> SQLite و driverهای <code>database</code> برای session/cache/queue، route سلامت <code>/up</code>، متد <code>casts()</code> در مدل، حداقل PHP 8.2.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+// bootstrap/app.php
+-&gt;withMiddleware(function (Middleware $middleware) {
+    $middleware-&gt;append(\App\Http\Middleware\AddRequestId::class);       // global
+    $middleware-&gt;alias(['role' =&gt; \App\Http\Middleware\EnsureUserHasRole::class]);
+    $middleware-&gt;web(append: [\App\Http\Middleware\SetLocale::class]); // گروه web
+})</code></pre>
+        <p><strong>معادل در Laravel 10:</strong> افزودن کلاس به آرایه <code>$middleware</code> و <code>$middlewareAliases</code> در <code>app/Http/Kernel.php</code>. پروژه‌های ارتقایافته از 10 لازم نیست ساختار را تغییر دهند؛ Laravel 11 از ساختار قدیمی هم پشتیبانی می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-5">
+      <summary>Route Model Binding را توضیح دهید. انواع implicit و explicit، کلید سفارشی و scoped binding چه تفاوتی دارند؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> مکانیزمی که پارامتر route را به‌طور خودکار به نمونه مدل تبدیل می‌کند؛ اگر رکورد یافت نشود <code>ModelNotFoundException</code> و در نتیجه <strong>404</strong> رخ می‌دهد. توسط middleware <code>SubstituteBindings</code> انجام می‌شود.</p>
+        <ul>
+          <li><strong>Implicit:</strong> نام پارامتر route = نام متغیر type-hint شده. <code>/posts/{post}</code> + <code>Post $post</code>.</li>
+          <li><strong>Custom key:</strong> جستجو با ستون دیگر: <code>{post:slug}</code> برای یک route یا <code>getRouteKeyName()</code> برای همه.</li>
+          <li><strong>Scoped:</strong> در routeهای تودرتو فرزند از طریق رابطه والد جستجو می‌شود: <code>/users/{user}/posts/{post:slug}</code> ⇒ <code>$user-&gt;posts()-&gt;where('slug', …)</code>. با کلید پیش‌فرض باید <code>-&gt;scopeBindings()</code> زد.</li>
+          <li><strong>Explicit:</strong> تعریف صریح در <code>boot()</code>: <code>Route::model('member', User::class)</code> یا منطق کامل با <code>Route::bind</code>.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+Route::bind('order', fn (string $value) =&gt;
+    Order::where('code', $value)-&gt;where('tenant_id', tenant()-&gt;id)-&gt;firstOrFail()
+);
+
+Route::get('/users/{user}/posts/{post}', fn (User $user, Post $post) =&gt; $post)
+    -&gt;scopeBindings()
+    -&gt;withTrashed()
+    -&gt;missing(fn () =&gt; redirect('/'));</code></pre>
+        <p><strong>مزایا:</strong> حذف کد تکراری <code>findOrFail</code>، 404 خودکار، کنترلر تمیزتر. <strong>نکات:</strong> binding ≠ authorization (هنوز Policy لازم است)؛ scoped binding جلوی دسترسی به منبع والد دیگر را می‌گیرد؛ explicit برای multi-tenant یا جستجوی ترکیبی مفید است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-6">
+      <summary>Middleware چیست؟ تفاوت before middleware، after middleware و terminable middleware را با مثال بیان کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Middleware لایه‌ای است که درخواست HTTP قبل از رسیدن به controller و پاسخ قبل از رسیدن به کاربر از آن عبور می‌کند. Laravel آن‌ها را با کلاس <code>Pipeline</code> به صورت لایه‌های تودرتو (onion) اجرا می‌کند؛ هر لایه می‌تواند درخواست را رد کند (short-circuit) یا با <code>$next($request)</code> به لایه بعد بدهد.</p>
+        <ul>
+          <li><strong>Before:</strong> کد قبل از <code>$next</code> — مثلاً بررسی نقش، تنظیم locale.</li>
+          <li><strong>After:</strong> کد بعد از <code>$next</code> روی <code>$response</code> — مثلاً افزودن header امنیتی.</li>
+          <li><strong>Terminable:</strong> متد <code>terminate()</code> بعد از ارسال پاسخ — مثلاً ثبت متریک.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+class SecurityHeaders
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        if ($request-&gt;is('admin/*') &amp;&amp; ! $request-&gt;user()?-&gt;is_admin) {
+            abort(403);                                    // before
+        }
+        $response = $next($request);
+        $response-&gt;headers-&gt;set('X-Frame-Options', 'DENY'); // after
+        return $response;
+    }
+
+    public function terminate(Request $request, Response $response): void
+    {
+        Metrics::record($request-&gt;path(), $response-&gt;getStatusCode());
+    }
+}</code></pre>
+        <p><strong>پارامتر:</strong> <code>-&gt;middleware('role:editor')</code> ⇒ آرگومان بعد از <code>$next</code>. <strong>ثبت:</strong> global / group / route alias در <code>bootstrap/app.php</code>. <strong>نکته:</strong> برای terminate، container نمونه جدید می‌سازد مگر middleware به صورت singleton ثبت شده باشد. کار سنگین را به جای terminate در Queue بگذارید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-7">
+      <summary>Form Request چیست و چه مزیتی نسبت به <code>$request-&gt;validate()</code> درون controller دارد؟ نقش متدهای <code>authorize</code>، <code>rules</code>، <code>messages</code> و <code>prepareForValidation</code> را بیان کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> کلاسی که از <code>FormRequest</code> ارث‌بری می‌کند و منطق <strong>authorization، validation و نرمال‌سازی ورودی</strong> یک درخواست را کپسوله می‌کند. وقتی در متد controller type-hint شود، container قبل از اجرای متد آن را resolve و validate می‌کند.</p>
+        <ul>
+          <li><code>authorize()</code>: اگر <code>false</code> برگرداند ⇒ <strong>403</strong>؛ معمولاً <code>$this-&gt;user()-&gt;can(...)</code>.</li>
+          <li><code>rules()</code>: آرایه قواعد؛ می‌تواند به <code>$this-&gt;route('post')</code> برای ignore در unique دسترسی داشته باشد.</li>
+          <li><code>messages()</code> / <code>attributes()</code>: پیام و نام فارسی فیلدها.</li>
+          <li><code>prepareForValidation()</code>: تغییر ورودی <strong>قبل</strong> از validate (با <code>$this-&gt;merge</code>)، مثلاً ساخت slug یا حذف فاصله از شماره موبایل.</li>
+          <li><code>after()</code> / <code>passedValidation()</code>: قواعد چندفیلدی و پس‌پردازش.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+class UpdateUserRequest extends FormRequest
+{
+    public function authorize(): bool { return $this-&gt;user()-&gt;can('update', $this-&gt;route('user')); }
+
+    protected function prepareForValidation(): void
+    {
+        $this-&gt;merge(['mobile' =&gt; preg_replace('/\D/', '', (string) $this-&gt;mobile)]);
+    }
+
+    public function rules(): array
+    {
+        return [
+            'email'  =&gt; ['required', 'email', Rule::unique('users')-&gt;ignore($this-&gt;route('user'))],
+            'mobile' =&gt; ['required', 'digits:11'],
+        ];
+    }
+}</code></pre>
+        <p><strong>مقایسه:</strong> <code>validate()</code> برای موارد ساده و یک‌باره کافی است. Form Request: controller نازک‌تر، قابل استفاده مجدد بین store/update، تست‌پذیر جداگانه، ترکیب authorization با validation. <strong>همیشه</strong> از <code>$request-&gt;validated()</code> یا <code>safe()</code> برای داده استفاده کنید نه <code>all()</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-8">
+      <summary>یک اپلیکیشن موبایل به endpoint ثبت سفارش درخواست می‌فرستد و در صورت خطای validation به جای JSON، یک redirect با کد 302 و HTML دریافت می‌کند. علت چیست و چطور رفع می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>علت:</strong> وقتی <code>ValidationException</code> رخ می‌دهد، Laravel نوع پاسخ را با <code>$request-&gt;expectsJson()</code> تعیین می‌کند. این متد فقط وقتی <code>true</code> است که درخواست AJAX باشد (<code>X-Requested-With</code>) یا هدر <code>Accept</code> شامل <code>application/json</code> باشد. کلاینت موبایل این هدر را نمی‌فرستد، پس Laravel آن را درخواست وب فرض کرده و <strong>redirect back</strong> با خطاهای flash شده در session برمی‌گرداند.</p>
+        <p><strong>رفتار درست برای API:</strong> پاسخ <strong>422</strong> با ساختار <code>{"message": ..., "errors": {field: [...]}}</code>.</p>
+        <p><strong>راه‌حل‌ها:</strong></p>
+        <ol>
+          <li>اصلاح کلاینت: ارسال <code>Accept: application/json</code> (بهترین و استانداردترین).</li>
+          <li>Middleware در گروه api که هدر را اجبار کند:</li>
+        </ol>
+        <pre><code class="language-php">&lt;?php
+class ForceJsonResponse
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        $request-&gt;headers-&gt;set('Accept', 'application/json');
+        return $next($request);
+    }
+}
+// bootstrap/app.php
+$middleware-&gt;api(prepend: [ForceJsonResponse::class]);
+
+// یا روش 3: در withExceptions
+$exceptions-&gt;shouldRenderJsonWhen(fn (Request $request, Throwable $e) =&gt; $request-&gt;is('api/*'));</code></pre>
+        <p><strong>بررسی‌های تکمیلی:</strong> مطمئن شوید route واقعاً در <code>routes/api.php</code> است (گروه <code>api</code>) نه <code>web.php</code> — در غیر این صورت ممکن است خطای 419 CSRF هم ببینید. همین منطق برای <code>AuthenticationException</code> هم صادق است: بدون Accept JSON به جای 401، redirect به login رخ می‌دهد (و اگر route <code>login</code> تعریف نشده باشد خطای «Route [login] not defined»).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-9">
+      <summary>کد زیر چه مشکلات امنیتی دارد؟ آن را بازنویسی کنید.<br><code>Route::get('/comment/delete/{id}', fn ($id) =&gt; Comment::find($id)-&gt;delete());</code> و در view: <code>{!! $comment-&gt;body !!}</code></summary>
+      <div class="answer">
+        <p><strong>مشکلات:</strong></p>
+        <ul>
+          <li><strong>عملیات تغییردهنده با GET:</strong> CSRF روی GET بررسی نمی‌شود؛ یک تگ <code>&lt;img src="/comment/delete/5"&gt;</code> در سایت دیگر کافی است تا کامنت کاربر لاگین‌شده حذف شود. همچنین crawlerها و prefetch مرورگر ممکن است آن را صدا بزنند.</li>
+          <li><strong>عدم احراز هویت و authorization:</strong> هر کسی می‌تواند هر کامنتی را حذف کند (IDOR).</li>
+          <li><strong>عدم مدیریت رکورد ناموجود:</strong> <code>find</code> مقدار null برمی‌گرداند ⇒ خطای 500 به جای 404.</li>
+          <li><strong>XSS:</strong> <code>{!! !!}</code> بدون escape؛ کامنت حاوی <code>&lt;script&gt;</code> در مرورگر همه بینندگان اجرا می‌شود (Stored XSS) و می‌تواند session یا توکن CSRF را بدزدد.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+// routes/web.php
+Route::delete('/comments/{comment}', [CommentController::class, 'destroy'])
+    -&gt;middleware(['auth', 'can:delete,comment'])
+    -&gt;name('comments.destroy');
+
+// CommentController
+public function destroy(Comment $comment)        // Route Model Binding → 404 خودکار
+{
+    $comment-&gt;delete();
+    return back()-&gt;with('status', 'کامنت حذف شد');
+}
+
+// CommentPolicy
+public function delete(User $user, Comment $comment): bool
+{
+    return $user-&gt;id === $comment-&gt;user_id || $user-&gt;is_admin;
+}</code></pre>
+        <pre><code class="language-xml">&lt;p&gt;{{ $comment-&gt;body }}&lt;/p&gt;
+@can('delete', $comment)
+  &lt;form method="POST" action="{{ route('comments.destroy', $comment) }}"&gt;
+      @csrf @method('DELETE')
+      &lt;button&gt;حذف&lt;/button&gt;
+  &lt;/form&gt;
+@endcan</code></pre>
+        <p>اگر نمایش HTML کاربر واقعاً لازم است (مثلاً ویرایشگر rich text)، قبل از ذخیره یا نمایش با یک sanitizer مبتنی بر whitelist (مثل HTML Purifier) پاک‌سازی کنید و <code>Content-Security-Policy</code> را هم به عنوان لایه دفاعی دوم تنظیم کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-10">
+      <summary>حمله CSRF را تعریف کنید و توضیح دهید Laravel چگونه از آن جلوگیری می‌کند. خطای 419 چه زمانی رخ می‌دهد و چرا routeهای API به CSRF نیاز ندارند؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> در <strong>Cross-Site Request Forgery</strong> سایت مهاجم مرورگر قربانیِ لاگین‌شده را وادار به ارسال درخواست تغییردهنده وضعیت به سایت ما می‌کند. چون مرورگر cookieها را خودکار ضمیمه می‌کند، سرور بدون مکانیزم اضافه نمی‌تواند درخواست جعلی را از واقعی تشخیص دهد.</p>
+        <p><strong>مکانیزم Laravel (Synchronizer Token):</strong></p>
+        <ul>
+          <li>یک توکن تصادفی برای هر session تولید و در session ذخیره می‌شود.</li>
+          <li>فرم‌ها آن را با <code>@csrf</code> در فیلد <code>_token</code> ارسال می‌کنند؛ درخواست‌های JS از هدر <code>X-CSRF-TOKEN</code> یا <code>X-XSRF-TOKEN</code> (cookie رمزشده <code>XSRF-TOKEN</code>) استفاده می‌کنند.</li>
+          <li>middleware <code>ValidateCsrfToken</code> در گروه <code>web</code> برای POST/PUT/PATCH/DELETE تطابق را با مقایسه امن (<code>hash_equals</code>) بررسی می‌کند.</li>
+          <li>مهاجم به دلیل Same-Origin Policy قادر به خواندن توکن نیست.</li>
+        </ul>
+        <p><strong>خطای 419 (Page Expired):</strong> توکن ارسال نشده، نادرست است، یا session منقضی شده (مثلاً فرمی که ساعت‌ها باز مانده، تغییر <code>APP_KEY</code>، یا session driver ناپایدار در چند سرور).</p>
+        <pre><code class="language-php">&lt;?php
+// استثنا برای webhook خارجی
+$middleware-&gt;validateCsrfTokens(except: ['webhooks/stripe']);
+// امنیت webhook را با بررسی امضای HMAC جایگزین کنید.</code></pre>
+        <p><strong>API:</strong> routeهای <code>api</code> stateless هستند و با هدر <code>Authorization: Bearer</code> احراز هویت می‌شوند که مرورگر خودکار ارسال نمی‌کند؛ پس CSRF معنا ندارد. استثنا: SPA با <strong>Sanctum cookie-based</strong> که چون به cookie متکی است، باید ابتدا <code>/sanctum/csrf-cookie</code> را بگیرد. لایه‌های دفاعی مکمل: <code>SameSite=lax</code> cookie و عدم تغییر وضعیت با GET.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-11">
+      <summary>Service Container و Service Provider را تعریف کنید. چرا در متد <code>register()</code> نباید از سرویس‌های دیگر استفاده کرد؟</summary>
+      <div class="answer">
+        <p><strong>Service Container:</strong> ابزار مدیریت وابستگی و پیاده‌سازی <strong>Inversion of Control</strong>. «چگونگی ساخت» سرویس‌ها را نگه می‌دارد و هنگام نیاز آن‌ها را می‌سازد و تزریق می‌کند. با <strong>Reflection</strong> وابستگی‌های constructor کلاس‌های concrete را خودکار resolve می‌کند؛ برای interfaceها نیاز به binding دارد.</p>
+        <p><strong>Service Provider:</strong> نقطه مرکزی bootstrap برنامه و پکیج‌ها؛ کلاسی با دو متد:</p>
+        <ul>
+          <li><code>register()</code>: فقط ثبت binding (<code>bind</code>، <code>singleton</code>).</li>
+          <li><code>boot()</code>: پس از register شدن <strong>همه</strong> providerها؛ ثبت Gate، event، route، view composer، rate limiter و…</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+public function register(): void
+{
+    $this-&gt;app-&gt;singleton(SmsSender::class, fn ($app) =&gt;
+        new KavenegarSmsSender(config('services.sms.key'))
+    );
+}
+
+public function boot(): void
+{
+    RateLimiter::for('sms', fn (Request $r) =&gt; Limit::perMinute(3)-&gt;by($r-&gt;ip()));
+}</code></pre>
+        <p><strong>چرا نه در register:</strong> ترتیب اجرای <code>register()</code>ها تضمین‌شده نیست. اگر در register یک provider سرویسی را resolve کنید که provider دیگری هنوز ثبت نکرده، یا binding ناقص می‌گیرید یا خطا. علاوه بر این، resolve زودهنگام سرویس‌ها مزیت <strong>lazy loading</strong> را از بین می‌برد و در deferred providerها رفتار غیرمنتظره ایجاد می‌کند. قاعده: «register = ثبت دستورالعمل، boot = استفاده».</p>
+        <p><strong>مزیت کلی:</strong> loose coupling (کد به interface وابسته است)، جایگزینی آسان پیاده‌سازی (مثلاً درگاه پرداخت) و mock کردن در تست با <code>$this-&gt;app-&gt;instance(...)</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-12">
+      <summary>Facade در Laravel چیست و چگونه فراخوانی <code>Cache::get('key')</code> به یک شیء واقعی می‌رسد؟ آیا Facadeها تست‌پذیری را کاهش می‌دهند؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Facade یک کلاس با رابط static است که به عنوان <strong>proxy</strong> به یک سرویس ثبت‌شده در Service Container عمل می‌کند. نام الگو از Facade pattern گرفته شده ولی عملاً شبیه Static Proxy / Service Locator است.</p>
+        <p><strong>مسیر resolve:</strong></p>
+        <ol>
+          <li>کلاس <code>Cache</code> متد static به نام <code>get</code> ندارد ⇒ PHP متد جادویی <code>__callStatic('get', ['key'])</code> را روی کلاس پایه <code>Facade</code> صدا می‌زند.</li>
+          <li><code>getFacadeRoot()</code> با کلید برگشتی از <code>getFacadeAccessor()</code> (<code>'cache'</code>) نمونه را از container می‌گیرد (و در آرایه static کش می‌کند).</li>
+          <li><code>$instance-&gt;get('key')</code> روی <code>CacheManager</code> واقعی اجرا می‌شود.</li>
+        </ol>
+        <pre><code class="language-php">&lt;?php
+class Cache extends Facade
+{
+    protected static function getFacadeAccessor(): string
+    {
+        return 'cache';
+    }
+}</code></pre>
+        <p><strong>تست‌پذیری:</strong> برخلاف static واقعی، Facade قابل جایگزینی است: <code>Cache::shouldReceive('get')-&gt;once()-&gt;andReturn('v')</code> (Mockery) یا fakeها: <code>Mail::fake()</code>، <code>Queue::fake()</code>، <code>Storage::fake()</code>، <code>Http::fake()</code>. پس تست‌پذیری کم نمی‌شود.</p>
+        <p><strong>معایب واقعی:</strong> وابستگی‌ها در امضای کلاس <strong>پنهان</strong> می‌شوند (scope creep)، IDE بدون helper نمی‌تواند autocomplete کامل بدهد، و کد به Laravel گره می‌خورد. <strong>جمع‌بندی:</strong> در controller و کد کاربردی Facade قابل قبول است؛ در کلاس‌های domain/پکیج، تزریق <strong>Contract</strong> در constructor شفاف‌تر است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-13">
+      <summary>تفاوت Gate و Policy را بیان کنید. در چه شرایطی از هر کدام استفاده می‌کنید و چگونه در route، controller و Blade اعمال می‌شوند؟</summary>
+      <div class="answer">
+        <p><strong>تعریف مشترک:</strong> هر دو مکانیزم <strong>Authorization</strong> هستند که با گرفتن کاربر فعلی (و احتمالاً یک منبع) <code>bool</code> یا <code>Response</code> برمی‌گردانند.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Gate</th><th>Policy</th></tr></thead>
+          <tbody>
+            <tr><td>شکل</td><td>Closure با نام</td><td>کلاس با متدهای متناظر actionها</td></tr>
+            <tr><td>محدوده</td><td>عمومی/غیرمدلی</td><td>حول یک مدل</td></tr>
+            <tr><td>مثال</td><td><code>view-dashboard</code></td><td><code>PostPolicy::update</code></td></tr>
+            <tr><td>ثبت</td><td><code>Gate::define</code> در boot</td><td>کشف خودکار با قرارداد نام یا <code>Gate::policy</code></td></tr>
+          </tbody>
+        </table></div>
+        <pre><code class="language-php">&lt;?php
+Gate::define('view-dashboard', fn (User $u) =&gt; $u-&gt;hasRole('manager'));
+
+class PostPolicy
+{
+    public function update(User $user, Post $post): bool
+    {
+        return $user-&gt;id === $post-&gt;user_id;
+    }
+}
+
+// Route
+Route::put('/posts/{post}', [PostController::class, 'update'])-&gt;can('update', 'post');
+// Controller
+Gate::authorize('update', $post);       // 403 در صورت عدم مجوز
+// Form Request
+public function authorize(): bool { return $this-&gt;user()-&gt;can('update', $this-&gt;route('post')); }</code></pre>
+        <pre><code class="language-xml">@can('update', $post) &lt;a href="..."&gt;ویرایش&lt;/a&gt; @endcan</code></pre>
+        <p><strong>انتخاب:</strong> وقتی مجوز به یک مدل و عملیات CRUD آن مربوط است ⇒ Policy (سازمان‌یافته، قابل تست، هماهنگ با resource controller). برای مجوزهای ساده و مستقل ⇒ Gate. <strong>نکته:</strong> پنهان کردن دکمه در Blade کافی نیست؛ بررسی سمت سرور در route/controller الزامی است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-14">
+      <summary>Session و Flash data در Laravel چگونه کار می‌کنند؟ الگوی Post/Redirect/Get را توضیح دهید و بگویید پس از login و logout چه عملیاتی روی session لازم است.</summary>
+      <div class="answer">
+        <p><strong>Session:</strong> مکانیزمی برای نگهداری حالت کاربر بین درخواست‌های بی‌حالت HTTP. شناسه session در cookie رمزشده و داده در driver (<code>file</code>، <code>database</code>، <code>redis</code>، <code>cookie</code>…) نگهداری می‌شود. middleware <code>StartSession</code> در گروه <code>web</code> آن را راه‌اندازی می‌کند؛ پس routeهای <code>api</code> session ندارند.</p>
+        <p><strong>Flash data:</strong> داده‌ای که فقط تا <strong>درخواست بعدی</strong> زنده است؛ مثلاً پیام «ذخیره شد» یا خطاهای validation و <code>old()</code> input.</p>
+        <p><strong>PRG:</strong> پس از پردازش موفق فرم POST، به جای رندر مستقیم view، به یک صفحه GET redirect می‌کنیم. اگر کاربر صفحه را refresh کند، فقط GET تکرار می‌شود نه ثبت دوباره سفارش.</p>
+        <pre><code class="language-php">&lt;?php
+public function store(StoreOrderRequest $request)
+{
+    $order = Order::create($request-&gt;validated());
+    return to_route('orders.show', $order)-&gt;with('status', 'سفارش ثبت شد');   // flash
+}
+
+// login
+if (Auth::attempt($credentials)) {
+    $request-&gt;session()-&gt;regenerate();      // شناسه جدید — ضد Session Fixation
+}
+// logout
+Auth::logout();
+$request-&gt;session()-&gt;invalidate();         // حذف داده + شناسه جدید
+$request-&gt;session()-&gt;regenerateToken();    // توکن CSRF جدید</code></pre>
+        <p><strong>چرا regenerate:</strong> در Session Fixation مهاجم شناسه session معلومی را به قربانی تحمیل می‌کند و پس از login قربانی با همان شناسه وارد حساب می‌شود؛ تولید شناسه جدید پس از login این حمله را خنثی می‌کند.</p>
+        <p><strong>نکته معماری:</strong> در چند سرور پشت load balancer، driver باید مشترک باشد (Redis/database) وگرنه کاربر به‌طور تصادفی logout می‌شود یا خطای 419 می‌گیرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-15">
+      <summary>Resource Controller و Resource Route را توضیح دهید. چه تفاوتی بین <code>Route::resource</code> و <code>Route::apiResource</code> وجود دارد و برای عملیاتی مثل «انتشار مقاله» که در CRUD نمی‌گنجد چه می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> <code>Route::resource('posts', PostController::class)</code> با یک خط، هفت route استاندارد RESTful با نام‌گذاری یکسان (<code>posts.index</code>، …) را به هفت متد controller نگاشت می‌کند: <code>index</code>، <code>create</code>، <code>store</code>، <code>show</code>، <code>edit</code>، <code>update</code>، <code>destroy</code>.</p>
+        <p><strong>apiResource:</strong> همان بدون <code>create</code> و <code>edit</code>؛ چون آن دو فقط فرم HTML نمایش می‌دهند و در API معنا ندارند (کلاینت خودش فرم را می‌سازد).</p>
+        <pre><code class="language-php">&lt;?php
+Route::resource('posts', PostController::class)-&gt;except(['destroy']);
+Route::apiResource('posts.comments', CommentController::class)-&gt;shallow();
+
+// عملیات غیر CRUD — قبل از resource تعریف شود
+Route::post('/posts/{post}/publish', PublishPostController::class)-&gt;name('posts.publish');
+// یا مدل‌سازی به عنوان یک resource:
+Route::post('/posts/{post}/publication', [PostPublicationController::class, 'store']);
+Route::delete('/posts/{post}/publication', [PostPublicationController::class, 'destroy']);</code></pre>
+        <p><strong>مزایا:</strong> قرارداد یکنواخت، نام route قابل پیش‌بینی، تولید controller با <code>make:controller --resource --model=Post</code>، و هماهنگی با Policyها (<code>viewAny</code>، <code>view</code>، <code>create</code>، …) — حتی <code>authorizeResource</code> در نسخه‌های قبل.</p>
+        <p><strong>طراحی:</strong> برای عملیات اضافی، به جای اضافه کردن متدهای ناهمگون به resource controller، یک <strong>invokable controller</strong> یا یک resource فرعی (مثل «publication») بسازید تا controllerها کوچک و RESTful بمانند. مراقب ترتیب تعریف route باشید تا <code>/posts/popular</code> با <code>posts.show</code> تداخل نکند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-16">
+      <summary>در Blade دو روش برای ساخت layout وجود دارد: وراثت قالب (<code>@extends</code>/<code>@section</code>) و Componentها با Slot. هر دو را با مثال مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>وراثت قالب:</strong> فرزند با <code>@extends('layouts.app')</code> یک والد را انتخاب و بخش‌ها را با <code>@section</code> پر می‌کند؛ والد با <code>@yield</code> جایگاه را مشخص می‌کند. <code>@parent</code> محتوای والد را حفظ می‌کند.</p>
+        <p><strong>Component:</strong> layout یک کامپوننت (<code>resources/views/components/layout.blade.php</code>) است که محتوا را از طریق <code>{{ $slot }}</code> و named slotها دریافت می‌کند و ورودی‌هایش با <code>@props</code> صریح است.</p>
+        <pre><code class="language-xml">{{-- وراثت --}}
+@extends('layouts.app')
+@section('title', 'مطالب')
+@section('content') &lt;h1&gt;مطالب&lt;/h1&gt; @endsection
+
+{{-- Component --}}
+&lt;x-layout title="مطالب"&gt;
+    &lt;x-slot:sidebar&gt;&lt;x-category-list /&gt;&lt;/x-slot&gt;
+    &lt;h1&gt;مطالب&lt;/h1&gt;
+&lt;/x-layout&gt;</code></pre>
+        <div class="table-wrap"><table>
+          <thead><tr><th>معیار</th><th>@extends</th><th>Component</th></tr></thead>
+          <tbody>
+            <tr><td>مدل</td><td>وراثت (یک والد)</td><td>ترکیب (تودرتو و چندگانه)</td></tr>
+            <tr><td>داده</td><td>ضمنی، متغیرهای view مشترک</td><td>صریح با props و attributes</td></tr>
+            <tr><td>استفاده مجدد در اجزای کوچک</td><td>با <code>@include</code></td><td>طبیعی (<code>&lt;x-button&gt;</code>)</td></tr>
+            <tr><td>منطق</td><td>—</td><td>کلاس component برای منطق نمایشی</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>جمع‌بندی:</strong> Componentها مدرن‌تر و نزدیک به React/Vue هستند و در starter kitها پیش‌فرض‌اند؛ <code>@extends</code> ساده و هنوز کاملاً پشتیبانی می‌شود. در هر دو روش، خروجی با <code>{{ }}</code> escape می‌شود و Blade یک‌بار کامپایل و کش می‌شود (<code>view:cache</code> در deploy).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-17">
+      <summary>Migration چیست و چرا از آن استفاده می‌کنیم؟ تفاوت <code>migrate:rollback</code>، <code>migrate:refresh</code> و <code>migrate:fresh</code> را بگویید. چگونه یک ستون را روی جدولی با میلیون‌ها رکورد در production تغییر نام می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Migration کنترل نسخه schema دیتابیس به صورت کد است؛ تغییرات تکرارپذیر، قابل بازبینی در code review و یکسان در همه محیط‌ها اجرا می‌شوند. Laravel سابقه اجرا را در جدول <code>migrations</code> با شماره batch نگه می‌دارد.</p>
+        <ul>
+          <li><code>migrate:rollback</code>: اجرای <code>down()</code> آخرین batch (یا <code>--step=n</code>).</li>
+          <li><code>migrate:refresh</code>: rollback همه با <code>down()</code> و سپس migrate مجدد.</li>
+          <li><code>migrate:fresh</code>: <strong>drop مستقیم همه جداول</strong> بدون اجرای <code>down</code> و سپس migrate؛ سریع‌تر و مستقل از درستی <code>down</code>ها. هر دو مورد اخیر فقط برای توسعه/تست.</li>
+        </ul>
+        <p><strong>تغییر نام امن در production (expand/contract):</strong></p>
+        <ol>
+          <li>Migration ۱: افزودن ستون جدید nullable.</li>
+          <li>Deploy کدی که در هر دو ستون می‌نویسد و از قدیمی می‌خواند.</li>
+          <li>انتقال داده به صورت batch (با <code>chunkById</code> در یک command یا job) تا قفل طولانی ایجاد نشود.</li>
+          <li>Deploy کدی که فقط از ستون جدید استفاده می‌کند.</li>
+          <li>Migration ۲: حذف ستون قدیمی.</li>
+        </ol>
+        <pre><code class="language-php">&lt;?php
+Schema::table('users', fn (Blueprint $t) =&gt; $t-&gt;string('mobile')-&gt;nullable()-&gt;after('phone'));
+// ... بعداً
+Schema::table('users', fn (Blueprint $t) =&gt; $t-&gt;dropColumn('phone'));</code></pre>
+        <p><strong>چرا نه <code>renameColumn</code> مستقیم:</strong> در لحظه deploy، نسخه قدیمی کد (روی سرورهای دیگر یا workerهای صف) هنوز نام قبلی را استفاده می‌کند و خطا می‌دهد؛ روی جداول بزرگ هم ALTER ممکن است جدول را قفل کند. <strong>قوانین طلایی:</strong> migration اجراشده را ویرایش نکنید؛ در production از <code>--force</code> فقط با <code>migrate</code> استفاده کنید؛ <code>down()</code> را بنویسید ولی به آن برای بازگشت داده تکیه نکنید (backup).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-18">
+      <summary>پس از deploy روی سرور production: (۱) تغییر یک مقدار در <code>.env</code> اعمال نمی‌شود، (۲) یک route جدید 404 می‌دهد، (۳) صفحه خطا جزئیات stack trace و متغیرها را نشان می‌دهد. علت هر کدام و فرایند صحیح deploy را شرح دهید.</summary>
+      <div class="answer">
+        <p><strong>تشخیص:</strong></p>
+        <ol>
+          <li><strong>.env:</strong> config cache شده (<code>bootstrap/cache/config.php</code>)؛ وقتی cache وجود دارد <code>.env</code> خوانده نمی‌شود. باید <code>php artisan config:cache</code> دوباره اجرا شود. اگر جایی از کد <code>env()</code> مستقیم استفاده شده، آن را به <code>config()</code> تغییر دهید.</li>
+          <li><strong>route جدید:</strong> routeها cache شده‌اند و فایل جدید <code>routes/*.php</code> خوانده نمی‌شود ⇒ <code>route:cache</code> مجدد. (احتمالات دیگر: ترتیب route و تداخل با <code>{param}</code>، یا OPcache با <code>validate_timestamps=0</code> که نیاز به reload PHP-FPM دارد.)</li>
+          <li><strong>stack trace:</strong> <code>APP_DEBUG=true</code> در production — نشت اطلاعات حساس. باید <code>false</code> و <code>APP_ENV=production</code> باشد.</li>
+        </ol>
+        <pre><code class="language-bash">php artisan down --retry=60          # اختیاری
+git pull &amp;&amp; composer install --no-dev --optimize-autoloader
+php artisan migrate --force
+php artisan optimize                 # config:cache + route:cache + view:cache + event:cache
+php artisan queue:restart            # workerها کد جدید را بارگذاری کنند
+npm ci &amp;&amp; npm run build
+php artisan up
+# + reload php-fpm در صورت نیاز به خالی کردن OPcache</code></pre>
+        <p><strong>نکات تکمیلی:</strong> در محیط توسعه cache نکنید (یا <code>optimize:clear</code>). workerهای صف long-running هستند و بدون <code>queue:restart</code> کد قدیمی را اجرا می‌کنند. ابزارهایی مثل Envoyer، Forge یا deploy مبتنی بر symlink (zero-downtime) این مراحل را خودکار می‌کنند. <code>php artisan about</code> وضعیت cacheها و محیط را نشان می‌دهد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-19">
+      <summary>چگونه در Laravel 11 همه خطاهای یک API را به فرمت JSON یکسان تبدیل می‌کنید و خطاهای مهم را در کانال جداگانه لاگ می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>مفهوم:</strong> exception handler دو مسئولیت دارد: <strong>report</strong> (ثبت/ارسال به سرویس مانیتورینگ) و <strong>render</strong> (تبدیل به پاسخ HTTP). در Laravel 11 هر دو در <code>withExceptions()</code> فایل <code>bootstrap/app.php</code> تنظیم می‌شوند (معادل <code>app/Exceptions/Handler.php</code> در نسخه‌های قبل).</p>
+        <pre><code class="language-php">&lt;?php
+-&gt;withExceptions(function (Exceptions $exceptions) {
+    // همه خطاهای مسیر api/* به صورت JSON
+    $exceptions-&gt;shouldRenderJsonWhen(fn (Request $r, Throwable $e) =&gt; $r-&gt;is('api/*'));
+
+    // پیام سفارشی برای 404
+    $exceptions-&gt;render(function (NotFoundHttpException $e, Request $r) {
+        if ($r-&gt;is('api/*')) {
+            return response()-&gt;json(['message' =&gt; 'Not found', 'code' =&gt; 'NOT_FOUND'], 404);
+        }
+    });
+
+    // گزارش خطای پرداخت در کانال مجزا و توقف گزارش پیش‌فرض
+    $exceptions-&gt;report(function (PaymentGatewayException $e) {
+        Log::channel('payments')-&gt;critical($e-&gt;getMessage(), ['order' =&gt; $e-&gt;orderId]);
+    })-&gt;stop();
+
+    $exceptions-&gt;dontReport([CouponExpiredException::class]);
+})</code></pre>
+        <pre><code class="language-php">&lt;?php
+// config/logging.php
+'payments' =&gt; [
+    'driver' =&gt; 'daily',
+    'path'   =&gt; storage_path('logs/payments.log'),
+    'level'  =&gt; 'warning',
+    'days'   =&gt; 30,
+],</code></pre>
+        <p><strong>نکات:</strong></p>
+        <ul>
+          <li>با <code>APP_DEBUG=false</code>، پیام خطاهای 500 به «Server Error» عمومی تبدیل می‌شود تا جزئیات نشت نکند.</li>
+          <li>exceptionهای validation، authentication، authorization و 404 به صورت پیش‌فرض report نمی‌شوند.</li>
+          <li>می‌توان متدهای <code>report()</code> و <code>render()</code> را مستقیماً روی کلاس exception سفارشی تعریف کرد.</li>
+          <li>از <code>report($e)</code> برای ثبت خطا بدون توقف جریان (مثلاً fallback به درگاه دوم) استفاده کنید.</li>
+          <li>context مفید (user id، request id) با <code>Log::withContext</code> یا <code>Context</code> facade اضافه شود.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-laravel-basics-20">
+      <summary>ابزارهای Telescope، Pulse و Horizon و همچنین Sanctum و Passport را مقایسه کنید. هر کدام در چه شرایطی انتخاب می‌شوند؟</summary>
+      <div class="answer">
+        <p><strong>مشاهده‌پذیری و صف:</strong></p>
+        <ul>
+          <li><strong>Telescope:</strong> دستیار دیباگ؛ <strong>هر</strong> درخواست، کوئری، exception، job، mail، cache hit و… را با جزئیات ثبت می‌کند. سربار و حجم داده بالا ⇒ عمدتاً محیط local/staging؛ در production فقط با فیلتر و محدودیت دسترسی.</li>
+          <li><strong>Pulse:</strong> مانیتورینگ <strong>تجمیعی production</strong> با سربار کم: endpointها و کوئری‌های کند، jobهای کند، کاربران پرمصرف، exceptionهای پرتکرار، CPU/حافظه سرورها.</li>
+          <li><strong>Horizon:</strong> فقط برای <strong>صف Redis</strong>: داشبورد throughput، زمان انتظار، jobهای شکست‌خورده و retry، و تعریف کد-محور supervisorها و auto-balancing workerها در <code>config/horizon.php</code>.</li>
+        </ul>
+        <p><strong>احراز هویت API:</strong></p>
+        <ul>
+          <li><strong>Sanctum:</strong> سبک؛ دو حالت: (۱) personal access token با abilities برای موبایل/API ساده، ذخیره hash توکن در جدول <code>personal_access_tokens</code>؛ (۲) SPA authentication روی همان دامنه با cookie session و CSRF. برای اکثر برنامه‌ها کافی است.</li>
+          <li><strong>Passport:</strong> سرور کامل <strong>OAuth2</strong> (authorization code + PKCE، client credentials، refresh token، scopes). وقتی برنامه‌های <strong>third-party</strong> باید از طرف کاربران شما به API دسترسی بگیرند یا نقش Identity Provider دارید.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+// Sanctum token
+$token = $user-&gt;createToken('mobile', ['orders:read'])-&gt;plainTextToken;
+Route::middleware('auth:sanctum')-&gt;get('/orders', ...);
+if ($request-&gt;user()-&gt;tokenCan('orders:read')) { /* ... */ }</code></pre>
+        <p><strong>قاعده انتخاب:</strong> «اول Sanctum، Passport فقط اگر OAuth2 لازم است». و «Telescope برای دیباگ، Pulse برای سلامت production، Horizon برای صف». جزئیات پیاده‌سازی این ابزارها در صفحه Laravel Deeper.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ===================================================== CHEATSHEET -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>معماری و چرخه عمر</h4>
+      <ul>
+        <li><code>public/index.php</code> → <code>bootstrap/app.php</code> (Application = Container) → <code>handleRequest</code> → HTTP Kernel.</li>
+        <li>Bootstrappers: env → config → exceptions → facades → providers <strong>register (همه)</strong> → <strong>boot (همه)</strong>.</li>
+        <li>Global MW → Router → Group/Route MW → Controller → Response → MW معکوس → <code>send</code> → <code>terminate</code>.</li>
+        <li>Middleware = onion؛ قبل از <code>$next</code> = before، بعد = after.</li>
+      </ul>
+
+      <h4>Laravel 11+ در برابر 10</h4>
+      <ul>
+        <li><code>withRouting / withMiddleware / withExceptions</code> در <code>bootstrap/app.php</code> ⇐ Kernel.php، Handler.php، RouteServiceProvider.</li>
+        <li><code>bootstrap/providers.php</code>؛ فقط <code>AppServiceProvider</code>.</li>
+        <li>Schedule در <code>routes/console.php</code>؛ <code>install:api</code>، <code>install:broadcasting</code>، <code>config:publish</code>.</li>
+        <li>Health: <code>/up</code>؛ <code>casts()</code>؛ SQLite و driver <code>database</code> پیش‌فرض؛ PHP ≥ 8.2.</li>
+        <li><code>VerifyCsrfToken</code> ⇐ <code>ValidateCsrfToken</code>؛ کنترلر پایه خالی (بدون traitها).</li>
+      </ul>
+
+      <h4>Config</h4>
+      <ul>
+        <li><code>env()</code> فقط در <code>config/*.php</code>؛ در کد <code>config('a.b', default)</code>.</li>
+        <li><code>config:cache</code> ⇒ <code>.env</code> دیگر خوانده نمی‌شود.</li>
+        <li><code>app()-&gt;environment('production')</code>؛ <code>APP_DEBUG=false</code> در production؛ <code>APP_KEY</code> = رمزنگاری، نه hash.</li>
+      </ul>
+
+      <h4>Routing</h4>
+      <ul>
+        <li><code>get/post/put/patch/delete/options/match/any</code>، <code>Route::view</code>، <code>redirect</code>.</li>
+        <li><code>-&gt;where()</code>، <code>whereNumber/Alpha/Uuid/In</code>، <code>{param?}</code> + پیش‌فرض.</li>
+        <li><code>-&gt;name()</code> + <code>route()</code>، <code>to_route()</code>، <code>routeIs()</code>.</li>
+        <li><code>middleware()-&gt;prefix()-&gt;name('admin.')-&gt;group()</code>، <code>Route::controller()</code>.</li>
+        <li><code>resource</code> = ۷ action، <code>apiResource</code> = ۵ (بدون create/edit)، <code>only/except/shallow</code>.</li>
+        <li><code>Route::fallback</code> (آخر)، <code>route:list</code>، <code>route:cache</code>.</li>
+      </ul>
+
+      <h4>Route Model Binding</h4>
+      <ul>
+        <li>Implicit: <code>{post}</code> ⇔ <code>Post $post</code>؛ نیافتن ⇒ 404.</li>
+        <li><code>{post:slug}</code> یا <code>getRouteKeyName()</code>؛ <code>scopeBindings()</code>؛ <code>withTrashed()</code>؛ <code>missing()</code>.</li>
+        <li>Explicit: <code>Route::model()</code>، <code>Route::bind()</code>، <code>resolveRouteBinding()</code>.</li>
+      </ul>
+
+      <h4>Middleware</h4>
+      <ul>
+        <li><code>make:middleware</code>؛ <code>handle($request, Closure $next, ...$params)</code>؛ <code>terminate()</code>.</li>
+        <li><code>$middleware-&gt;append/prepend/web(append:)/api(prepend:)/alias/group/priority</code>.</li>
+        <li>Route: <code>-&gt;middleware('role:admin')</code>، <code>withoutMiddleware</code>؛ Controller: <code>HasMiddleware</code>.</li>
+        <li><code>web</code> = cookies + session + errors + CSRF + bindings؛ <code>api</code> = bindings (stateless).</li>
+      </ul>
+
+      <h4>Validation</h4>
+      <ul>
+        <li><code>$request-&gt;validate([...])</code> یا Form Request (<code>make:request</code>).</li>
+        <li>FormRequest: <code>authorize</code> (false⇒403)، <code>rules</code>، <code>messages</code>، <code>attributes</code>، <code>prepareForValidation</code>، <code>after</code>.</li>
+        <li>شکست: وب ⇒ 302 back + <code>$errors</code> + <code>old()</code>؛ JSON ⇒ <strong>422</strong> <code>{message, errors}</code>.</li>
+        <li><code>validated()</code> / <code>safe()-&gt;only()</code> نه <code>all()</code>.</li>
+        <li><code>bail</code>، <code>sometimes</code>، <code>nullable</code>، <code>Rule::unique()-&gt;ignore()</code>، <code>exists</code>، <code>confirmed</code>، <code>Rule::enum</code>، <code>items.*.id</code>.</li>
+        <li>Rule سفارشی: <code>make:rule</code> → <code>ValidationRule::validate($attr, $value, $fail)</code>.</li>
+      </ul>
+
+      <h4>Response و کدها</h4>
+      <ul>
+        <li>آرایه/مدل ⇒ JSON؛ <code>response()-&gt;json($d, 201)</code>، <code>noContent()</code>، <code>download()</code>، <code>file()</code>، <code>streamDownload()</code>.</li>
+        <li><code>redirect()-&gt;route()</code>، <code>back()-&gt;withInput()-&gt;withErrors()</code>، <code>-&gt;with('status')</code>.</li>
+        <li>401 unauth، 403 forbidden، 404، 405، <strong>419 CSRF</strong>، <strong>422 validation</strong>، 429 throttle، 503 down.</li>
+      </ul>
+
+      <h4>Blade</h4>
+      <ul>
+        <li><code>{{ }}</code> escape (e())؛ <code>{!! !!}</code> خام ⇒ XSS؛ <code>@{{ }}</code> لفظی.</li>
+        <li><code>@csrf</code>، <code>@method('PUT')</code>، <code>@error</code>، <code>old()</code>.</li>
+        <li><code>@extends/@section/@yield/@parent</code> یا <code>&lt;x-layout&gt;</code> + <code>{{ $slot }}</code> + <code>&lt;x-slot:name&gt;</code> + <code>@props</code> + <code>$attributes-&gt;merge</code>.</li>
+        <li><code>@foreach</code> + <code>$loop</code>، <code>@forelse</code>، <code>@can</code>، <code>@auth</code>، <code>@class</code>، <code>@push/@stack</code>.</li>
+      </ul>
+
+      <h4>CSRF و Session</h4>
+      <ul>
+        <li>توکن در session؛ <code>_token</code> / <code>X-CSRF-TOKEN</code> / <code>X-XSRF-TOKEN</code>؛ فقط متدهای غیر GET.</li>
+        <li>استثنا: <code>validateCsrfTokens(except: [...])</code>.</li>
+        <li><code>session()-&gt;get/put/pull/forget/flash/now/reflash/keep</code>.</li>
+        <li>Login ⇒ <code>regenerate()</code>؛ Logout ⇒ <code>invalidate()</code> + <code>regenerateToken()</code>.</li>
+        <li>PRG: POST ⇒ redirect ⇒ GET + flash message.</li>
+      </ul>
+
+      <h4>Auth</h4>
+      <ul>
+        <li>Guard = چگونه (session/token)، Provider = از کجا (eloquent/database).</li>
+        <li><code>Auth::attempt</code>، <code>user()</code>، <code>id()</code>، <code>check()</code>، <code>guard('admin')</code>، <code>login()</code>، <code>logout()</code>، <code>redirect()-&gt;intended()</code>.</li>
+        <li>MW: <code>auth</code>، <code>auth:sanctum</code>، <code>guest</code>، <code>verified</code>، <code>password.confirm</code>.</li>
+        <li>Kits: Breeze (ساده)، Jetstream (2FA/Teams، Fortify)، Laravel 12: React/Vue/Livewire + WorkOS.</li>
+        <li>Gate (closure، غیرمدلی) در برابر Policy (کلاس هر مدل)؛ <code>Gate::authorize</code>، <code>can()</code>، <code>-&gt;can('update','post')</code>، <code>@can</code>.</li>
+      </ul>
+
+      <h4>دیتابیس</h4>
+      <ul>
+        <li><code>make:model Post -mfs</code> / <code>--all</code>؛ migration کلاس anonymous با <code>up/down</code>.</li>
+        <li><code>id()</code>، <code>foreignId()-&gt;constrained()-&gt;cascadeOnDelete()</code>، <code>timestamps()</code>، <code>softDeletes()</code>، <code>-&gt;change()</code>.</li>
+        <li><code>migrate</code> (<code>--force</code>)، <code>rollback --step</code>، <code>refresh</code> (down همه)، <code>fresh</code> (drop همه)، <code>status</code>، <code>--pretend</code>.</li>
+        <li>Factory: <code>definition()</code> + <code>fake()</code> + states؛ Seeder: <code>run()</code> + <code>$this-&gt;call()</code>؛ <code>db:seed --class</code>.</li>
+      </ul>
+
+      <h4>Artisan و Deploy</h4>
+      <ul>
+        <li><code>optimize</code> = config + route + view + event cache؛ <code>optimize:clear</code>.</li>
+        <li><code>composer install --no-dev -o</code> → <code>migrate --force</code> → <code>optimize</code> → <code>queue:restart</code>.</li>
+        <li><code>down --secret</code> / <code>up</code>، <code>key:generate</code>، <code>storage:link</code>، <code>tinker</code>، <code>about</code>، <code>pail</code>.</li>
+      </ul>
+
+      <h4>خطا و لاگ</h4>
+      <ul>
+        <li><code>withExceptions</code>: <code>report()</code>، <code>render()</code>، <code>dontReport()</code>، <code>shouldRenderJsonWhen()</code>.</li>
+        <li><code>abort/abort_if/abort_unless</code>، <code>report($e)</code>، <code>views/errors/404.blade.php</code>.</li>
+        <li>Monolog؛ channels: stack، single، daily، slack، stderr؛ ۸ سطح RFC 5424؛ context آرایه‌ای.</li>
+      </ul>
+
+      <h4>اکوسیستم</h4>
+      <ul>
+        <li>Sail (Docker)، Herd؛ Sanctum (token/SPA) vs Passport (OAuth2).</li>
+        <li>Telescope (debug) / Pulse (prod monitoring) / Horizon (Redis queues).</li>
+        <li>Octane (FrankenPHP/Swoole/RoadRunner)، Reverb (WebSocket).</li>
+        <li>Forge (سرور)، Vapor (serverless)، Envoyer، Cloud؛ Pint (style)، Pest/Dusk (تست)، Scout، Cashier، Socialite.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1783 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PHP — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="php">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>PHP</h1>
+    <p class="lead">PHP از درون تا بیرون: چرخهٔ اجرای درخواست با PHP-FPM و OPcache، سیستم نوع و مقایسه‌ها، قابلیت‌های مدرن PHP 8.x (enum، readonly، match، property hooks و …)، OOP و traits، closure و generator، exception، Composer و PSRها، امنیت و مدیریت حافظه — با سوالات تشریحی و پاسخ نمونه.</p>
+  </header>
+
+  <section class="lesson" id="runtime" data-title="PHP چگونه اجرا می‌شود">
+    <h2>PHP چگونه اجرا می‌شود</h2>
+    <p>PHP یک زبان <strong>تفسیری با کامپایل به bytecode</strong> است. هستهٔ آن <strong>Zend Engine</strong> است که کد منبع را مرحله به مرحله پردازش می‌کند:</p>
+    <pre class="diagram">source.php ──► Lexer (tokens) ──► Parser (AST) ──► Compiler (opcodes) ──► Zend VM (execute)
+                                                          ▲
+                                         OPcache: opcodeها را در shared memory نگه می‌دارد
+                                         تا در درخواست بعدی دوباره کامپایل نشوند</pre>
+    <ul>
+      <li><strong>Opcode</strong>: دستورالعمل‌های سطح پایین ماشین مجازی Zend (مثل <code>ASSIGN</code>، <code>DO_FCALL</code>، <code>ECHO</code>).</li>
+      <li><strong>OPcache</strong>: بدون آن، هر درخواست همهٔ فایل‌ها را از نو parse و compile می‌کند. OPcache خروجی کامپایل را در <strong>حافظهٔ مشترک</strong> بین پروسس‌های FPM نگه می‌دارد. در production معمولاً <code>opcache.validate_timestamps=0</code> می‌گذارند تا حتی mtime فایل‌ها چک نشود؛ در این حالت بعد از deploy باید FPM را reload یا OPcache را reset کرد.</li>
+      <li><strong>Preloading</strong> (PHP 7.4): با <code>opcache.preload</code> می‌توان در شروع سرور فایل‌هایی را یک بار بارگذاری کرد تا کلاس‌ها و توابعشان برای همهٔ درخواست‌ها از قبل حاضر باشند.</li>
+      <li><strong>JIT</strong> (PHP 8.0): opcodeها را به کد ماشین native تبدیل می‌کند. برای کارهای <strong>CPU-bound</strong> (محاسبات، پردازش تصویر) سود زیادی دارد، اما در اپ‌های وب معمولی که بیشتر وقتشان صرف I/O (دیتابیس، شبکه) می‌شود، بهبود کمی ایجاد می‌کند.</li>
+    </ul>
+
+    <h3>چرخهٔ درخواست با PHP-FPM</h3>
+    <pre class="diagram">Browser ──► Nginx ──(FastCGI / unix socket)──► PHP-FPM master
+                                                   ├── worker 1  (یک درخواست در هر لحظه)
+                                                   ├── worker 2
+                                                   └── worker N  (pm.max_children)
+
+هر worker برای هر درخواست:
+  RINIT ──► اجرای public/index.php ──► ساخت پاسخ ──► RSHUTDOWN (آزادسازی همه‌چیز)
+یک بار در عمر پروسس: MINIT (بارگذاری extensionها) ... MSHUTDOWN</pre>
+    <ul>
+      <li><strong>PHP-FPM</strong> (FastCGI Process Manager) یک master process و یک pool از worker processها دارد. حالت‌های <code>pm</code>: <code>static</code> (تعداد ثابت)، <code>dynamic</code> (بین min و max)، <code>ondemand</code> (فقط هنگام نیاز).</li>
+      <li>هر worker در هر لحظه <strong>فقط یک درخواست</strong> را سرویس می‌دهد؛ پس حداکثر همروندی برابر <code>pm.max_children</code> است. اگر همه مشغول باشند، درخواست‌ها در صف می‌مانند (و نهایتاً 502/504).</li>
+      <li><code>pm.max_requests</code>: worker بعد از N درخواست بازتولید می‌شود؛ راهی برای مهار memory leak در extensionها.</li>
+    </ul>
+
+    <h3>معماری Shared-Nothing</h3>
+    <p>در مدل کلاسیک، <strong>هیچ state ای بین دو درخواست باقی نمی‌ماند</strong>: متغیرها، objectها، اتصال‌ها (به جز persistent connectionها) و … در پایان درخواست دور ریخته می‌شوند. هر درخواست Laravel از صفر bootstrap می‌شود (ساخت container، ثبت providerها، بارگذاری config).</p>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul>
+        <li>سادگی ذهنی: نشت حافظه یا state خراب یک درخواست، درخواست بعدی را آلوده نمی‌کند.</li>
+        <li>مقیاس‌پذیری افقی آسان: هر سرور مستقل است (session و cache باید بیرونی باشند، مثل Redis).</li>
+        <li>یک خطای fatal فقط همان درخواست را از بین می‌برد.</li>
+      </ul></div>
+      <div class="card"><h4>معایب</h4><ul>
+        <li>هزینهٔ bootstrap در هر درخواست (برای همین <code>config:cache</code> و <code>route:cache</code> مهم‌اند).</li>
+        <li>نبود connection pooling بومی و نبود state درون‌حافظه‌ای.</li>
+        <li>مدل blocking: هر worker هنگام انتظار برای I/O بیکار می‌ماند.</li>
+      </ul></div>
+    </div>
+    <p><strong>Laravel Octane</strong> (روی Swoole، RoadRunner یا FrankenPHP) این مدل را می‌شکند: اپلیکیشن یک بار boot می‌شود و در حافظه می‌ماند و درخواست‌ها پشت سر هم روی همان instance پردازش می‌شوند. سرعت بالاتر می‌رود اما باید مراقب <strong>state نشت‌کننده</strong> باشیم: propertyهای static، singletonهایی که به request وابسته‌اند، آرایه‌هایی که مدام بزرگ می‌شوند.</p>
+    <div class="callout exam"><p>اگر پرسیدند «چرا در PHP سنتی memory leak کمتر مشکل‌ساز است؟» پاسخ: به‌خاطر shared-nothing؛ در پایان هر درخواست کل حافظهٔ درخواست آزاد می‌شود. اما در پروسس‌های طولانی‌مدت (queue worker، Octane، دستورهای daemon) leak واقعاً جمع می‌شود؛ برای همین <code>queue:work</code> گزینه‌های <code>--max-jobs</code>، <code>--max-time</code> و <code>--memory</code> دارد.</p></div>
+    <div class="callout note"><p>اجرای CLI (<code>php artisan ...</code>) از FPM استفاده نمی‌کند؛ یک پروسس مستقل است و <code>php.ini</code> مخصوص CLI می‌تواند متفاوت باشد (مثلاً <code>memory_limit</code> یا فعال بودن OPcache که در CLI به‌طور پیش‌فرض خاموش است).</p></div>
+  </section>
+
+  <section class="lesson" id="types-comparison" data-title="انواع داده و مقایسه">
+    <h2>انواع داده و مقایسه</h2>
+    <p>PHP یک زبان <strong>dynamically typed</strong> و <strong>weakly typed</strong> است (هرچند با type declarationها و strict_types می‌توان آن را سخت‌گیرتر کرد). انواع داده:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دسته</th><th>انواع</th><th>توضیح</th></tr></thead>
+      <tbody>
+        <tr><td>Scalar</td><td><code>int</code>، <code>float</code>، <code>string</code>، <code>bool</code></td><td>string در PHP دنباله‌ای از <strong>بایت</strong> است، نه کاراکتر (نکتهٔ مهم برای UTF-8).</td></tr>
+        <tr><td>Compound</td><td><code>array</code>، <code>object</code>، <code>callable</code>، <code>iterable</code></td><td>array در واقع یک <strong>ordered hash map</strong> است؛ هم لیست است هم دیکشنری.</td></tr>
+        <tr><td>Special</td><td><code>null</code>، <code>resource</code></td><td>resource برای handleهای خارجی (فایل، سوکت)؛ در نسخه‌های اخیر بسیاری از resourceها به object تبدیل شده‌اند (مثل <code>CurlHandle</code> در PHP 8.0).</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Type Juggling (تبدیل ضمنی نوع)</h3>
+    <p>PHP بر اساس context نوع را تبدیل می‌کند: <code>"5" + 3</code> برابر <code>8</code> است، <code>"abc" . 1</code> برابر <code>"abc1"</code>. در شرط‌ها مقادیر <strong>falsy</strong> عبارت‌اند از: <code>false</code>، <code>0</code>، <code>0.0</code>، <code>""</code>، <code>"0"</code>، <code>[]</code>، <code>null</code>. نکتهٔ معروف: <code>"0"</code> falsy است اما <code>"0.0"</code> و <code>" "</code> truthy هستند.</p>
+
+    <h3>== در برابر ===</h3>
+    <ul>
+      <li><code>==</code> (loose): ابتدا type juggling انجام می‌دهد، بعد مقایسه می‌کند.</li>
+      <li><code>===</code> (strict): نوع و مقدار باید هر دو یکسان باشند؛ هیچ تبدیلی انجام نمی‌شود.</li>
+    </ul>
+    <h3>تغییر مهم PHP 8: مقایسهٔ رشته با عدد</h3>
+    <p>از PHP 8.0 (RFC «Saner string to number comparisons»): اگر رشته <strong>numeric</strong> باشد، مقایسه عددی انجام می‌شود؛ در غیر این صورت <strong>عدد به رشته تبدیل</strong> و مقایسهٔ رشته‌ای انجام می‌شود. قبلاً رشته به عدد تبدیل می‌شد و <code>"abc"</code> به <code>0</code> می‌رسید.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عبارت</th><th>PHP 7.x</th><th>PHP 8.x</th></tr></thead>
+      <tbody>
+        <tr><td><code>0 == "foo"</code></td><td>true</td><td><strong>false</strong></td></tr>
+        <tr><td><code>0 == ""</code></td><td>true</td><td><strong>false</strong></td></tr>
+        <tr><td><code>"1" == "01"</code></td><td>true</td><td>true (هر دو numeric)</td></tr>
+        <tr><td><code>"10" == "1e1"</code></td><td>true</td><td>true</td></tr>
+        <tr><td><code>100 == "1e2"</code></td><td>true</td><td>true</td></tr>
+        <tr><td><code>null == false</code></td><td>true</td><td>true</td></tr>
+        <tr><td><code>in_array("abc", [0])</code></td><td>true</td><td>false</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>با وجود اصلاح PHP 8، مقایسهٔ loose هنوز خطرناک است: <code>"1e3" == "1000"</code> درست است و این در مقایسهٔ hash یا token می‌تواند باگ امنیتی بسازد. برای مقایسهٔ رمز و token از <code>hash_equals()</code> و در حالت عادی از <code>===</code> استفاده کنید. <code>in_array</code> و <code>array_search</code> هم پارامتر سوم <code>strict</code> دارند.</p></div>
+
+    <h3>عملگر Spaceship و مقایسهٔ آرایه‌ها</h3>
+    <p><code>$a &lt;=&gt; $b</code> (از PHP 7.0) مقدار <code>-1</code>، <code>0</code> یا <code>1</code> برمی‌گرداند و برای callback مرتب‌سازی ایده‌آل است:</p>
+    <pre><code class="language-php">&lt;?php
+usort($users, fn($a, $b) =&gt; [$a-&gt;age, $a-&gt;name] &lt;=&gt; [$b-&gt;age, $b-&gt;name]); // مرتب‌سازی چندکلیدی
+
+[1, 2] == [2 =&gt; 1];        // false
+['a' =&gt; 1, 'b' =&gt; 2] == ['b' =&gt; 2, 'a' =&gt; 1];   // true  (کلید/مقدار برابر)
+['a' =&gt; 1, 'b' =&gt; 2] === ['b' =&gt; 2, 'a' =&gt; 1];  // false (ترتیب و نوع هم مهم است)</code></pre>
+    <ul>
+      <li><code>??</code> (null coalescing): اگر سمت چپ وجود نداشته باشد یا null باشد، سمت راست را برمی‌گرداند و notice نمی‌دهد. <code>??=</code> از PHP 7.4.</li>
+      <li><code>?:</code> (Elvis): اگر سمت چپ <strong>falsy</strong> باشد سمت راست را برمی‌گرداند؛ پس <code>0 ?: 5</code> برابر 5 ولی <code>0 ?? 5</code> برابر 0 است.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="type-system" data-title="Type Declaration و strict_types">
+    <h2>Type Declaration و strict_types</h2>
+    <p>PHP به‌تدریج یک سیستم نوع قوی پیدا کرده است. type declaration روی پارامتر، مقدار برگشتی و property (از PHP 7.4، <strong>typed properties</strong>) قابل استفاده است و در زمان اجرا بررسی می‌شود (نقض آن <code>TypeError</code> می‌دهد).</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>نسخه</th><th>معنا</th></tr></thead>
+      <tbody>
+        <tr><td><code>?T</code> (nullable)</td><td>7.1</td><td>معادل <code>T|null</code></td></tr>
+        <tr><td><code>void</code></td><td>7.1</td><td>تابع مقداری برنمی‌گرداند (فقط <code>return;</code>)</td></tr>
+        <tr><td><code>object</code></td><td>7.2</td><td>هر objectی</td></tr>
+        <tr><td><code>A|B</code> (union)</td><td>8.0</td><td>یکی از چند نوع</td></tr>
+        <tr><td><code>mixed</code></td><td>8.0</td><td>هر نوعی، شامل null؛ صریح‌تر از نبود type</td></tr>
+        <tr><td><code>static</code> (return)</td><td>8.0</td><td>همان کلاسی که متد روی آن صدا زده شده (برای fluent API و LSB)</td></tr>
+        <tr><td><code>never</code></td><td>8.1</td><td>تابع هرگز به‌طور عادی برنمی‌گردد (همیشه throw یا exit)</td></tr>
+        <tr><td><code>A&amp;B</code> (intersection)</td><td>8.1</td><td>مقدار باید همهٔ interfaceها/کلاس‌ها را پیاده کند</td></tr>
+        <tr><td><code>null</code>، <code>false</code>، <code>true</code> مستقل</td><td>8.2</td><td>استفاده به‌عنوان نوع مستقل</td></tr>
+        <tr><td>DNF: <code>(A&amp;B)|null</code></td><td>8.2</td><td>Disjunctive Normal Form: ترکیب union از intersectionها</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+function findUser(int $id): ?User { /* ... */ }                    // nullable
+function parse(int|string $input): int|float { /* ... */ }        // union
+function process(Countable&amp;Iterator $items): void { /* ... */ }    // intersection
+function cache((Countable&amp;ArrayAccess)|null $store): void { }       // DNF (8.2)
+
+function fail(string $msg): never
+{
+    throw new DomainException($msg);   // never: تابع هیچ‌گاه return نمی‌کند
+}
+
+class QueryBuilder
+{
+    public function where(string $col, mixed $val): static   // در زیرکلاس هم نوع زیرکلاس برمی‌گردد
+    {
+        $this-&gt;wheres[] = [$col, $val];
+        return $this;
+    }
+}</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4><code>void</code></h4><ul><li>تابع برمی‌گردد، اما بدون مقدار.</li><li>فراخواننده اجرای خود را ادامه می‌دهد.</li></ul></div>
+      <div class="card"><h4><code>never</code></h4><ul><li>تابع اصلاً برنمی‌گردد (throw، <code>exit</code>، حلقهٔ بی‌نهایت).</li><li>به static analyzer می‌گوید کد بعد از فراخوانی unreachable است (مثل <code>abort()</code> در Laravel).</li></ul></div>
+    </div>
+
+    <h3>declare(strict_types=1)</h3>
+    <p>در حالت پیش‌فرض (<strong>coercive mode</strong>)، PHP مقادیر scalar را در صورت امکان به نوع اعلام‌شده تبدیل می‌کند: ارسال <code>"5"</code> به پارامتر <code>int</code> قبول و به <code>5</code> تبدیل می‌شود. با <code>declare(strict_types=1);</code> این تبدیل ممنوع می‌شود و <code>TypeError</code> پرتاب می‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+declare(strict_types=1);   // باید اولین statement فایل باشد
+
+function add(int $a, int $b): int { return $a + $b; }
+
+add(1, 2);       // 3
+add("1", 2);     // TypeError
+add(1.5, 2);     // TypeError
+function half(float $x): float { return $x / 2; }
+half(5);         // 2.5 — تنها استثنا: int به float (widening) مجاز است</code></pre>
+    <ul>
+      <li><strong>Per-file</strong> است و روی <strong>فراخوانی‌هایی که از داخل آن فایل انجام می‌شود</strong> اثر دارد، نه روی تعریف تابع. یعنی تصمیم با <strong>caller</strong> است. اگر تابع در فایل strict تعریف شده ولی از فایل غیر strict صدا زده شود، coercion انجام می‌شود.</li>
+      <li>برای <strong>return type</strong>، حالت فایلی که تابع در آن تعریف شده ملاک است.</li>
+      <li>روی فراخوانی توابع داخلی PHP (مثل <code>strlen(123)</code>) هم از فایل strict اثر دارد.</li>
+      <li>روی عملگرها (<code>"5" + 3</code>) و شرط‌ها (<code>if ("abc")</code>) اثری ندارد؛ فقط مرز تابع/property را کنترل می‌کند.</li>
+      <li>روی مقداردهی به typed property از داخل همان فایل هم اثر دارد.</li>
+    </ul>
+    <div class="callout exam"><p>جملهٔ کلیدی برای پاسخ: «strict_types یک تنظیم <strong>per-file</strong> است که حالت <strong>caller</strong> را تعیین می‌کند؛ coercion اسکالرها را غیرفعال می‌کند به‌جز widening از int به float، و روی عملگرها اثری ندارد.»</p></div>
+  </section>
+
+  <section class="lesson" id="php8-features" data-title="قابلیت‌های PHP 8.0 و 8.1">
+    <h2>قابلیت‌های PHP 8.0 و 8.1</h2>
+
+    <h3>Named Arguments (8.0)</h3>
+    <p>آرگومان‌ها را با نام پارامتر پاس می‌دهیم؛ ترتیب مهم نیست و می‌توان پارامترهای اختیاری میانی را رد کرد.</p>
+    <pre><code class="language-php">&lt;?php
+htmlspecialchars($str, double_encode: false);       // بدون تکرار flags و encoding پیش‌فرض
+str_pad(string: 'x', length: 10, pad_type: STR_PAD_LEFT);
+new Money(amount: 1000, currency: 'IRR');</code></pre>
+    <div class="callout warn"><p>با named arguments، <strong>نام پارامترها بخشی از API عمومی</strong> می‌شود؛ تغییر نام پارامتر در یک کتابخانه می‌تواند breaking change باشد. آرگومان positional باید قبل از named بیاید.</p></div>
+
+    <h3>match در برابر switch (8.0)</h3>
+    <pre><code class="language-php">&lt;?php
+$label = match ($status) {
+    'draft', 'pending' =&gt; 'در انتظار',
+    'paid'             =&gt; 'پرداخت‌شده',
+    default            =&gt; throw new InvalidArgumentException("Unknown: $status"),
+};
+
+// match(true) برای شرط‌های بازه‌ای
+$grade = match (true) {
+    $score &gt;= 90 =&gt; 'A',
+    $score &gt;= 75 =&gt; 'B',
+    default      =&gt; 'C',
+};</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th><code>switch</code></th><th><code>match</code></th></tr></thead>
+      <tbody>
+        <tr><td>نوع مقایسه</td><td>loose (<code>==</code>)</td><td>strict (<code>===</code>)</td></tr>
+        <tr><td>مقدار برگشتی</td><td>statement است، مقدار ندارد</td><td>expression است و مقدار برمی‌گرداند</td></tr>
+        <tr><td>fall-through</td><td>بدون <code>break</code> به case بعدی می‌رود</td><td>ندارد</td></tr>
+        <tr><td>حالت پوشش‌داده‌نشده</td><td>بی‌صدا رد می‌شود</td><td><code>UnhandledMatchError</code></td></tr>
+        <tr><td>بدنهٔ هر شاخه</td><td>چند statement</td><td>فقط یک expression</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Nullsafe Operator <code>?-&gt;</code> (8.0)</h3>
+    <pre><code class="language-php">&lt;?php
+$country = $user?-&gt;getAddress()?-&gt;country?-&gt;name;
+// اگر هر حلقه null باشد، کل زنجیره (short-circuit) null می‌شود
+// معادل قدیمی: چند if تودرتو یا optional($user)-&gt;address در Laravel</code></pre>
+    <p>تفاوت با <code>??</code>: <code>?-&gt;</code> فقط null را مدیریت می‌کند، نه property/key ناموجود را. همچنین فقط برای خواندن است و نمی‌توان با آن مقداردهی کرد (<code>$a?-&gt;b = 1</code> خطاست).</p>
+
+    <h3>Constructor Property Promotion (8.0)</h3>
+    <pre><code class="language-php">&lt;?php
+// قبل
+class Point {
+    private int $x;
+    public function __construct(int $x) { $this-&gt;x = $x; }
+}
+// بعد
+final class OrderService
+{
+    public function __construct(
+        private readonly OrderRepository $orders,
+        private readonly PaymentGateway $gateway,
+        private int $retries = 3,
+    ) {}
+}</code></pre>
+    <p>هر پارامتر constructor که visibility modifier داشته باشد، هم‌زمان property تعریف و مقداردهی می‌کند. در Laravel برای تزریق وابستگی در کنترلر و سرویس بسیار رایج است.</p>
+
+    <h3>Attributes (8.0)</h3>
+    <p>metadata ساخت‌یافته و قابل خواندن با Reflection، جایگزین docblock annotationها:</p>
+    <pre><code class="language-php">&lt;?php
+#[Attribute(Attribute::TARGET_METHOD)]
+final class Route
+{
+    public function __construct(public string $method, public string $path) {}
+}
+
+class UserController
+{
+    #[Route('GET', '/users')]
+    public function index() {}
+}
+
+$ref = new ReflectionMethod(UserController::class, 'index');
+foreach ($ref-&gt;getAttributes(Route::class) as $attr) {
+    $route = $attr-&gt;newInstance();   // instance فقط هنگام newInstance ساخته می‌شود
+    echo $route-&gt;path;               // /users
+}</code></pre>
+    <p>attributeهای داخلی مهم: <code>#[\SensitiveParameter]</code> (8.2، پنهان کردن مقدار در stack trace)، <code>#[\AllowDynamicProperties]</code> (8.2)، <code>#[\Override]</code> (8.3)، <code>#[\Deprecated]</code> (8.4). Laravel هم attributeهایی مثل <code>#[ObservedBy]</code> برای مدل‌ها دارد.</p>
+
+    <h3>سایر قابلیت‌های 8.0</h3>
+    <ul>
+      <li><strong>throw به‌عنوان expression</strong>: <code>$user = $repo-&gt;find($id) ?? throw new NotFound();</code></li>
+      <li><strong>catch بدون متغیر</strong>: <code>catch (JsonException) { ... }</code></li>
+      <li>توابع رشته‌ای <code>str_contains</code>، <code>str_starts_with</code>، <code>str_ends_with</code>.</li>
+      <li><code>::class</code> روی object: <code>$obj::class</code>.</li>
+      <li>اینترفیس <code>Stringable</code> که کلاس‌های دارای <code>__toString</code> خودکار پیاده می‌کنند.</li>
+      <li>بسیاری از warningهای توابع داخلی به <code>TypeError</code>/<code>ValueError</code> تبدیل شدند.</li>
+    </ul>
+
+    <h3>First-class Callable Syntax (8.1)</h3>
+    <pre><code class="language-php">&lt;?php
+$strlen = strlen(...);                 // Closure
+$handler = $this-&gt;handle(...);        // Closure متصل به $this
+$factory = User::create(...);         // متد static
+array_map(trim(...), $lines);
+// قبلاً: Closure::fromCallable([$this, 'handle']) یا آرایهٔ رشته‌ای [$this, 'handle']</code></pre>
+    <p>مزیت: IDE و static analyzer آن را می‌فهمند، با refactor نام متد درست می‌ماند، و scope (دسترسی به private) در لحظهٔ ساخت گرفته می‌شود.</p>
+
+    <h3>new in Initializers (8.1)</h3>
+    <pre><code class="language-php">&lt;?php
+class Service
+{
+    public function __construct(
+        private Logger $logger = new NullLogger(),   // قبلاً مجاز نبود
+    ) {}
+}</code></pre>
+    <p>در مقدار پیش‌فرض پارامتر، آرگومان attributeها، initializer متغیر static و ثابت‌های global مجاز است؛ اما <strong>در مقدار پیش‌فرض property مجاز نیست</strong>.</p>
+
+    <h3>Fibers (8.1) — مفهوم</h3>
+    <p><strong>Fiber</strong> یک واحد اجرای سبک با stack مستقل است که می‌تواند وسط اجرا <strong>suspend</strong> و بعداً <strong>resume</strong> شود. این <strong>همروندی همکارانه (cooperative)</strong> است، نه موازی‌سازی: در هر لحظه فقط یک fiber اجرا می‌شود و threadی ساخته نمی‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+$fiber = new Fiber(function (string $x): string {
+    $y = Fiber::suspend($x . ' suspended');   // کنترل به caller برمی‌گردد
+    return "resumed with $y";
+});
+echo $fiber-&gt;start('job');     // job suspended
+$fiber-&gt;resume('data');
+echo $fiber-&gt;getReturn();      // resumed with data</code></pre>
+    <p>کاربرد اصلی آن در کتابخانه‌های async (مثل event loop در Revolt و AMPHP v3) است تا کد async بدون callback و Promise، به شکل همگام نوشته شود. توسعه‌دهندهٔ اپلیکیشن معمولاً مستقیم با Fiber کار نمی‌کند.</p>
+  </section>
+
+  <section class="lesson" id="readonly-enums" data-title="readonly و Enum">
+    <h2>readonly و Enum</h2>
+    <h3>Readonly Properties (8.1)</h3>
+    <ul>
+      <li>فقط <strong>یک بار</strong> و فقط از <strong>داخل scope کلاس</strong> مقداردهی می‌شود؛ پس از آن هر تغییری <code>Error</code> می‌دهد.</li>
+      <li>باید <strong>typed</strong> باشد و مقدار پیش‌فرض نمی‌گیرد (مقداردهی در constructor).</li>
+      <li>readonly بودن <strong>سطحی (shallow)</strong> است: اگر property یک object باشد، خود object همچنان قابل تغییر است.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+final class Money
+{
+    public function __construct(
+        public readonly int $amount,
+        public readonly string $currency,
+    ) {}
+
+    public function add(Money $other): static
+    {
+        if ($other-&gt;currency !== $this-&gt;currency) {
+            throw new InvalidArgumentException('Currency mismatch');
+        }
+        return new static($this-&gt;amount + $other-&gt;amount, $this-&gt;currency); // wither: object جدید
+    }
+}
+
+$m = new Money(100, 'USD');
+$m-&gt;amount = 200;   // Error: Cannot modify readonly property Money::$amount</code></pre>
+
+    <h3>Readonly Classes (8.2)</h3>
+    <p><code>readonly class Dto { ... }</code> همهٔ propertyها را readonly می‌کند و ساخت dynamic property را ممنوع می‌کند. همهٔ propertyها باید typed باشند. ایده‌آل برای <strong>DTO</strong> و <strong>Value Object</strong>.</p>
+    <div class="callout note"><p>از PHP 8.3 می‌توان propertyهای readonly را داخل <code>__clone()</code> دوباره مقداردهی کرد؛ این کار پیاده‌سازی deep clone برای objectهای immutable را ممکن می‌کند.</p></div>
+
+    <h3>Enumها (8.1)</h3>
+    <p>enum یک نوع با مجموعهٔ <strong>بسته و محدود</strong> از مقادیر ممکن است. هر case یک <strong>instance یکتا (singleton)</strong> از enum است، پس با <code>===</code> مقایسه می‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+// Pure enum: فقط case، بدون مقدار اسکالر
+enum Suit { case Hearts; case Spades; }
+
+// Backed enum: هر case یک مقدار int یا string دارد (برای ذخیره در DB/JSON)
+enum OrderStatus: string implements HasLabel
+{
+    case Pending   = 'pending';
+    case Paid      = 'paid';
+    case Cancelled = 'cancelled';
+
+    const DEFAULT = self::Pending;              // ثابت در enum مجاز است
+
+    public function label(): string            // متد
+    {
+        return match ($this) {
+            self::Pending   =&gt; 'در انتظار پرداخت',
+            self::Paid      =&gt; 'پرداخت شده',
+            self::Cancelled =&gt; 'لغو شده',
+        };
+    }
+
+    public function canTransitionTo(self $next): bool
+    {
+        return in_array($next, match ($this) {
+            self::Pending =&gt; [self::Paid, self::Cancelled],
+            default       =&gt; [],
+        }, true);
+    }
+
+    public static function fromLabel(string $label): self { /* ... */ }  // متد static
+}
+
+OrderStatus::from('paid');        // OrderStatus::Paid
+OrderStatus::tryFrom('unknown');  // null (from() در این حالت ValueError می‌دهد)
+OrderStatus::cases();             // آرایهٔ همهٔ caseها
+OrderStatus::Paid-&gt;value;         // 'paid'
+OrderStatus::Paid-&gt;name;          // 'Paid'
+OrderStatus::Paid instanceof UnitEnum;   // true (BackedEnum هم)</code></pre>
+    <ul>
+      <li>enum می‌تواند <strong>interface پیاده کند</strong>، متد (عادی و static) و ثابت داشته باشد و trait (بدون property) استفاده کند.</li>
+      <li>enum <strong>state ندارد</strong>: property تعریف نمی‌شود (جز <code>name</code> و <code>value</code> که readonly هستند)، با <code>new</code> ساخته نمی‌شود و قابل ارث‌بری نیست.</li>
+      <li>در Laravel: cast مستقیم در مدل (<code>'status' =&gt; OrderStatus::class</code>)، قانون اعتبارسنجی <code>Rule::enum(OrderStatus::class)</code>، و implicit route binding برای backed enumها.</li>
+    </ul>
+    <div class="callout exam"><p>«enum در برابر class constants»: ثابت‌ها فقط مقدار اسکالرند و type safety ندارند (تابعی که <code>string $status</code> می‌گیرد هر رشته‌ای را قبول می‌کند)، اما با enum امضای تابع <code>OrderStatus $status</code> می‌شود و مقدار نامعتبر عملاً ممکن نیست. enum همچنین رفتار (متد) را کنار داده نگه می‌دارد، با <code>match</code> بدون <code>default</code> بررسی جامع (exhaustive) می‌دهد و <code>cases()</code> برای ساخت dropdown و validation دارد.</p></div>
+  </section>
+
+  <section class="lesson" id="php83-84" data-title="PHP 8.2 تا 8.4">
+    <h2>قابلیت‌های PHP 8.2، 8.3 و 8.4</h2>
+    <h3>PHP 8.2</h3>
+    <ul>
+      <li>readonly classes و DNF types (بالاتر توضیح داده شد).</li>
+      <li><strong>منسوخ شدن dynamic properties</strong>: ساخت property تعریف‌نشده روی object، هشدار deprecation می‌دهد مگر کلاس <code>#[\AllowDynamicProperties]</code> داشته باشد یا <code>__get</code>/<code>__set</code> پیاده کند (مثل مدل Eloquent) یا <code>stdClass</code> باشد.</li>
+      <li>ثابت در trait.</li>
+      <li>نوع‌های مستقل <code>null</code>، <code>false</code> و <code>true</code>.</li>
+      <li>attribute <code>#[\SensitiveParameter]</code> و extension <code>Random</code>.</li>
+    </ul>
+    <h3>PHP 8.3</h3>
+    <pre><code class="language-php">&lt;?php
+interface HasVersion
+{
+    const string VERSION = '1.0';        // Typed class constants (8.3)
+}
+
+class Base { public function handle(): void {} }
+
+class Child extends Base
+{
+    #[\Override]                          // اگر متد handle در والد نباشد، خطای compile-time
+    public function handle(): void {}
+}
+
+$name = 'VERSION';
+echo HasVersion::{$name};                 // Dynamic class constant fetch (8.3)
+
+json_validate('{"a":1}');                 // true، بدون decode کامل (8.3)</code></pre>
+    <p><strong><code>#[\Override]</code></strong> از این اشتباه جلوگیری می‌کند که فکر کنیم متد والد را override کرده‌ایم ولی به خاطر غلط تایپی یا حذف متد از والد، یک متد جدید و بی‌ربط ساخته‌ایم.</p>
+
+    <h3>PHP 8.4: Property Hooks</h3>
+    <p>منطق get/set را مستقیم روی property تعریف می‌کنیم؛ دیگر لازم نیست برای هر property متد getter/setter بنویسیم.</p>
+    <pre><code class="language-php">&lt;?php
+class User
+{
+    public string $email {
+        set(string $value) {
+            if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                throw new InvalidArgumentException('Invalid email');
+            }
+            $this-&gt;email = strtolower($value);   // نوشتن در backing value
+        }
+    }
+
+    public function __construct(public string $first, public string $last) {}
+
+    // Virtual property: backing value ندارد و فقط محاسبه می‌شود
+    public string $fullName {
+        get =&gt; "{$this-&gt;first} {$this-&gt;last}";
+    }
+}
+
+interface Named
+{
+    public string $name { get; }   // از 8.4 interface می‌تواند property (با hook) اعلام کند
+}</code></pre>
+
+    <h3>PHP 8.4: Asymmetric Visibility</h3>
+    <pre><code class="language-php">&lt;?php
+final class Order
+{
+    public private(set) OrderStatus $status = OrderStatus::Pending;   // خواندن public، نوشتن private
+    public protected(set) int $version = 0;                           // نوشتن از کلاس و فرزندان
+
+    public function pay(): void
+    {
+        $this-&gt;status = OrderStatus::Paid;   // مجاز
+    }
+}
+
+$o = new Order();
+echo $o-&gt;status-&gt;value;          // مجاز
+$o-&gt;status = OrderStatus::Paid;  // Error: Cannot modify private(set) property</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4><code>readonly</code></h4><ul><li>فقط یک بار نوشته می‌شود؛ بعد از آن حتی خود کلاس نمی‌تواند تغییرش دهد.</li><li>مناسب immutable کامل.</li></ul></div>
+      <div class="card"><h4><code>private(set)</code></h4><ul><li>کلاس می‌تواند بارها تغییرش دهد؛ بیرونی‌ها فقط می‌خوانند.</li><li>مناسب entityهایی که state کنترل‌شده دارند.</li></ul></div>
+    </div>
+    <h3>سایر قابلیت‌های 8.4</h3>
+    <ul>
+      <li>فراخوانی متد روی <code>new</code> بدون پرانتز اضافه: <code>new Request()-&gt;withHeader(...)</code>.</li>
+      <li>توابع آرایه‌ای <code>array_find</code>، <code>array_find_key</code>، <code>array_any</code>، <code>array_all</code>.</li>
+      <li><strong>Lazy Objects</strong> بومی (<code>ReflectionClass::newLazyGhost</code> و <code>newLazyProxy</code>) برای ساخت object که مقداردهی‌اش تا اولین استفاده عقب می‌افتد؛ مناسب ORMها و DI containerها.</li>
+      <li>attribute <code>#[\Deprecated]</code> برای توابع و متدهای کاربر.</li>
+    </ul>
+    <div class="callout note"><p>PHP 8.5 (نوامبر 2025) هم عملگر pipe (<code>|&gt;</code>) و توابع <code>array_first</code>/<code>array_last</code> را اضافه کرد. اگر نسخهٔ پروژه‌تان قدیمی‌تر است، روی 8.1 تا 8.4 تمرکز کنید که در سوالات رایج‌ترند.</p></div>
+  </section>
+
+  <section class="lesson" id="oop" data-title="OOP، Late Static Binding و Traits">
+    <h2>OOP، Late Static Binding و Traits</h2>
+    <h3>Visibility</h3>
+    <ul>
+      <li><code>public</code>: از همه‌جا. <code>protected</code>: از خود کلاس و کلاس‌های فرزند/والد. <code>private</code>: فقط از همان کلاسی که تعریف شده.</li>
+      <li>visibility در PHP <strong>class-based</strong> است، نه object-based: یک متد می‌تواند به propertyهای private <strong>object دیگری از همان کلاس</strong> دسترسی داشته باشد (برای متدهایی مثل <code>equals()</code> مفید است).</li>
+    </ul>
+
+    <h3>self در برابر static (Late Static Binding)</h3>
+    <ul>
+      <li><code>self::</code> به <strong>کلاسی که کد در آن نوشته شده</strong> اشاره می‌کند (در compile-time تعیین می‌شود).</li>
+      <li><code>static::</code> به <strong>کلاسی که در زمان اجرا صدا زده شده</strong> اشاره می‌کند (Late Static Binding، از PHP 5.3).</li>
+      <li><code>parent::</code> به کلاس والد.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+class Model
+{
+    public static function create(): static
+    {
+        return new static();        // اگر new self() بود، همیشه Model برمی‌گشت
+    }
+
+    public static function table(): string
+    {
+        return static::$table;      // property کلاس فرزند خوانده می‌شود
+    }
+    protected static string $table = 'models';
+}
+
+class User extends Model
+{
+    protected static string $table = 'users';
+}
+
+get_class(User::create());   // User
+User::table();               // users  (با self::$table نتیجه models می‌شد)</code></pre>
+    <div class="callout exam"><p>Eloquent به‌شدت از LSB استفاده می‌کند: <code>User::query()</code> و <code>User::create()</code> در کلاس پایهٔ <code>Model</code> تعریف شده‌اند اما با <code>new static</code> یک instance از <code>User</code> می‌سازند.</p></div>
+
+    <h3>Static</h3>
+    <p>اعضای static متعلق به کلاس‌اند نه instance. در PHP-FPM، propertyهای static فقط در طول یک درخواست زنده‌اند، اما در Octane و queue worker بین درخواست‌ها/jobها باقی می‌مانند و منبع رایج باگ هستند. متدهای static قابل mock نیستند و وابستگی پنهان می‌سازند؛ برای منطق دامنه بهتر است از instance و DI استفاده شود.</p>
+
+    <h3>Abstract Class در برابر Interface</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>Abstract Class</th><th>Interface</th></tr></thead>
+      <tbody>
+        <tr><td>هدف</td><td>اشتراک <strong>پیاده‌سازی</strong> بین کلاس‌های هم‌خانواده (is-a)</td><td>تعریف <strong>قرارداد</strong> (can-do)</td></tr>
+        <tr><td>تعداد</td><td>فقط یک والد (single inheritance)</td><td>یک کلاس می‌تواند چند interface پیاده کند</td></tr>
+        <tr><td>state</td><td>property و constructor دارد</td><td>property ندارد (جز property با hook در 8.4)؛ ثابت دارد</td></tr>
+        <tr><td>متدها</td><td>ترکیب متد abstract و concrete</td><td>فقط امضا، همه public</td></tr>
+        <tr><td>نمونه در Laravel</td><td><code>Model</code>، <code>Command</code>، <code>ServiceProvider</code></td><td>Contracts مثل <code>Illuminate\Contracts\Cache\Repository</code></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>final</strong>: کلاس final قابل ارث‌بری نیست؛ متد final قابل override نیست؛ ثابت final (8.1) در فرزند تغییر نمی‌کند. توصیهٔ رایج: کلاس‌ها را به‌طور پیش‌فرض final کنید و ترکیب (composition) را بر ارث‌بری ترجیح دهید.</p>
+
+    <h3>Traits</h3>
+    <p>trait مکانیزم <strong>استفادهٔ مجدد افقی از کد</strong> است: کد trait در زمان compile عملاً در کلاس «کپی» می‌شود. trait نوع (type) نیست؛ نمی‌توان <code>instanceof SomeTrait</code> نوشت یا آن را type-hint کرد.</p>
+    <pre><code class="language-php">&lt;?php
+trait Loggable
+{
+    protected static int $count = 0;         // هر کلاسِ استفاده‌کننده، نسخهٔ مستقل خودش را دارد
+
+    abstract protected function logPrefix(): string;   // کلاس استفاده‌کننده موظف به پیاده‌سازی
+
+    public function log(string $m): void
+    {
+        static::$count++;
+        echo $this-&gt;logPrefix() . $m;
+    }
+
+    public static function make(): static { return new static(); }   // متد static در trait
+}
+
+trait Hello { public function greet() { return 'Hello'; } }
+trait Hi    { public function greet() { return 'Hi'; } }
+
+class Greeter
+{
+    use Hello, Hi {
+        Hello::greet insteadof Hi;    // حل تعارض: نسخهٔ Hello برنده است
+        Hi::greet as greetHi;         // نسخهٔ Hi با نام مستعار در دسترس می‌ماند
+        greet as protected;           // تغییر visibility
+    }
+}</code></pre>
+    <ul>
+      <li>اولویت: متد خود کلاس &gt; متد trait &gt; متد ارث‌برده از والد.</li>
+      <li>trait می‌تواند property، متد abstract، متد static، property static و (از 8.2) ثابت داشته باشد.</li>
+      <li>اگر trait و کلاس property هم‌نام داشته باشند، فقط وقتی مجاز است که کاملاً سازگار باشند (visibility، نوع و مقدار اولیه یکسان).</li>
+      <li>در Laravel: <code>HasFactory</code>، <code>SoftDeletes</code>، <code>Notifiable</code>، <code>Dispatchable</code>. Eloquent متدهای <code>boot{TraitName}</code> و <code>initialize{TraitName}</code> را خودکار صدا می‌زند.</li>
+    </ul>
+    <div class="callout warn"><p>استفادهٔ افراطی از trait باعث coupling پنهان می‌شود (trait به propertyهای کلاس میزبان وابسته است)، تست مستقل آن دشوار است و کلاس را به «God Object» تبدیل می‌کند. اگر رفتار مستقل است، composition (تزریق یک سرویس) معمولاً بهتر است.</p></div>
+  </section>
+
+  <section class="lesson" id="magic-methods" data-title="Magic Methods و Clone">
+    <h2>Magic Methods و Clone</h2>
+    <p>متدهایی با پیشوند <code>__</code> که PHP در موقعیت‌های خاص خودکار صدا می‌زند.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>چه زمانی صدا زده می‌شود</th><th>کاربرد / مثال Laravel</th></tr></thead>
+      <tbody>
+        <tr><td><code>__construct</code> / <code>__destruct</code></td><td>ساخت / آزاد شدن object</td><td>destructor وقتی refcount صفر شود یا در پایان اسکریپت</td></tr>
+        <tr><td><code>__get</code> / <code>__set</code></td><td>دسترسی به property <strong>ناموجود یا غیرقابل دسترس</strong></td><td>attributeهای Eloquent: <code>$user-&gt;name</code> در واقع از آرایهٔ <code>$attributes</code> خوانده می‌شود</td></tr>
+        <tr><td><code>__isset</code> / <code>__unset</code></td><td><code>isset()</code>/<code>empty()</code> و <code>unset()</code> روی property ناموجود</td><td>بدون <code>__isset</code>، <code>isset($model-&gt;name)</code> همیشه false می‌شد</td></tr>
+        <tr><td><code>__call</code></td><td>صدا زدن متد instance ناموجود</td><td>مدل Eloquent متدهای ناشناخته را به Query Builder forward می‌کند</td></tr>
+        <tr><td><code>__callStatic</code></td><td>صدا زدن متد static ناموجود</td><td>Facadeها: <code>Cache::get()</code>؛ و <code>User::where()</code></td></tr>
+        <tr><td><code>__toString</code></td><td>تبدیل object به رشته</td><td>از 8.0 کلاس خودکار <code>Stringable</code> می‌شود</td></tr>
+        <tr><td><code>__invoke</code></td><td>صدا زدن object مثل تابع: <code>$obj()</code></td><td>Single Action Controller، Action classها، job و rule</td></tr>
+        <tr><td><code>__serialize</code> / <code>__unserialize</code></td><td><code>serialize()</code>/<code>unserialize()</code></td><td>از 7.4؛ جایگزین <code>__sleep</code>/<code>__wakeup</code> و interface منسوخ <code>Serializable</code></td></tr>
+        <tr><td><code>__clone</code></td><td>بعد از <code>clone</code>، روی <strong>کپی جدید</strong></td><td>پیاده‌سازی deep copy</td></tr>
+        <tr><td><code>__debugInfo</code></td><td><code>var_dump()</code></td><td>کنترل خروجی دیباگ</td></tr>
+        <tr><td><code>__set_state</code></td><td><code>var_export()</code></td><td>کش کردن config به‌صورت کد PHP</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+class Config
+{
+    private array $items = [];
+
+    public function __get(string $key): mixed { return $this-&gt;items[$key] ?? null; }
+    public function __set(string $key, mixed $value): void { $this-&gt;items[$key] = $value; }
+    public function __isset(string $key): bool { return isset($this-&gt;items[$key]); }
+
+    public function __call(string $method, array $args): mixed
+    {
+        if (str_starts_with($method, 'get')) {
+            return $this-&gt;items[lcfirst(substr($method, 3))] ?? null;   // getName() → items['name']
+        }
+        throw new BadMethodCallException("Method $method does not exist");
+    }
+}</code></pre>
+    <div class="callout warn"><p>هزینهٔ magic methods: کندتر از دسترسی مستقیم، نامرئی برای IDE و static analyzer (برای همین Laravel از <code>@property</code> و <code>@method</code> در docblock یا ابزار ide-helper استفاده می‌کند)، و خطاهای تایپی به‌جای خطای واضح، رفتار عجیب تولید می‌کنند. در <code>__call</code> همیشه برای متدهای ناشناخته <code>BadMethodCallException</code> پرتاب کنید.</p></div>
+
+    <h3>Clone: کپی سطحی در برابر کپی عمیق</h3>
+    <p><code>clone $obj</code> یک <strong>shallow copy</strong> می‌سازد: propertyهای اسکالر و آرایه کپی می‌شوند، اما propertyهایی که object هستند فقط <strong>handle</strong>شان کپی می‌شود و هر دو کپی به همان object درونی اشاره می‌کنند.</p>
+    <pre><code class="language-php">&lt;?php
+class Order
+{
+    public array $items = [];
+    public function __construct(public Address $address) {}
+
+    public function __clone(): void
+    {
+        $this-&gt;address = clone $this-&gt;address;   // deep copy برای object تودرتو
+        // آرایه‌ها خودشان by value کپی می‌شوند، مگر اینکه حاوی object باشند:
+        $this-&gt;items = array_map(fn($i) =&gt; clone $i, $this-&gt;items);
+    }
+}
+
+$a = new Order(new Address('Tehran'));
+$b = clone $a;
+$b-&gt;address-&gt;city = 'Shiraz';
+echo $a-&gt;address-&gt;city;   // بدون __clone: Shiraz   |   با __clone: Tehran</code></pre>
+    <p>در Laravel، <code>$query-&gt;clone()</code> برای Query Builder و <code>$model-&gt;replicate()</code> برای ساخت کپی مدل بدون کلید اصلی استفاده می‌شوند؛ Carbon نیز <code>copy()</code> دارد و نسخهٔ <code>CarbonImmutable</code> مشکل تغییر ناخواستهٔ تاریخ را حل می‌کند.</p>
+  </section>
+
+  <section class="lesson" id="value-semantics" data-title="Object، Array و Reference">
+    <h2>معنای انتقال: Object، Array و Reference</h2>
+    <ul>
+      <li><strong>Array و اسکالرها by value</strong> منتقل می‌شوند، اما با <strong>Copy-on-Write</strong>: کپی واقعی فقط زمانی انجام می‌شود که یکی از دو طرف تغییر کند. پس پاس دادن یک آرایهٔ بزرگ به تابع به‌خودی‌خود گران نیست.</li>
+      <li><strong>Objectها by handle</strong> منتقل می‌شوند: متغیر، شناسهٔ object را نگه می‌دارد. با پاس دادن object به تابع، <strong>کپی handle</strong> پاس می‌شود؛ تغییر propertyها در تابع بیرون دیده می‌شود، ولی <strong>جایگزین کردن</strong> متغیر داخل تابع روی بیرون اثر ندارد. این دقیقاً «pass by reference» نیست.</li>
+      <li><strong>Reference</strong> (<code>&amp;</code>) دو نام برای یک zval می‌سازد؛ جایگزین کردن یکی، دیگری را هم عوض می‌کند.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+function modify(stdClass $o) { $o-&gt;x = 2; }       // تغییر state: بیرون دیده می‌شود
+function replace(stdClass $o) { $o = new stdClass; $o-&gt;x = 3; }  // فقط کپی محلی handle عوض شد
+function replaceRef(stdClass &amp;$o) { $o = new stdClass; $o-&gt;x = 4; }
+
+$obj = new stdClass; $obj-&gt;x = 1;
+modify($obj);     echo $obj-&gt;x;   // 2
+replace($obj);    echo $obj-&gt;x;   // 2
+replaceRef($obj); echo $obj-&gt;x;   // 4
+
+function addItem(array $a) { $a[] = 'new'; }
+$list = ['a'];
+addItem($list);
+count($list);     // 1 — آرایه کپی شد</code></pre>
+
+    <h3>مقایسهٔ Objectها</h3>
+    <ul>
+      <li><code>$a == $b</code>: هر دو از <strong>یک کلاس</strong> باشند و همهٔ propertyها (به‌صورت loose و بازگشتی) برابر باشند.</li>
+      <li><code>$a === $b</code>: هر دو به <strong>همان instance</strong> اشاره کنند.</li>
+      <li>برای Value Object بهتر است متد <code>equals()</code> صریح نوشته شود. در Eloquent، <code>$a-&gt;is($b)</code> کلید، جدول و connection را مقایسه می‌کند.</li>
+    </ul>
+
+    <h3>دام معروف foreach با reference</h3>
+    <pre><code class="language-php">&lt;?php
+$arr = [1, 2, 3];
+foreach ($arr as &amp;$v) { }    // $v پس از حلقه هنوز reference به $arr[2] است
+foreach ($arr as $v) { }     // هر دور، مقدار جاری در $arr[2] نوشته می‌شود
+print_r($arr);               // [1, 2, 2]
+
+// راه حل: بلافاصله بعد از حلقهٔ reference
+unset($v);</code></pre>
+    <div class="callout tip"><p>به‌جای reference در foreach، معمولاً <code>array_map</code> یا <code>foreach ($arr as $k =&gt; $v) { $arr[$k] = ...; }</code> خواناتر و کم‌خطرتر است. reference همچنین copy-on-write را می‌شکند و ممکن است کندتر باشد.</p></div>
+  </section>
+
+  <section class="lesson" id="closures" data-title="Closure و Arrow Function">
+    <h2>Closure و Arrow Function</h2>
+    <p><strong>Closure</strong> یک تابع بی‌نام است که به‌صورت object از کلاس <code>Closure</code> نمایش داده می‌شود و می‌تواند متغیرهای scope بیرونی را <strong>capture</strong> کند. در PHP، capture <strong>صریح</strong> است (با <code>use</code>).</p>
+    <pre><code class="language-php">&lt;?php
+$tax = 0.09;
+$byValue = function (int $price) use ($tax) { return $price * (1 + $tax); };
+$tax = 0.5;
+echo $byValue(100);          // 109 — مقدار در لحظهٔ تعریف کپی شد
+
+$count = 0;
+$inc = function () use (&amp;$count) { $count++; };   // by reference
+$inc(); $inc();
+echo $count;                 // 2
+
+// Arrow function (7.4): کل scope بیرونی را خودکار و by value capture می‌کند
+$factor = 3;
+$mul = fn($x) =&gt; $x * $factor;
+$mul(2);                     // 6
+
+$n = 0;
+$try = fn() =&gt; $n++;          // فقط کپی محلی $n تغییر می‌کند
+$try();
+echo $n;                     // 0</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th><code>function () use (...)</code></th><th><code>fn() =&gt;</code></th></tr></thead>
+      <tbody>
+        <tr><td>capture</td><td>صریح؛ by value یا by reference</td><td>خودکار، فقط by value</td></tr>
+        <tr><td>بدنه</td><td>چند statement</td><td>فقط یک expression</td></tr>
+        <tr><td>تغییر متغیر بیرونی</td><td>با <code>use (&amp;$x)</code> ممکن</td><td>ممکن نیست</td></tr>
+        <tr><td><code>$this</code></td><td>خودکار bind می‌شود (در context کلاس)</td><td>خودکار bind می‌شود</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Binding: bind، bindTo، call</h3>
+    <p>closureی که داخل متد کلاس تعریف شود، <code>$this</code> را خودکار bind می‌کند. با <code>static function</code> یا <code>static fn</code> این کار انجام نمی‌شود (کمی حافظه صرفه‌جویی و جلوگیری از نگه داشتن ناخواستهٔ object). می‌توان closure را به object و scope دیگری متصل کرد:</p>
+    <pre><code class="language-php">&lt;?php
+class Counter { private int $count = 42; }
+
+$peek = function () { return $this-&gt;count; };
+
+$bound = Closure::bind($peek, new Counter, Counter::class);  // newThis + newScope
+echo $bound();                                                 // 42 (دسترسی به private!)
+
+echo $peek-&gt;call(new Counter);       // 42 — bind موقت و اجرای فوری (7.0)
+$b2 = $peek-&gt;bindTo(new Counter, Counter::class);</code></pre>
+    <p>Laravel از همین مکانیزم در <strong>Macroable</strong> استفاده می‌کند: <code>Collection::macro('toUpper', function () { return $this-&gt;map(...); })</code>؛ closure هنگام اجرا به instance کالکشن bind می‌شود تا <code>$this</code> در آن کار کند.</p>
+    <div class="callout warn"><p>در پروسس‌های طولانی (Octane، queue worker)، closureهایی که <code>$this</code> یا objectهای بزرگ را capture می‌کنند و در یک لیست static ذخیره می‌شوند، باعث memory leak می‌شوند. همچنین closureها به‌طور بومی serializable نیستند؛ Laravel برای queue کردن closure از <code>laravel/serializable-closure</code> استفاده می‌کند.</p></div>
+  </section>
+
+  <section class="lesson" id="generators" data-title="Generator و Iterator">
+    <h2>Generator، Iterator و اینترفیس‌های SPL</h2>
+    <p><strong>Generator</strong> تابعی است که به‌جای <code>return</code> یک مجموعهٔ کامل، با <code>yield</code> مقادیر را <strong>یکی‌یکی و تنبل (lazy)</strong> تولید می‌کند. صدا زدن آن بدنه را اجرا نمی‌کند؛ یک object از کلاس <code>Generator</code> (که <code>Iterator</code> را پیاده می‌کند) برمی‌گرداند. اجرا هر بار تا <code>yield</code> بعدی پیش می‌رود و state توابع (متغیرهای محلی) حفظ می‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+// بدون generator: کل فایل در حافظه — برای فایل 2GB با memory_limit خطا می‌دهد
+$lines = file('huge.csv');
+
+// با generator: در هر لحظه فقط یک خط در حافظه
+function readCsv(string $path): Generator
+{
+    $h = fopen($path, 'r');
+    try {
+        while (($row = fgetcsv($h)) !== false) {
+            yield $row;                  // اجرا اینجا متوقف و مقدار تحویل داده می‌شود
+        }
+    } finally {
+        fclose($h);                      // حتی اگر مصرف‌کننده زودتر break کند
+    }
+}
+
+foreach (readCsv('huge.csv') as $i =&gt; $row) {
+    // پردازش ...
+}
+
+function kv(): Generator {
+    yield 'a' =&gt; 1;                      // کلید سفارشی
+    yield from ['b' =&gt; 2, 'c' =&gt; 3];     // delegation به iterable یا generator دیگر
+    return 'done';                       // با getReturn() خوانده می‌شود
+}</code></pre>
+    <ul>
+      <li><strong>مزیت حافظه</strong>: مصرف حافظه <strong>O(1)</strong> نسبت به تعداد آیتم‌ها به‌جای O(n).</li>
+      <li><strong>Pipeline تنبل</strong>: می‌توان generatorها را زنجیر کرد و فقط به اندازهٔ نیاز محاسبه کرد (حتی دنبالهٔ بی‌نهایت).</li>
+      <li>متد <code>send()</code> مقداری را به داخل generator می‌فرستد (به‌عنوان نتیجهٔ عبارت <code>yield</code>) — پایهٔ coroutineهای قدیمی.</li>
+      <li>محدودیت: generator <strong>یک‌بارمصرف</strong> است و پس از شروع پیمایش قابل rewind نیست؛ <code>count()</code> هم ندارد.</li>
+    </ul>
+    <div class="callout exam"><p>در Laravel: <code>User::cursor()</code> با یک کوئری و generator رکوردها را یکی‌یکی hydrate می‌کند (حافظهٔ PHP کم، اما driver ممکن است نتایج را buffer کند)؛ <code>lazy()</code> و <code>chunk()</code> با چند کوئری صفحه‌بندی‌شده کار می‌کنند. <code>LazyCollection</code> روی generator ساخته شده است. پاسخ خوب در سوال «چطور یک میلیون رکورد را export کنیم؟» باید به این‌ها اشاره کند.</p></div>
+
+    <h3>Iterator، IteratorAggregate، ArrayAccess و Countable</h3>
+    <pre><code class="language-php">&lt;?php
+final class Cart implements IteratorAggregate, Countable, ArrayAccess
+{
+    private array $items = [];
+
+    public function getIterator(): Iterator           // IteratorAggregate: ساده‌تر از Iterator کامل
+    {
+        return new ArrayIterator($this-&gt;items);       // یا: yield from $this-&gt;items;
+    }
+
+    public function count(): int { return count($this-&gt;items); }      // count($cart)
+
+    public function offsetExists(mixed $k): bool { return isset($this-&gt;items[$k]); }
+    public function offsetGet(mixed $k): mixed { return $this-&gt;items[$k] ?? null; }
+    public function offsetSet(mixed $k, mixed $v): void
+    {
+        $k === null ? $this-&gt;items[] = $v : $this-&gt;items[$k] = $v;    // $cart[] = $item
+    }
+    public function offsetUnset(mixed $k): void { unset($this-&gt;items[$k]); }
+}
+
+$cart = new Cart();
+$cart[] = 'book';
+foreach ($cart as $item) { /* ... */ }
+echo count($cart);   // 1</code></pre>
+    <ul>
+      <li><code>Iterator</code>: پنج متد <code>current</code>، <code>key</code>، <code>next</code>، <code>rewind</code>، <code>valid</code> را خودتان پیاده می‌کنید.</li>
+      <li><code>IteratorAggregate</code>: فقط <code>getIterator()</code> که یک Traversable برمی‌گرداند (معمولاً یک generator). <code>Illuminate\Support\Collection</code> همین را پیاده می‌کند، به‌علاوهٔ <code>ArrayAccess</code>، <code>Countable</code> و <code>JsonSerializable</code>.</li>
+      <li><code>Traversable</code> اینترفیس پایه است و فقط از طریق Iterator یا IteratorAggregate پیاده‌سازی می‌شود. نوع <code>iterable</code> یعنی <code>array|Traversable</code>.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="exceptions" data-title="Exception و Error">
+    <h2>Exception و Error</h2>
+    <pre class="diagram">Throwable (interface)
+├── Error                     ← خطاهای داخلی موتور؛ معمولاً باگ برنامه‌نویس
+│   ├── TypeError
+│   │   └── ArgumentCountError
+│   ├── ValueError             (8.0)
+│   ├── ArithmeticError
+│   │   └── DivisionByZeroError
+│   ├── CompileError
+│   │   └── ParseError
+│   ├── UnhandledMatchError    (8.0)
+│   └── AssertionError
+└── Exception                 ← شرایط استثنایی قابل انتظار و قابل مدیریت
+    ├── ErrorException         (تبدیل warning/notice به exception)
+    ├── JsonException
+    ├── LogicException         ← باگ در منطق کد (باید با اصلاح کد رفع شود)
+    │   ├── InvalidArgumentException
+    │   ├── DomainException
+    │   └── BadFunctionCallException ── BadMethodCallException
+    └── RuntimeException       ← خطاهایی که فقط در زمان اجرا معلوم می‌شوند
+        ├── UnexpectedValueException
+        ├── OutOfBoundsException
+        └── ...</pre>
+    <ul>
+      <li>از PHP 7 بیشتر fatal errorها به <code>Error</code> تبدیل شدند و قابل catch هستند. <code>catch (Exception $e)</code> آن‌ها را <strong>نمی‌گیرد</strong>؛ برای گرفتن همه‌چیز <code>catch (Throwable $e)</code> لازم است.</li>
+      <li>کلاس کاربر نمی‌تواند مستقیم <code>Throwable</code> را implement کند؛ باید از <code>Exception</code> (یا <code>Error</code>) ارث ببرد.</li>
+      <li>در PHP 8 تقسیم بر صفر (<code>1 / 0</code> و <code>1 % 0</code>) <code>DivisionByZeroError</code> پرتاب می‌کند.</li>
+    </ul>
+
+    <h3>try / catch / finally</h3>
+    <pre><code class="language-php">&lt;?php
+function test(): string
+{
+    try {
+        throw new RuntimeException('boom');
+    } catch (InvalidArgumentException | RuntimeException $e) {   // multi-catch (7.1)
+        return 'catch';
+    } finally {
+        echo 'finally ';      // همیشه اجرا می‌شود، حتی بعد از return در try/catch
+    }
+}
+echo test();   // finally catch
+
+function override(): string
+{
+    try { return 'try'; }
+    finally { return 'finally'; }   // return در finally مقدار قبلی را override می‌کند
+}
+echo override();   // finally</code></pre>
+    <div class="callout warn"><p><code>return</code> در <code>finally</code> مقدار برگشتی را عوض می‌کند و <strong>exception در حال انتشار را هم بی‌صدا دور می‌اندازد</strong>. از این کار پرهیز کنید؛ finally فقط برای cleanup (بستن فایل، آزاد کردن lock) است.</p></div>
+
+    <h3>Exception سفارشی</h3>
+    <pre><code class="language-php">&lt;?php
+final class InsufficientBalanceException extends DomainException
+{
+    public static function forWallet(Wallet $w, int $required): self   // named constructor
+    {
+        return new self(sprintf(
+            'Wallet %d has %d, needs %d', $w-&gt;id, $w-&gt;balance, $required
+        ));
+    }
+
+    // در Laravel: نحوهٔ گزارش و render اختصاصی
+    public function render(Request $request): JsonResponse
+    {
+        return response()-&gt;json(['message' =&gt; 'موجودی کافی نیست'], 422);
+    }
+}
+
+try {
+    $gateway-&gt;charge($order);
+} catch (GuzzleException $e) {
+    throw new PaymentFailedException('Gateway error', previous: $e);   // chaining: علت اصلی حفظ می‌شود
+}</code></pre>
+    <ul>
+      <li><strong>قواعد خوب</strong>: exceptionهای دامنه‌ای با نام معنادار؛ پرتاب در لایهٔ پایین و مدیریت در مرز (controller/handler)؛ استفاده از <code>previous</code> برای حفظ علت؛ catch کردن نوع خاص نه <code>Exception</code> کلی؛ هیچ‌وقت catch خالی که خطا را قورت دهد.</li>
+      <li>exception برای <strong>جریان کنترل عادی</strong> مناسب نیست (کند است و منطق را پنهان می‌کند).</li>
+      <li>در Laravel، همهٔ exceptionهای catch‌نشده به <strong>Exception Handler</strong> می‌رسند (در Laravel 11 به بعد با <code>withExceptions()</code> در <code>bootstrap/app.php</code> پیکربندی می‌شود) که با <code>report</code> و <code>render</code> لاگ و پاسخ مناسب تولید می‌کند.</li>
+      <li><code>set_error_handler</code> برای تبدیل warning/notice به <code>ErrorException</code> و <code>set_exception_handler</code> برای exceptionهای catch‌نشده استفاده می‌شوند.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="composer-psr" data-title="Namespace، Composer و PSRها">
+    <h2>Namespace، Composer، Autoloading و PSRها</h2>
+    <h3>Namespace</h3>
+    <p>namespace از تداخل نام کلاس‌ها، توابع و ثابت‌ها جلوگیری می‌کند و ساختار منطقی کد را نشان می‌دهد. <code>use</code> فقط یک alias در زمان compile می‌سازد و چیزی را بارگذاری نمی‌کند.</p>
+    <pre><code class="language-php">&lt;?php
+namespace App\Services\Payment;
+
+use App\Models\Order;
+use Illuminate\Support\Facades\Log as Logger;      // alias
+use function App\Support\money_format;             // import تابع
+use const App\Support\MAX_RETRY;                   // import ثابت
+
+$x = strlen('a');   // ابتدا App\Services\Payment\strlen جست‌وجو و سپس به تابع global برمی‌گردد
+$y = \strlen('a');  // مستقیم global (کمی سریع‌تر؛ OPcache برخی توابع را inline می‌کند)
+$c = new \DateTime(); // کلاس‌ها fallback به global ندارند؛ بدون \ یا use خطا می‌دهد</code></pre>
+    <div class="callout warn"><p>fallback به global فقط برای <strong>توابع و ثابت‌ها</strong> است، نه کلاس‌ها. <code>new DateTime()</code> داخل یک namespace بدون <code>use DateTime</code> یا <code>\DateTime</code>، کلاس <code>App\...\DateTime</code> را جست‌وجو می‌کند و خطا می‌دهد.</p></div>
+
+    <h3>Autoloading و PSR-4</h3>
+    <p>autoloader تابعی است که با <code>spl_autoload_register</code> ثبت می‌شود و وقتی از کلاسی استفاده می‌شود که هنوز تعریف نشده، فایل آن را <code>require</code> می‌کند. <strong>PSR-4</strong> یک قرارداد نگاشت است: یک «namespace prefix» به یک «base directory» نگاشت می‌شود و بقیهٔ namespace مستقیماً به زیرپوشه‌ها تبدیل می‌شود.</p>
+    <pre><code class="language-json">{
+  "require": { "php": "^8.2", "laravel/framework": "^11.0" },
+  "require-dev": { "phpstan/phpstan": "^1.10" },
+  "autoload": {
+    "psr-4": { "App\\": "app/", "Database\\Factories\\": "database/factories/" },
+    "files": ["app/helpers.php"]
+  },
+  "autoload-dev": { "psr-4": { "Tests\\": "tests/" } }
+}</code></pre>
+    <pre class="diagram">App\Http\Controllers\UserController
+└─┬┘ └──────────┬──────────────────┘
+prefix "App\"   بقیه → زیرپوشه‌ها
+  ▼
+app/Http/Controllers/UserController.php   (حساس به حروف بزرگ و کوچک روی لینوکس!)</pre>
+    <ul>
+      <li><code>composer dump-autoload -o</code> (optimize): یک <strong>classmap</strong> کامل می‌سازد تا برای هر کلاس نیازی به بررسی فایل‌سیستم نباشد. <code>--classmap-authoritative</code> حتی fallback به PSR-4 را هم غیرفعال می‌کند. هر دو برای production مناسب‌اند.</li>
+      <li><code>composer install</code> دقیقاً نسخه‌های <code>composer.lock</code> را نصب می‌کند (برای CI و production)؛ <code>composer update</code> وابستگی‌ها را طبق constraintها به‌روز و lock را بازنویسی می‌کند. در اپلیکیشن، <code>composer.lock</code> باید commit شود.</li>
+      <li>در production: <code>composer install --no-dev --optimize-autoloader</code>.</li>
+      <li>constraintها: <code>^1.2.3</code> یعنی <code>&gt;=1.2.3 &lt;2.0.0</code> (تغییرات غیر breaking طبق SemVer)؛ <code>~1.2.3</code> یعنی <code>&gt;=1.2.3 &lt;1.3.0</code>؛ <code>^0.3</code> یعنی <code>&gt;=0.3.0 &lt;0.4.0</code> (در نسخه‌های 0.x هر minor ممکن است breaking باشد).</li>
+    </ul>
+
+    <h3>PSRهای مهم (PHP-FIG)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>PSR</th><th>موضوع</th><th>نکته / ارتباط با Laravel</th></tr></thead>
+      <tbody>
+        <tr><td>PSR-1</td><td>Basic Coding Standard</td><td>کلاس‌ها StudlyCaps، متدها camelCase، ثابت‌ها UPPER_CASE، فایل یا تعریف یا side effect</td></tr>
+        <tr><td>PSR-12 / PER-CS</td><td>Extended Coding Style</td><td>جایگزین PSR-2؛ <strong>PER Coding Style</strong> ادامه‌دهندهٔ به‌روز آن است. ابزار Laravel Pint برای اعمال style</td></tr>
+        <tr><td>PSR-3</td><td>Logger Interface</td><td><code>LoggerInterface</code> با سطوح emergency تا debug؛ Monolog و <code>Log</code> در Laravel</td></tr>
+        <tr><td>PSR-4</td><td>Autoloading</td><td>نگاشت namespace به مسیر؛ جایگزین PSR-0 (منسوخ)</td></tr>
+        <tr><td>PSR-6 / PSR-16</td><td>Caching / Simple Cache</td><td>Cache Repository در Laravel، PSR-16 را پیاده می‌کند</td></tr>
+        <tr><td>PSR-7</td><td>HTTP Message Interfaces</td><td>Request/Response <strong>immutable</strong> (متدهای <code>withX</code>). Request لاراول بر پایهٔ Symfony HttpFoundation است نه PSR-7، ولی با bridge می‌توان PSR-7 را type-hint کرد</td></tr>
+        <tr><td>PSR-11</td><td>Container Interface</td><td><code>get($id)</code> و <code>has($id)</code>؛ Container لاراول آن را پیاده می‌کند</td></tr>
+        <tr><td>PSR-14</td><td>Event Dispatcher</td><td>قرارداد استاندارد dispatcher و listener provider</td></tr>
+        <tr><td>PSR-15</td><td>HTTP Handlers &amp; Middleware</td><td><code>process(ServerRequestInterface, RequestHandlerInterface)</code>. middleware لاراول PSR-15 نیست (امضای <code>handle($request, Closure $next)</code>)</td></tr>
+        <tr><td>PSR-17 / PSR-18</td><td>HTTP Factories / HTTP Client</td><td>ساخت پیام PSR-7 و کلاینت HTTP مستقل از پیاده‌سازی (Guzzle آن را پیاده می‌کند)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>هدف PSRها <strong>interoperability</strong> است: کتابخانه‌ای که به <code>Psr\Log\LoggerInterface</code> وابسته است، با هر loggerی کار می‌کند (Dependency Inversion در سطح اکوسیستم). در سوال «PSR-7 و PSR-15 چیست؟» حتماً به immutability در PSR-7 و تفاوت امضای middleware در PSR-15 با Laravel اشاره کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="arrays-strings" data-title="آرایه‌ها و رشته‌ها">
+    <h2>توابع آرایه و رشته</h2>
+    <h3>map / filter / reduce</h3>
+    <pre><code class="language-php">&lt;?php
+$orders = [['id' =&gt; 1, 'total' =&gt; 500, 'paid' =&gt; true], ['id' =&gt; 2, 'total' =&gt; 300, 'paid' =&gt; false]];
+
+$totals = array_map(fn($o) =&gt; $o['total'], $orders);              // callback اول، آرایه دوم
+$paid   = array_filter($orders, fn($o) =&gt; $o['paid']);            // آرایه اول، callback دوم!
+$sum    = array_reduce($orders, fn($carry, $o) =&gt; $carry + $o['total'], 0);
+
+array_filter($arr);                                    // بدون callback: حذف مقادیر falsy
+array_filter($arr, fn($k) =&gt; $k !== 'x', ARRAY_FILTER_USE_KEY);
+array_filter($arr, fn($v, $k) =&gt; ..., ARRAY_FILTER_USE_BOTH);
+array_map(null, [1, 2], ['a', 'b']);                   // zip: [[1,'a'], [2,'b']]
+array_column($orders, 'total', 'id');                  // [1 =&gt; 500, 2 =&gt; 300]</code></pre>
+    <div class="callout warn"><p><code>array_filter</code> <strong>کلیدها را حفظ می‌کند</strong>؛ نتیجهٔ فیلتر <code>[0 =&gt; a, 2 =&gt; c]</code> است و <code>json_encode</code> آن را به object تبدیل می‌کند (<code>{"0":"a","2":"c"}</code>) نه آرایه. برای لیست، <code>array_values()</code> بزنید (در Laravel: <code>-&gt;filter()-&gt;values()</code>). <code>array_map</code> با یک آرایه کلیدها را حفظ می‌کند.</p></div>
+
+    <h3>isset، array_key_exists و empty</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عبارت</th><th><code>['a' =&gt; null]</code></th><th><code>['a' =&gt; 0]</code></th><th>کلید وجود ندارد</th></tr></thead>
+      <tbody>
+        <tr><td><code>isset($arr['a'])</code></td><td>false</td><td>true</td><td>false</td></tr>
+        <tr><td><code>array_key_exists('a', $arr)</code></td><td><strong>true</strong></td><td>true</td><td>false</td></tr>
+        <tr><td><code>empty($arr['a'])</code></td><td>true</td><td>true</td><td>true</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><code>isset</code> یک language construct است، سریع‌تر است، روی کلیدهای تودرتو بدون warning کار می‌کند اما مقدار <code>null</code> را «وجود نداشتن» در نظر می‌گیرد.</li>
+      <li><code>array_key_exists</code> فقط وجود کلید را می‌سنجد؛ وقتی <code>null</code> یک مقدار معنادار است (مثلاً فیلد PATCH که کاربر عمداً null فرستاده) باید از آن استفاده کرد.</li>
+      <li><code>empty($x)</code> معادل <code>!isset($x) || !$x</code> است؛ <code>"0"</code> را هم خالی می‌داند.</li>
+    </ul>
+
+    <h3>ادغام آرایه‌ها</h3>
+    <pre><code class="language-php">&lt;?php
+array_merge([0 =&gt; 'a'], [0 =&gt; 'b']);        // ['a', 'b'] — کلیدهای عددی از نو شماره‌گذاری می‌شوند
+['x' =&gt; 1] + ['x' =&gt; 2, 'y' =&gt; 3];         // ['x' =&gt; 1, 'y' =&gt; 3] — کلیدهای سمت چپ برنده‌اند
+array_merge(['x' =&gt; 1], ['x' =&gt; 2]);       // ['x' =&gt; 2] — کلید رشته‌ای: سمت راست برنده است
+[...$a, ...$b];                              // spread؛ از 8.1 کلیدهای رشته‌ای هم مجاز است
+[$first, , $third] = $list;                  // destructuring
+['id' =&gt; $id, 'name' =&gt; $name] = $row;     // destructuring با کلید</code></pre>
+    <p>عملگر <code>+</code> برای «مقدار پیش‌فرض» مناسب است: <code>$options + $defaults</code>.</p>
+
+    <h3>توابع مرتب‌سازی</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>تابع</th><th>بر اساس</th><th>حفظ کلید؟</th></tr></thead>
+      <tbody>
+        <tr><td><code>sort</code> / <code>rsort</code></td><td>مقدار (صعودی / نزولی)</td><td>خیر — reindex</td></tr>
+        <tr><td><code>asort</code> / <code>arsort</code></td><td>مقدار</td><td>بله</td></tr>
+        <tr><td><code>ksort</code> / <code>krsort</code></td><td>کلید</td><td>بله</td></tr>
+        <tr><td><code>usort</code></td><td>callback کاربر روی مقدار</td><td>خیر</td></tr>
+        <tr><td><code>uasort</code> / <code>uksort</code></td><td>callback روی مقدار / کلید</td><td>بله</td></tr>
+        <tr><td><code>natsort</code> / <code>natcasesort</code></td><td>ترتیب طبیعی (img2 &lt; img10)</td><td>بله</td></tr>
+      </tbody>
+    </table></div>
+    <p>همهٔ این توابع آرایه را <strong>درجا (in-place، by reference)</strong> تغییر می‌دهند و آرایهٔ مرتب‌شده را برنمی‌گردانند؛ پس <code>$sorted = sort($arr)</code> اشتباه است. از PHP 8.0 مرتب‌سازی <strong>stable</strong> است (عناصر برابر ترتیب اولیه را حفظ می‌کنند). Collection در Laravel برعکس، immutable است و <code>sortBy()</code> کالکشن جدید برمی‌گرداند.</p>
+
+    <h3>رشته‌ها و mbstring</h3>
+    <p>رشته در PHP آرایه‌ای از بایت است. در UTF-8 هر حرف فارسی 2 بایت است، پس توابع معمولی برای متن فارسی نتیجهٔ غلط می‌دهند:</p>
+    <pre><code class="language-php">&lt;?php
+$s = 'سلام';
+strlen($s);              // 8  (بایت)
+mb_strlen($s);           // 4  (کاراکتر)
+substr($s, 0, 3);        // رشتهٔ خراب (وسط یک کاراکتر بریده می‌شود)
+mb_substr($s, 0, 2);     // 'سل'
+strtoupper('ä');         // بدون تغییر؛ mb_strtoupper('ä') درست کار می‌کند
+preg_match('/^\p{Arabic}+$/u', $s);   // modifier u برای UTF-8 در regex ضروری است
+
+str_contains($haystack, 'needle');    // 8.0؛ به‌جای strpos() !== false
+"Hello {$user-&gt;name}";                // interpolation فقط در double quote و heredoc
+'Hello $name';                         // single quote: بدون interpolation</code></pre>
+    <ul>
+      <li>همیشه از <code>!== false</code> با <code>strpos</code> استفاده کنید؛ چون اگر needle در ابتدای رشته باشد، <code>0</code> برمی‌گرداند که falsy است.</li>
+      <li><strong>Heredoc</strong> (<code>&lt;&lt;&lt;EOT</code>) interpolation دارد؛ <strong>Nowdoc</strong> (<code>&lt;&lt;&lt;'EOT'</code>) ندارد.</li>
+      <li>کلاس <code>Str</code> در Laravel اغلب متدها را با mbstring پیاده کرده است.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="web-security" data-title="Superglobal، Session و امنیت">
+    <h2>Superglobalها، Session/Cookie و توابع امنیتی</h2>
+    <h3>Superglobalها</h3>
+    <dl class="terms">
+      <dt>$_GET / $_POST</dt><dd>پارامترهای query string و بدنهٔ فرم (فقط <code>application/x-www-form-urlencoded</code> و <code>multipart/form-data</code>؛ برای JSON باید <code>php://input</code> را خواند).</dd>
+      <dt>$_REQUEST</dt><dd>ترکیب GET و POST (و طبق <code>request_order</code>/<code>variables_order</code> شاید COOKIE)؛ منبع ابهام، استفاده نکنید.</dd>
+      <dt>$_SERVER</dt><dd>هدرها و اطلاعات محیط (<code>REQUEST_METHOD</code>، <code>HTTP_HOST</code>، <code>REMOTE_ADDR</code>)؛ برخی مقادیر مثل <code>HTTP_*</code> توسط کاربر قابل جعل‌اند.</dd>
+      <dt>$_COOKIE / $_SESSION</dt><dd>کوکی‌های ارسالی مرورگر / داده‌های session سمت سرور.</dd>
+      <dt>$_FILES</dt><dd>فایل‌های آپلودشده (نام، مسیر موقت، خطا، اندازه).</dd>
+      <dt>$_ENV / $GLOBALS</dt><dd>متغیرهای محیطی / همهٔ متغیرهای global.</dd>
+    </dl>
+    <p>Laravel این‌ها را در object <code>Illuminate\Http\Request</code> (بر پایهٔ Symfony Request) کپسوله می‌کند تا قابل تست و مستقل از global state باشد.</p>
+
+    <h3>Session و Cookie</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Cookie</h4><ul>
+        <li>داده در <strong>مرورگر</strong> ذخیره می‌شود و با هر درخواست ارسال می‌شود (حدود 4KB).</li>
+        <li>قابل خواندن و دست‌کاری توسط کاربر؛ نباید دادهٔ حساس رمزنشده در آن باشد.</li>
+        <li>Laravel همهٔ کوکی‌ها را با middleware <code>EncryptCookies</code> رمز و امضا می‌کند.</li>
+      </ul></div>
+      <div class="card"><h4>Session</h4><ul>
+        <li>داده در <strong>سرور</strong> (فایل، Redis، DB) و فقط یک <strong>session ID</strong> در کوکی است.</li>
+        <li>در PHP بومی: <code>session_start()</code> و <code>$_SESSION</code>.</li>
+        <li>Laravel مکانیزم session مستقل خودش را دارد و از <code>$_SESSION</code> استفاده نمی‌کند.</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+setcookie('pref', 'dark', [
+    'expires'  =&gt; time() + 86400 * 30,
+    'path'     =&gt; '/',
+    'secure'   =&gt; true,      // فقط روی HTTPS
+    'httponly' =&gt; true,      // غیرقابل دسترس برای JavaScript (کاهش اثر XSS)
+    'samesite' =&gt; 'Lax',     // کاهش CSRF: Strict | Lax | None (None نیازمند Secure)
+]);
+
+session_start();
+// بعد از login: جلوگیری از Session Fixation
+session_regenerate_id(true);   // ID جدید و حذف session قدیمی
+$_SESSION['user_id'] = $user-&gt;id;</code></pre>
+    <ul>
+      <li><strong>Session Fixation</strong>: مهاجم یک session ID شناخته‌شده به قربانی می‌دهد و پس از login قربانی، با همان ID وارد می‌شود. راه‌حل: regenerate پس از تغییر سطح دسترسی. در Laravel، مستندات پس از <code>Auth::attempt()</code> فراخوانی <code>$request-&gt;session()-&gt;regenerate()</code> را توصیه می‌کند و هنگام logout هم <code>invalidate()</code> و <code>regenerateToken()</code> را.</li>
+      <li><strong>Session locking</strong>: handler فایل در PHP بومی session را تا پایان درخواست قفل می‌کند؛ درخواست‌های هم‌زمان AJAX یک کاربر سریالی می‌شوند. <code>session_write_close()</code> زودهنگام این مشکل را کم می‌کند.</li>
+    </ul>
+
+    <h3>ذخیرهٔ رمز عبور</h3>
+    <pre><code class="language-php">&lt;?php
+$hash = password_hash($plain, PASSWORD_DEFAULT);      // فعلاً bcrypt؛ salt تصادفی خودکار در خود hash
+$hash = password_hash($plain, PASSWORD_ARGON2ID);     // اگر PHP با argon2 کامپایل شده باشد
+
+if (password_verify($input, $hash)) {                 // مقایسهٔ timing-safe
+    if (password_needs_rehash($hash, PASSWORD_DEFAULT)) {
+        $hash = password_hash($input, PASSWORD_DEFAULT);   // ارتقای الگوریتم/cost هنگام login
+        // ذخیرهٔ hash جدید
+    }
+}</code></pre>
+    <ul>
+      <li>هرگز از <code>md5</code>/<code>sha1</code>/<code>sha256</code> برای رمز استفاده نکنید: سریع‌اند و brute-force روی GPU ارزان است. bcrypt و argon2 عمداً <strong>کند</strong> و قابل تنظیم (cost) هستند.</li>
+      <li>bcrypt فقط 72 بایت اول ورودی را در نظر می‌گیرد.</li>
+      <li>در Laravel: <code>Hash::make()</code>، <code>Hash::check()</code> و cast <code>'password' =&gt; 'hashed'</code>.</li>
+      <li>برای token و کد تصادفی امن: <code>random_bytes()</code>، <code>random_int()</code>، <code>bin2hex(random_bytes(32))</code> — نه <code>rand()</code> یا <code>uniqid()</code>. برای مقایسهٔ token: <code>hash_equals()</code>.</li>
+    </ul>
+
+    <h3>XSS و htmlspecialchars</h3>
+    <pre><code class="language-php">&lt;?php
+echo htmlspecialchars($comment, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+// &lt; &gt; &amp; " ' به entity تبدیل می‌شوند؛ از 8.1 همین flags پیش‌فرض است
+// Blade: {{ $comment }} خودکار escape می‌کند؛ {!! $html !!} خام است (فقط برای HTML مطمئن)</code></pre>
+    <p>escape باید <strong>هنگام خروجی و متناسب با context</strong> باشد: داخل HTML، داخل attribute، داخل JavaScript (<code>json_encode</code> با flagهای <code>JSON_HEX_*</code> یا <code>@json</code> در Blade) و داخل URL (<code>urlencode</code>) روش‌ها متفاوت‌اند.</p>
+
+    <h3>SQL Injection و PDO</h3>
+    <pre><code class="language-php">&lt;?php
+$pdo = new PDO($dsn, $user, $pass, [
+    PDO::ATTR_ERRMODE            =&gt; PDO::ERRMODE_EXCEPTION,   // از 8.0 پیش‌فرض است
+    PDO::ATTR_DEFAULT_FETCH_MODE =&gt; PDO::FETCH_ASSOC,
+    PDO::ATTR_EMULATE_PREPARES   =&gt; false,                    // prepare واقعی سمت سرور
+]);
+
+// ❌ آسیب‌پذیر: $_GET['email'] = "' OR 1=1 --"
+$pdo-&gt;query("SELECT * FROM users WHERE email = '{$_GET['email']}'");
+
+// ✅ prepared statement: داده جدا از ساختار کوئری ارسال می‌شود
+$stmt = $pdo-&gt;prepare('SELECT * FROM users WHERE email = :email AND status = :status');
+$stmt-&gt;execute(['email' =&gt; $email, 'status' =&gt; 'active']);
+$user = $stmt-&gt;fetch();
+
+// placeholder برای نام جدول/ستون کار نمی‌کند → whitelist
+$col = in_array($_GET['sort'], ['name', 'created_at'], true) ? $_GET['sort'] : 'id';</code></pre>
+    <div class="callout exam"><p>prepared statement یعنی ساختار کوئری و داده جداگانه به دیتابیس می‌رسند؛ پس داده هرگز به‌عنوان SQL تفسیر نمی‌شود. Eloquent و Query Builder به‌طور پیش‌فرض binding دارند، اما <code>whereRaw</code>، <code>DB::raw</code>، <code>orderByRaw</code> و نام ستونی که از ورودی کاربر می‌آید (مثل <code>orderBy($request-&gt;sort)</code>) همچنان نقطهٔ خطرند.</p></div>
+  </section>
+
+  <section class="lesson" id="memory-tooling" data-title="حافظه، GC و Static Analysis">
+    <h2>مدیریت حافظه، Garbage Collection و Static Analysis</h2>
+    <h3>Reference Counting</h3>
+    <p>هر مقدار در PHP داخل یک ساختار <strong>zval</strong> نگه داشته می‌شود. برای انواع پیچیده (string، array، object) یک <strong>refcount</strong> وجود دارد که تعداد متغیرهای اشاره‌کننده را می‌شمارد. وقتی refcount به صفر برسد، حافظه <strong>بلافاصله</strong> آزاد می‌شود (و <code>__destruct</code> صدا زده می‌شود). copy-on-write هم بر همین اساس کار می‌کند: کپی فقط وقتی انجام می‌شود که مقداری با refcount بزرگ‌تر از 1 تغییر کند.</p>
+    <h3>چرخه‌ها (Cycles) و Cycle Collector</h3>
+    <pre><code class="language-php">&lt;?php
+$a = new stdClass;
+$b = new stdClass;
+$a-&gt;b = $b;
+$b-&gt;a = $a;      // چرخه
+unset($a, $b);   // refcount هر کدام 1 می‌ماند → با شمارش مرجع آزاد نمی‌شوند
+
+gc_collect_cycles();   // اجرای دستی cycle collector؛ تعداد آزادشده را برمی‌گرداند</code></pre>
+    <ul>
+      <li>PHP یک <strong>cycle collector</strong> دارد که «rootهای مشکوک» را در یک buffer جمع می‌کند و وقتی buffer پر شد، الگوریتم mark-and-sweep را روی آن‌ها اجرا می‌کند تا چرخه‌های بی‌استفاده را پیدا و آزاد کند.</li>
+      <li><code>WeakReference</code> (7.4) و <code>WeakMap</code> (8.0) اجازه می‌دهند به object اشاره کنیم بدون اینکه refcount آن را بالا ببریم؛ مناسب برای cache مرتبط با objectها بدون جلوگیری از آزاد شدن آن‌ها.</li>
+      <li>ابزارها: <code>memory_get_usage()</code>، <code>memory_get_peak_usage()</code>، و profilerهایی مثل Xdebug و Blackfire.</li>
+    </ul>
+    <div class="callout tip"><p>نشت حافظه در کد Laravel بیشتر در پروسس‌های طولانی دیده می‌شود: Query Log فعال (<code>DB::enableQueryLog()</code>)، آرایه‌های static که پر می‌شوند، listenerهایی که در هر job دوباره ثبت می‌شوند، یا بارگذاری میلیون‌ها مدل با <code>get()</code> به‌جای <code>chunk</code>/<code>lazy</code>/<code>cursor</code>.</p></div>
+
+    <h3>Static Analysis</h3>
+    <p>ابزارهای static analysis کد را <strong>بدون اجرا</strong> بررسی می‌کنند و باگ‌هایی را پیدا می‌کنند که در زبان dynamic تا زمان اجرا مخفی می‌مانند: صدا زدن متد روی <code>null</code>، نوع نادرست آرگومان، کد unreachable، propertyهای تعریف‌نشده.</p>
+    <ul>
+      <li><strong>PHPStan</strong>: سطح‌بندی (level) از 0 به بالا؛ هرچه سطح بالاتر، سخت‌گیرتر. قابلیت <strong>baseline</strong> برای پذیرش خطاهای فعلی پروژهٔ legacy و جلوگیری از خطای جدید. <strong>Larastan</strong> افزونهٔ PHPStan برای فهم magic لاراول (Facade، Eloquent، relationها).</li>
+      <li><strong>Psalm</strong>: مشابه PHPStan، با قابلیت <strong>taint analysis</strong> برای ردیابی دادهٔ ورودی کاربر تا sinkهای خطرناک (SQL، HTML).</li>
+      <li>هر دو <strong>generics</strong> را از طریق docblock پشتیبانی می‌کنند:</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+/**
+ * @template T of Model
+ * @param class-string&lt;T&gt; $class
+ * @return Collection&lt;int, T&gt;
+ */
+function loadAll(string $class): Collection { /* ... */ }
+
+/** @param array{id: int, name: string, tags?: list&lt;string&gt;} $payload  — array shape */
+function store(array $payload): void { /* ... */ }</code></pre>
+    <ul>
+      <li>ابزارهای مکمل: <strong>Rector</strong> (refactor و ارتقای خودکار نسخهٔ PHP/Laravel)، <strong>PHP-CS-Fixer</strong> و <strong>Laravel Pint</strong> (code style)، <strong>PHPUnit/Pest</strong> (تست). در CI معمولاً: Pint → PHPStan → تست‌ها.</li>
+    </ul>
+    <div class="callout exam"><p>چرا static analysis در PHP مهم است؟ چون خطای نوع در PHP تا زمان اجرای همان مسیر کد بروز نمی‌کند؛ static analyzer مانند یک «کامپایلر» عمل می‌کند و این خطاها را قبل از production می‌گیرد. type declarationهای بومی + docblockهای generic + سطح بالای PHPStan تقریباً تجربهٔ یک زبان statically typed را می‌دهند.</p></div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-php-1">
+      <summary>چرخهٔ اجرای یک درخواست PHP را با PHP-FPM و OPcache توضیح دهید. معماری shared-nothing چیست و چه مزایا و معایبی دارد؟</summary>
+      <div class="answer">
+        <p><strong>جریان درخواست:</strong> وب‌سرور (Nginx) درخواست را از طریق پروتکل <strong>FastCGI</strong> به PHP-FPM می‌دهد. FPM یک master process و یک pool از workerها دارد؛ یک worker آزاد درخواست را می‌گیرد و <code>public/index.php</code> را اجرا می‌کند. Zend Engine کد را tokenize، parse (AST) و به <strong>opcode</strong> کامپایل می‌کند و ماشین مجازی Zend opcodeها را اجرا می‌کند. در پایان، همهٔ حافظهٔ درخواست آزاد می‌شود و worker منتظر درخواست بعدی می‌ماند.</p>
+        <p><strong>OPcache</strong> opcodeهای کامپایل‌شده را در <strong>shared memory</strong> نگه می‌دارد تا مرحلهٔ parse/compile در درخواست‌های بعدی حذف شود. در production با <code>validate_timestamps=0</code> حتی بررسی تغییر فایل هم انجام نمی‌شود (پس از deploy باید FPM را reload کرد). <strong>JIT</strong> (8.0) یک گام جلوتر opcode را به کد ماشین تبدیل می‌کند و برای کارهای CPU-bound مفید است.</p>
+        <p><strong>Shared-nothing:</strong> هیچ state ای از یک درخواست به درخواست بعد منتقل نمی‌شود.</p>
+        <ul>
+          <li><strong>مزایا:</strong> ایزوله بودن خطاها و leakها، سادگی، مقیاس‌پذیری افقی آسان.</li>
+          <li><strong>معایب:</strong> هزینهٔ bootstrap فریم‌ورک در هر درخواست، نبود connection pool و cache درون‌حافظه‌ای، و همروندی محدود به <code>pm.max_children</code> چون هر worker blocking است.</li>
+        </ul>
+        <p><strong>مقایسه:</strong> Laravel Octane اپ را یک بار boot و در حافظه نگه می‌دارد؛ latency کمتر است ولی باید مراقب state مشترک (static، singletonهای وابسته به request) بود. راهکارهای بهینه‌سازی FPM: OPcache، <code>config:cache</code>/<code>route:cache</code>، <code>composer dump-autoload -o</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-2">
+      <summary>خروجی کد زیر در PHP 8 چیست؟ تفاوت <code>==</code> و <code>===</code> را با اشاره به تغییر PHP 8 توضیح دهید.
+<code>var_dump(0 == "a", "1" == "01", "10" == "1e1", 100 == "1e2", null == false, "abc" == 0, in_array("x", [0]));</code></summary>
+      <div class="answer">
+        <p><strong>خروجی:</strong> <code>false, true, true, true, true, false, false</code></p>
+        <ul>
+          <li><code>===</code> نوع و مقدار را بدون هیچ تبدیلی مقایسه می‌کند. <code>==</code> ابتدا <strong>type juggling</strong> انجام می‌دهد.</li>
+          <li><strong>قبل از PHP 8</strong> در مقایسهٔ عدد با رشته، رشته به عدد تبدیل می‌شد و <code>"a"</code> به <code>0</code> می‌رسید؛ پس <code>0 == "a"</code> برابر true بود و <code>in_array("x", [0])</code> هم true می‌شد.</li>
+          <li><strong>از PHP 8</strong>: اگر رشته numeric باشد، مقایسهٔ عددی؛ وگرنه عدد به رشته تبدیل و مقایسهٔ رشته‌ای انجام می‌شود. پس <code>0 == "a"</code> یعنی <code>"0" == "a"</code> که false است.</li>
+          <li><code>"1" == "01"</code> و <code>"10" == "1e1"</code>: هر دو طرف رشتهٔ numeric هستند، پس به‌صورت عدد مقایسه می‌شوند (1 = 1، 10 = 10).</li>
+          <li><code>null == false</code>: هر دو به bool تبدیل می‌شوند.</li>
+        </ul>
+        <p><strong>نتیجهٔ عملی:</strong> همیشه از <code>===</code> و پارامتر <code>strict: true</code> در <code>in_array</code>/<code>array_search</code> استفاده کنید. برای مقایسهٔ hash و token از <code>hash_equals()</code> استفاده کنید، چون علاوه بر strict بودن، در برابر timing attack مقاوم است. در کد بحرانی، <code>match</code> هم که strict است جایگزین مناسبی برای <code>switch</code> است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-3">
+      <summary><code>declare(strict_types=1)</code> دقیقاً چه کاری انجام می‌دهد و محدودهٔ اثر آن چیست؟ خروجی را توضیح دهید: فایل A (strict) تابع <code>f(int $x)</code> را تعریف کرده و فایل B (بدون strict) <code>f("5")</code> را صدا می‌زند.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> این directive حالت <strong>coercive</strong> پیش‌فرض را برای تبدیل اسکالرها در مرز تابع غیرفعال می‌کند؛ اگر نوع آرگومان دقیقاً با type declaration سازگار نباشد، <code>TypeError</code> پرتاب می‌شود. تنها استثنا widening از <code>int</code> به <code>float</code> است.</p>
+        <p><strong>محدودهٔ اثر:</strong></p>
+        <ul>
+          <li><strong>per-file</strong> است و باید اولین statement فایل باشد.</li>
+          <li>برای آرگومان‌ها، حالت <strong>فایل فراخواننده (caller)</strong> ملاک است، نه فایلی که تابع در آن تعریف شده.</li>
+          <li>برای return type، حالت فایلی که تابع در آن تعریف شده ملاک است.</li>
+          <li>روی عملگرها و شرط‌ها (<code>"5" + 1</code>، <code>if ("0")</code>) اثری ندارد.</li>
+        </ul>
+        <p><strong>پاسخ سناریو:</strong> چون فراخوانی در فایل B (غیر strict) انجام شده، <code>"5"</code> به <code>5</code> تبدیل می‌شود و <strong>خطایی رخ نمی‌دهد</strong>. اگر همین فراخوانی در فایل A بود، <code>TypeError</code> می‌گرفتیم.</p>
+        <pre><code class="language-php">&lt;?php // B.php (no strict_types)
+f("5");    // OK → $x = 5
+f("abc");  // TypeError حتی در حالت coercive (رشتهٔ غیرعددی قابل تبدیل نیست)
+f(5.5);    // در حالت coercive: float با بخش اعشاری به int، از 8.1 هشدار deprecation می‌دهد</code></pre>
+        <p><strong>چرا استفاده کنیم:</strong> جلوگیری از تبدیل‌های بی‌صدا که باگ را پنهان می‌کنند (مثل <code>"1.9"</code> که در حالت coercive به پارامتر int داده شود). <strong>هزینه:</strong> باید ورودی‌های خارجی (request، CSV) را صریحاً cast کرد؛ Laravel با FormRequest و castهای مدل این کار را ساده می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-4">
+      <summary>انواع union، intersection، DNF، <code>mixed</code>، <code>void</code>، <code>never</code> و <code>static</code> را تعریف کنید و برای هر کدام یک کاربرد مثال بزنید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Union</strong> <code>A|B</code> (8.0): مقدار یکی از چند نوع است. مثال: <code>function find(int|string $id)</code> برای پذیرش id عددی یا UUID.</li>
+          <li><strong>Intersection</strong> <code>A&amp;B</code> (8.1): مقدار باید <strong>همهٔ</strong> انواع را داشته باشد؛ فقط برای کلاس/interface. مثال: <code>Countable&amp;Iterator</code> یا در تست: <code>UserRepository&amp;MockObject</code>.</li>
+          <li><strong>DNF</strong> (8.2): union از intersectionها، مثل <code>(Countable&amp;Iterator)|null</code>.</li>
+          <li><strong>mixed</strong> (8.0): هر نوعی شامل null؛ با نبود type فرق دارد چون <strong>صریحاً</strong> می‌گوید «هر چیزی عمداً مجاز است».</li>
+          <li><strong>void</strong> (7.1): تابع برمی‌گردد ولی مقداری ندارد؛ مثل setter یا event handler.</li>
+          <li><strong>never</strong> (8.1): تابع هرگز برنمی‌گردد (همیشه throw یا exit). مثل <code>abort()</code> و <code>redirectAndExit()</code>؛ static analyzer کد بعد از آن را unreachable می‌داند و type narrowing دقیق‌تری می‌دهد.</li>
+          <li><strong>static</strong> (return، 8.0): کلاسی که متد روی آن صدا زده شده؛ برای fluent API و named constructorها در سلسله‌مراتب ارث‌بری.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+abstract class Builder {
+    public function limit(int $n): static { $this-&gt;limit = $n; return $this; }
+}
+class UserBuilder extends Builder { public function active(): static { return $this; } }
+(new UserBuilder)-&gt;limit(5)-&gt;active();   // با return type «self» تحلیلگر active() را نمی‌شناخت
+
+function denyUnless(bool $ok): void { if (!$ok) { fail(); } }
+function fail(): never { throw new AuthorizationException(); }</code></pre>
+        <p><strong>نکته:</strong> <code>void</code> و <code>never</code> فقط برای return type هستند؛ <code>mixed</code> با <code>?</code> یا union ترکیب نمی‌شود چون خودش null را شامل است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-5">
+      <summary><code>match</code> و <code>switch</code> را مقایسه کنید. کد زیر را با <code>match</code> بازنویسی کنید و توضیح دهید چه باگ پنهانی داشت.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+switch ($code) {          // $code = "0" از ورودی
+    case 0:  $msg = 'OK'; break;
+    case 1:  $msg = 'Warning';
+    case 2:  $msg = 'Error'; break;
+}</code></pre>
+        <p><strong>مشکلات:</strong> (1) <code>switch</code> مقایسهٔ <strong>loose</strong> دارد؛ <code>"0" == 0</code> true است و ورودی رشته‌ای بی‌صدا match می‌شود (در PHP 7 حتی <code>"abc"</code> هم با <code>case 0</code> برابر بود). (2) <code>case 1</code> فاقد <code>break</code> است و به case 2 <strong>fall-through</strong> می‌کند؛ پس برای 1 پیام Error می‌شود. (3) برای مقدار ناشناخته <code>$msg</code> تعریف نمی‌شود.</p>
+        <pre><code class="language-php">&lt;?php
+$msg = match ((int) $code) {
+    0       =&gt; 'OK',
+    1       =&gt; 'Warning',
+    2       =&gt; 'Error',
+    default =&gt; throw new UnexpectedValueException("Unknown code $code"),
+};</code></pre>
+        <p><strong>مقایسه:</strong></p>
+        <ul>
+          <li><code>match</code> یک <strong>expression</strong> است و مقدار برمی‌گرداند؛ <code>switch</code> statement است.</li>
+          <li><code>match</code> با <code>===</code> مقایسه می‌کند؛ پس cast صریح لازم است.</li>
+          <li>fall-through ندارد؛ چند مقدار با کاما در یک شاخه قرار می‌گیرند.</li>
+          <li>اگر هیچ شاخه‌ای match نشود و default نباشد، <code>UnhandledMatchError</code> می‌دهد (fail-fast).</li>
+          <li>محدودیت: هر شاخه فقط یک expression است؛ برای منطق چندخطی باید تابع صدا زد یا همچنان از <code>switch</code>/<code>if</code> استفاده کرد.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-6">
+      <summary>Enumها در PHP 8.1 را توضیح دهید. تفاوت pure و backed enum چیست؟ یک enum برای وضعیت سفارش با منطق انتقال وضعیت پیاده‌سازی کنید و مزیت آن را نسبت به class constants بگویید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> enum نوعی با مجموعهٔ بسته و از پیش تعیین‌شده از مقادیر است؛ هر case یک object یکتا (singleton) است. <strong>Pure enum</strong> فقط نام case دارد؛ <strong>backed enum</strong> برای هر case یک مقدار <code>int</code> یا <code>string</code> دارد که برای ذخیره در دیتابیس یا JSON استفاده می‌شود و متدهای <code>from()</code> (با <code>ValueError</code>) و <code>tryFrom()</code> (با <code>null</code>) دارد.</p>
+        <pre><code class="language-php">&lt;?php
+enum OrderStatus: string
+{
+    case Pending = 'pending';
+    case Paid = 'paid';
+    case Shipped = 'shipped';
+    case Cancelled = 'cancelled';
+
+    /** @return list&lt;self&gt; */
+    public function allowedNext(): array
+    {
+        return match ($this) {
+            self::Pending =&gt; [self::Paid, self::Cancelled],
+            self::Paid    =&gt; [self::Shipped, self::Cancelled],
+            self::Shipped, self::Cancelled =&gt; [],
+        };
+    }
+
+    public function canTransitionTo(self $to): bool
+    {
+        return in_array($to, $this-&gt;allowedNext(), true);
+    }
+}
+
+// Laravel: protected $casts = ['status' =&gt; OrderStatus::class];
+if (! $order-&gt;status-&gt;canTransitionTo(OrderStatus::Shipped)) {
+    throw new DomainException('Invalid transition');
+}</code></pre>
+        <p><strong>مزیت نسبت به ثابت‌ها:</strong></p>
+        <ul>
+          <li><strong>Type safety:</strong> امضای <code>ship(OrderStatus $s)</code> فقط مقادیر معتبر را می‌پذیرد؛ با ثابت، هر <code>string</code> قابل ارسال است.</li>
+          <li>رفتار (label، رنگ، قوانین انتقال) کنار داده قرار می‌گیرد.</li>
+          <li><code>match</code> بدون default روی enum، اگر case جدیدی اضافه شود و پوشش داده نشود، خطای زمان اجرا (و هشدار static analyzer) می‌دهد.</li>
+          <li><code>cases()</code> برای validation و فرم.</li>
+        </ul>
+        <p><strong>محدودیت:</strong> enum state و property ندارد، قابل ارث‌بری نیست و با <code>new</code> ساخته نمی‌شود؛ اما می‌تواند interface پیاده کند و ثابت و متد static داشته باشد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-7">
+      <summary>readonly property و readonly class چیست؟ چگونه با آن‌ها یک Value Object immutable بسازیم؟ محدودیت‌ها و تفاوت با asymmetric visibility در PHP 8.4 را بیان کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> property با modifier <code>readonly</code> (8.1) فقط <strong>یک بار</strong> و فقط از داخل scope کلاس مقداردهی می‌شود؛ هر تلاش بعدی <code>Error</code> می‌دهد. <code>readonly class</code> (8.2) همهٔ propertyها را readonly و dynamic property را ممنوع می‌کند.</p>
+        <pre><code class="language-php">&lt;?php
+final readonly class Email
+{
+    public string $value;
+
+    public function __construct(string $value)
+    {
+        $value = strtolower(trim($value));
+        if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
+            throw new InvalidArgumentException("Invalid email: $value");
+        }
+        $this-&gt;value = $value;
+    }
+
+    public function equals(self $other): bool { return $this-&gt;value === $other-&gt;value; }
+}
+
+final readonly class Money
+{
+    public function __construct(public int $amount, public string $currency) {}
+    public function withAmount(int $amount): static { return new static($amount, $this-&gt;currency); }
+}</code></pre>
+        <p><strong>محدودیت‌ها:</strong></p>
+        <ul>
+          <li>باید typed باشد و مقدار پیش‌فرض در تعریف نمی‌گیرد.</li>
+          <li>immutability <strong>سطحی</strong> است؛ اگر property یک object قابل تغییر (مثل <code>DateTime</code>) باشد، درونش تغییر می‌کند. باید از <code>DateTimeImmutable</code> یا VOهای readonly استفاده کرد.</li>
+          <li>تغییر به‌روش «wither» (ساخت object جدید) انجام می‌شود. در 8.3 مقداردهی دوباره در <code>__clone</code> مجاز شد که الگوی clone-and-modify را ممکن می‌کند.</li>
+        </ul>
+        <p><strong>تفاوت با <code>public private(set)</code> (8.4):</strong> readonly یعنی «یک بار برای همیشه»؛ asymmetric visibility یعنی «بیرون فقط بخواند، اما خود کلاس هر چند بار خواست بنویسد». اولی برای Value Object و DTO و دومی برای Entity با state کنترل‌شده (مثل <code>Order::$status</code> که فقط از طریق متد <code>pay()</code> عوض می‌شود) مناسب است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-8">
+      <summary>تفاوت <code>self</code>، <code>static</code> و <code>parent</code> چیست؟ Late Static Binding را توضیح دهید و خروجی کد زیر را بنویسید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+class A {
+    public static function name() { return 'A'; }
+    public static function viaSelf() { return self::name(); }
+    public static function viaStatic() { return static::name(); }
+    public static function make() { return new static(); }
+}
+class B extends A {
+    public static function name() { return 'B'; }
+}
+echo B::viaSelf(), B::viaStatic(), get_class(B::make());</code></pre>
+        <p><strong>خروجی:</strong> <code>ABB</code></p>
+        <ul>
+          <li><code>self::</code> در <strong>زمان کامپایل</strong> به کلاسی که کد در آن نوشته شده (A) resolve می‌شود؛ پس <code>B::viaSelf()</code> همچنان <code>A::name()</code> را صدا می‌زند.</li>
+          <li><code>static::</code> از <strong>Late Static Binding</strong> استفاده می‌کند: در زمان اجرا به کلاسی که فراخوانی از آن آغاز شده («called class»، اینجا B) resolve می‌شود.</li>
+          <li><code>new static()</code> instance از کلاس فراخواننده می‌سازد، پس B.</li>
+          <li><code>parent::</code> متد/ثابت کلاس والد را صدا می‌زند (مثلاً <code>parent::__construct()</code>) و «called class» را هم حفظ می‌کند.</li>
+        </ul>
+        <p><strong>کاربرد:</strong> Active Record در Eloquent: <code>User::create([...])</code> و <code>User::query()</code> در <code>Model</code> تعریف شده‌اند ولی با <code>new static</code> و <code>static::</code> مدل درست (User) را می‌سازند. همچنین return type <code>static</code> برای fluent API.</p>
+        <p><strong>نکته:</strong> اگر کلاس final باشد، <code>self</code> و <code>static</code> عملاً یکسان‌اند. استفاده از <code>new static</code> در کلاس غیر final یعنی فرض کرده‌ایم constructor فرزندان سازگار است؛ برای اطمینان می‌توان constructor را final کرد یا در interface تعریف کرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-9">
+      <summary>Abstract class، interface و trait را مقایسه کنید. در چه شرایطی از هر کدام استفاده می‌کنید؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Interface</strong>: یک <strong>قرارداد</strong> (چه کاری انجام می‌شود) بدون پیاده‌سازی. یک کلاس چند interface پیاده می‌کند. ابزار اصلی <strong>Dependency Inversion</strong> و polymorphism است: کد به <code>PaymentGateway</code> وابسته است نه به <code>StripeGateway</code>. در Laravel، Contracts و binding در container.</li>
+          <li><strong>Abstract class</strong>: پیاده‌سازی <strong>مشترک ناقص</strong> برای خانواده‌ای از کلاس‌ها با رابطهٔ is-a. می‌تواند state، constructor و متد concrete داشته باشد. فقط یک والد مجاز است. مناسب Template Method (مثل <code>Illuminate\Console\Command</code>).</li>
+          <li><strong>Trait</strong>: <strong>استفادهٔ مجدد افقی</strong> از کد بین کلاس‌های بی‌ربط؛ کد در کلاس کپی می‌شود. نوع نیست و قابل type-hint نیست. مناسب قابلیت‌های cross-cutting کوچک (<code>SoftDeletes</code>، <code>Notifiable</code>).</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+interface Exporter { public function export(iterable $rows): string; }
+
+abstract class FileExporter implements Exporter          // اسکلت مشترک
+{
+    public function export(iterable $rows): string
+    {
+        $out = $this-&gt;header();
+        foreach ($rows as $r) { $out .= $this-&gt;row($r); }
+        return $out;
+    }
+    abstract protected function header(): string;
+    abstract protected function row(array $r): string;
+}
+
+trait Timestamps { public function touch(): void { $this-&gt;updatedAt = new DateTimeImmutable(); } }
+
+final class CsvExporter extends FileExporter { /* header() و row() */ }</code></pre>
+        <p><strong>قاعدهٔ انتخاب:</strong> اول interface (برای قرارداد و تست‌پذیری)؛ اگر چند پیاده‌سازی کد مشترک زیادی دارند، یک abstract class که interface را پیاده کند؛ trait فقط برای رفتار کوچک و مستقل که ارث‌بری برایش معنایی ندارد. در اغلب موارد <strong>composition</strong> (تزریق یک سرویس) از ارث‌بری و trait بهتر است، چون وابستگی را صریح و قابل جایگزینی می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-10">
+      <summary>اگر دو trait متد هم‌نام داشته باشند چه اتفاقی می‌افتد؟ راه‌های حل تعارض و قابلیت‌های trait (abstract، static، property) را با کد نشان دهید.</summary>
+      <div class="answer">
+        <p>اگر کلاس از دو trait با متد هم‌نام استفاده کند و تعارض را حل نکند، <strong>Fatal error</strong> می‌گیریم. برای حل:</p>
+        <ul>
+          <li><code>insteadof</code>: انتخاب یکی از دو پیاده‌سازی.</li>
+          <li><code>as</code>: ساخت alias برای دیگری و/یا تغییر visibility.</li>
+          <li>یا تعریف همان متد در خود کلاس (متد کلاس بر trait اولویت دارد).</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+trait FileLogger  { public function log(string $m) { /* file */ } }
+trait SlackLogger { public function log(string $m) { /* slack */ } }
+
+trait Counts
+{
+    private static int $instances = 0;               // هر کلاس استفاده‌کننده نسخهٔ جدای خود را دارد
+    abstract public function id(): int;              // الزام کلاس میزبان
+    public static function created(): int { return self::$instances; }
+    public function __construct() { self::$instances++; }
+}
+
+class Reporter
+{
+    use FileLogger, SlackLogger, Counts {
+        FileLogger::log insteadof SlackLogger;
+        SlackLogger::log as protected notifySlack;
+    }
+    public function id(): int { return 1; }
+
+    public function report(string $m): void
+    {
+        $this-&gt;log($m);          // FileLogger
+        $this-&gt;notifySlack($m);  // SlackLogger
+    }
+}</code></pre>
+        <p><strong>ترتیب اولویت:</strong> متد کلاس &gt; متد trait &gt; متد ارث‌برده از والد. propertyهای هم‌نام بین trait و کلاس فقط در صورت سازگاری کامل مجازند. از PHP 8.2 trait می‌تواند ثابت داشته باشد.</p>
+        <p><strong>نقد:</strong> trait وابستگی ضمنی به میزبان ایجاد می‌کند؛ متد abstract این وابستگی را دست‌کم صریح می‌کند. در Laravel، Eloquent متدهای <code>bootSoftDeletes</code> و <code>initializeSoftDeletes</code> را برای راه‌اندازی خودکار trait صدا می‌زند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-11">
+      <summary>Magic methodهای <code>__get</code>، <code>__call</code>، <code>__callStatic</code> و <code>__invoke</code> را توضیح دهید. Laravel چگونه از آن‌ها استفاده می‌کند و معایبشان چیست؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong><code>__get($name)</code> / <code>__set</code></strong>: هنگام دسترسی به property ناموجود یا غیرقابل دسترس. در <strong>Eloquent</strong>، <code>$user-&gt;email</code> از آرایهٔ داخلی <code>$attributes</code> خوانده می‌شود و accessorها، castها و relationها (lazy loading) از همین مسیر اعمال می‌شوند.</li>
+          <li><strong><code>__isset</code></strong>: بدون آن <code>isset($user-&gt;email)</code> و <code>??</code> روی attributeهای magic همیشه false/پیش‌فرض می‌دادند.</li>
+          <li><strong><code>__call</code></strong>: متد instance ناموجود. مدل Eloquent متدهای ناشناخته را به Eloquent Builder forward می‌کند (<code>$user-&gt;newQuery()-&gt;where()</code>)؛ همچنین Macroable.</li>
+          <li><strong><code>__callStatic</code></strong>: متد static ناموجود. <code>User::where(...)</code> یک instance می‌سازد و فراخوانی را به <code>__call</code> می‌دهد؛ <strong>Facadeها</strong> هم instance واقعی را از container resolve می‌کنند و متد را روی آن صدا می‌زنند.</li>
+          <li><strong><code>__invoke</code></strong>: object را callable می‌کند؛ Single Action Controller، invokable rule و listener.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+abstract class Facade
+{
+    public static function __callStatic(string $method, array $args): mixed
+    {
+        $instance = app(static::accessor());     // resolve از container
+        return $instance-&gt;$method(...$args);
+    }
+    abstract protected static function accessor(): string;
+}</code></pre>
+        <p><strong>معایب:</strong> کندتر از دسترسی مستقیم؛ نامرئی برای IDE و static analysis (نیاز به <code>@property</code>/<code>@method</code>، ide-helper یا Larastan)؛ خطای تایپی (<code>$user-&gt;emial</code>) به‌جای خطای واضح، null برمی‌گرداند؛ دیباگ دشوارتر. <strong>توصیه:</strong> در کد دامنهٔ خودتان کم و آگاهانه استفاده کنید و در <code>__call</code> برای متد ناشناخته <code>BadMethodCallException</code> پرتاب کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-12">
+      <summary>کد زیر چه مشکلی دارد؟ تفاوت shallow copy و deep copy را توضیح دهید و کد را اصلاح کنید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+class Invoice {
+    public function __construct(public DateTime $dueDate, public array $lines = []) {}
+}
+$template = new Invoice(new DateTime('2026-01-01'));
+$copy = clone $template;
+$copy-&gt;dueDate-&gt;modify('+30 days');
+echo $template-&gt;dueDate-&gt;format('Y-m-d');   // ؟</code></pre>
+        <p><strong>مشکل:</strong> خروجی <code>2026-01-31</code> است، یعنی template هم تغییر کرد. <code>clone</code> یک <strong>shallow copy</strong> است: اسکالرها و آرایه‌ها کپی می‌شوند، اما propertyهایی که object هستند فقط <strong>handle</strong> کپی می‌کنند و هر دو object به همان <code>DateTime</code> اشاره می‌کنند.</p>
+        <p><strong>Deep copy</strong> یعنی objectهای تودرتو هم کپی شوند. این کار در متد <code>__clone</code> انجام می‌شود که روی object جدید و پس از کپی سطحی صدا زده می‌شود:</p>
+        <pre><code class="language-php">&lt;?php
+class Invoice {
+    public function __construct(public DateTime $dueDate, public array $lines = []) {}
+
+    public function __clone(): void
+    {
+        $this-&gt;dueDate = clone $this-&gt;dueDate;
+        $this-&gt;lines = array_map(fn(Line $l) =&gt; clone $l, $this-&gt;lines);   // آرایهٔ object
+    }
+}
+
+// راه‌حل بهتر: immutability
+class Invoice2 {
+    public function __construct(public readonly DateTimeImmutable $dueDate) {}
+}
+$due = $invoice-&gt;dueDate-&gt;modify('+30 days');   // object جدید؛ اصلی دست نمی‌خورد</code></pre>
+        <p><strong>جمع‌بندی:</strong> برای objectهای قابل تغییر تودرتو، <code>__clone</code> را پیاده کنید؛ اما راه‌حل ریشه‌ای استفاده از objectهای immutable (<code>DateTimeImmutable</code>، <code>CarbonImmutable</code>، Value Objectهای readonly) است که اصلاً نیاز به deep copy را از بین می‌برد. مراقب ارجاع‌های حلقوی در deep copy دستی هم باشید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-13">
+      <summary>«در PHP objectها by reference پاس داده می‌شوند» — این جمله را نقد کنید. خروجی کد زیر را توضیح دهید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+function a(array $x) { $x[] = 4; }
+function b(stdClass $o) { $o-&gt;v = 2; }
+function c(stdClass $o) { $o = new stdClass(); $o-&gt;v = 3; }
+function d(array &amp;$x) { $x[] = 4; }
+
+$arr = [1, 2, 3]; $obj = new stdClass(); $obj-&gt;v = 1;
+a($arr); b($obj); c($obj); d($arr);
+echo count($arr), $obj-&gt;v;</code></pre>
+        <p><strong>خروجی:</strong> <code>42</code> (آرایه 4 عضو، <code>v</code> برابر 2).</p>
+        <ul>
+          <li>جملهٔ صورت سوال <strong>دقیق نیست</strong>. objectها «<strong>by handle</strong>» (یا pass-by-sharing) منتقل می‌شوند: متغیر یک شناسه به object را نگه می‌دارد و هنگام پاس دادن، <strong>کپی همین شناسه</strong> by value پاس می‌شود.</li>
+          <li><code>b</code>: از طریق handle، state همان object تغییر کرد، پس بیرون دیده می‌شود.</li>
+          <li><code>c</code>: متغیر محلی <code>$o</code> به object جدید اشاره داده شد؛ متغیر بیرونی همچنان object قبلی را نگه می‌دارد. اگر واقعاً by reference بود، بیرون هم عوض می‌شد.</li>
+          <li><code>a</code>: آرایه by value (با copy-on-write) پاس شد؛ تغییر روی کپی بود.</li>
+          <li><code>d</code>: با <code>&amp;</code> آرایه واقعاً by reference پاس شد.</li>
+        </ul>
+        <p><strong>پیامد طراحی:</strong> چون objectها قابل تغییر از راه دورند، تابعی که object می‌گیرد می‌تواند side effect پنهان داشته باشد؛ دلیل دیگری برای Value Objectهای immutable. reference (<code>&amp;</code>) را فقط در موارد خاص استفاده کنید؛ copy-on-write را می‌شکند و دنبال کردن جریان داده را سخت می‌کند (مثلاً دام <code>foreach ($a as &amp;$v)</code> بدون <code>unset($v)</code>).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-14">
+      <summary>خروجی کد زیر چیست و چرا؟ تفاوت closure معمولی و arrow function در capture متغیرها را توضیح دهید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+$x = 1;
+$f1 = function () use ($x) { return $x; };
+$f2 = function () use (&amp;$x) { return $x; };
+$f3 = fn() =&gt; $x;
+$x = 2;
+echo $f1(), $f2(), $f3();
+
+$total = 0;
+array_map(fn($n) =&gt; $total += $n, [1, 2, 3]);
+echo $total;</code></pre>
+        <p><strong>خروجی:</strong> <code>1210</code></p>
+        <ul>
+          <li><code>$f1</code>: <code>use ($x)</code> مقدار را <strong>در لحظهٔ تعریف</strong> کپی می‌کند → 1.</li>
+          <li><code>$f2</code>: <code>use (&amp;$x)</code> reference می‌گیرد → مقدار فعلی 2.</li>
+          <li><code>$f3</code>: arrow function هم متغیرها را <strong>by value و در لحظهٔ تعریف</strong> capture می‌کند (خودکار) → 1.</li>
+          <li><code>$total</code>: arrow function نمی‌تواند متغیر بیرونی را تغییر دهد؛ <code>+=</code> روی کپی محلی انجام می‌شود → 0.</li>
+        </ul>
+        <p><strong>مقایسه:</strong> closure معمولی capture <strong>صریح</strong> با <code>use</code> دارد و می‌تواند by reference بگیرد و چند statement داشته باشد. arrow function (7.4) کوتاه است، کل scope را خودکار by value می‌گیرد و فقط یک expression دارد؛ مناسب callbackهای <code>map</code>/<code>filter</code>. هر دو در context کلاس <code>$this</code> را خودکار bind می‌کنند مگر با <code>static</code> تعریف شوند.</p>
+        <p><strong>راه درست جمع زدن:</strong> <code>array_sum</code> یا <code>array_reduce($nums, fn($c, $n) =&gt; $c + $n, 0)</code>؛ یعنی به‌جای side effect، مقدار را برگردانید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-15">
+      <summary>Generator چیست و چه مزیتی در مصرف حافظه دارد؟ یک تابع برای خواندن و فیلتر کردن یک فایل لاگ چندگیگابایتی پیاده‌سازی کنید و معادل آن در Laravel را نام ببرید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> تابعی که <code>yield</code> دارد، هنگام صدا زدن اجرا نمی‌شود و یک object <code>Generator</code> (پیاده‌کنندهٔ <code>Iterator</code>) برمی‌گرداند. هر بار که مصرف‌کننده مقدار بعدی را می‌خواهد، اجرا تا <code>yield</code> بعدی جلو می‌رود و سپس با حفظ state متوقف می‌شود. یعنی ارزیابی <strong>lazy</strong> است.</p>
+        <p><strong>مزیت حافظه:</strong> به‌جای ساخت آرایهٔ کامل (O(n) حافظه)، در هر لحظه فقط یک آیتم در حافظه است (O(1)). پردازش جریانی، pipelineهای تنبل و حتی دنباله‌های بی‌نهایت ممکن می‌شوند.</p>
+        <pre><code class="language-php">&lt;?php
+function lines(string $path): Generator
+{
+    $h = fopen($path, 'rb') ?: throw new RuntimeException("Cannot open $path");
+    try {
+        while (($line = fgets($h)) !== false) {
+            yield rtrim($line, "\n");
+        }
+    } finally {
+        fclose($h);                       // اجرا می‌شود حتی اگر مصرف‌کننده break کند
+    }
+}
+
+function filterLevel(iterable $lines, string $level): Generator
+{
+    foreach ($lines as $n =&gt; $line) {
+        if (str_contains($line, ".$level:")) {
+            yield $n + 1 =&gt; $line;        // شمارهٔ خط به‌عنوان کلید
+        }
+    }
+}
+
+foreach (filterLevel(lines('/var/log/app.log'), 'ERROR') as $no =&gt; $line) {
+    echo "$no: $line\n";
+}</code></pre>
+        <p><strong>محدودیت‌ها:</strong> یک‌بارمصرف است (پس از شروع rewind نمی‌شود)، <code>count()</code> ندارد و دسترسی تصادفی ممکن نیست.</p>
+        <p><strong>در Laravel:</strong> <code>LazyCollection::make(fn() =&gt; yield ...)</code> و <code>File::lines()</code>؛ برای دیتابیس <code>Model::cursor()</code> (یک کوئری، hydrate تک‌به‌تک) و <code>lazy()</code>/<code>lazyById()</code> (کوئری‌های صفحه‌ای پشت یک LazyCollection) و <code>chunk()</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-16">
+      <summary>سلسله‌مراتب Throwable در PHP را توضیح دهید. تفاوت Error و Exception چیست؟ خروجی کد زیر چیست؟</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+function f() {
+    try {
+        echo intdiv(1, 0);
+    } catch (Exception $e) {
+        return 'exception';
+    } finally {
+        echo 'cleanup ';
+    }
+    return 'end';
+}
+try { echo f(); } catch (Throwable $t) { echo get_class($t); }</code></pre>
+        <p><strong>خروجی:</strong> <code>cleanup DivisionByZeroError</code></p>
+        <p><code>intdiv(1, 0)</code> یک <code>DivisionByZeroError</code> پرتاب می‌کند که زیرکلاس <code>Error</code> است نه <code>Exception</code>؛ پس <code>catch (Exception)</code> آن را نمی‌گیرد. <code>finally</code> قبل از انتشار خطا به بیرون اجرا می‌شود و در بیرون <code>catch (Throwable)</code> آن را می‌گیرد.</p>
+        <ul>
+          <li><strong>Throwable</strong>: interface ریشه؛ فقط از طریق Error یا Exception پیاده می‌شود.</li>
+          <li><strong>Error</strong>: خطاهای داخلی موتور که معمولاً نشانهٔ <strong>باگ</strong> هستند: <code>TypeError</code>، <code>ArgumentCountError</code>، <code>ValueError</code>، <code>DivisionByZeroError</code>، <code>UnhandledMatchError</code>، صدا زدن متد روی null. از PHP 7 قابل catch شدند (قبلاً fatal بودند).</li>
+          <li><strong>Exception</strong>: شرایط استثنایی <strong>قابل انتظار</strong> که برنامه باید مدیریت کند. شاخه‌های SPL: <code>LogicException</code> (خطای منطق کد، مثل <code>InvalidArgumentException</code>) و <code>RuntimeException</code> (خطای محیط زمان اجرا).</li>
+        </ul>
+        <p><strong>قواعد:</strong> exceptionهای سفارشی را از <code>Exception</code>/زیرکلاس‌های SPL ارث ببرید، نه <code>Error</code>؛ <code>Throwable</code> را فقط در مرزها (handler سراسری، worker) catch کنید؛ از <code>previous</code> برای chaining استفاده کنید؛ و در <code>finally</code> هرگز <code>return</code> نگذارید چون exception را می‌بلعد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-17">
+      <summary>Composer و استاندارد PSR-4 را توضیح دهید. autoloading چگونه کار می‌کند و برای production چه بهینه‌سازی‌هایی لازم است؟</summary>
+      <div class="answer">
+        <p><strong>Composer</strong> مدیر وابستگی PHP است: وابستگی‌ها را طبق constraintهای <code>composer.json</code> resolve می‌کند، نسخه‌های دقیق را در <code>composer.lock</code> ثبت می‌کند، در <code>vendor/</code> نصب می‌کند و یک <strong>autoloader</strong> (<code>vendor/autoload.php</code>) تولید می‌کند.</p>
+        <p><strong>Autoloading:</strong> با <code>spl_autoload_register</code> تابعی ثبت می‌شود که وقتی کلاسی برای اولین بار استفاده می‌شود و هنوز تعریف نشده، نام کامل کلاس را می‌گیرد و فایلش را <code>require</code> می‌کند؛ پس فقط کلاس‌های مورد استفاده بارگذاری می‌شوند و نیازی به <code>require</code> دستی نیست.</p>
+        <p><strong>PSR-4:</strong> یک namespace prefix به یک پوشهٔ پایه نگاشت می‌شود و بقیهٔ نام کلاس به زیرپوشه‌ها و نام فایل:</p>
+        <pre><code class="language-json">"autoload": { "psr-4": { "App\\": "app/" } }</code></pre>
+        <pre><code class="language-plaintext">App\Domain\Billing\Invoice  →  app/Domain/Billing/Invoice.php</code></pre>
+        <p>هر فایل یک کلاس، نام فایل دقیقاً برابر نام کلاس (حساس به حروف روی لینوکس — منبع رایج خطای «class not found» که فقط روی سرور رخ می‌دهد).</p>
+        <p><strong>بهینه‌سازی production:</strong></p>
+        <ul>
+          <li><code>composer install --no-dev --optimize-autoloader</code>: ساخت classmap کامل و حذف پکیج‌های dev.</li>
+          <li><code>--classmap-authoritative</code>: فقط از classmap، بدون جست‌وجوی فایل‌سیستم.</li>
+          <li>OPcache روشن و commit کردن <code>composer.lock</code> تا همهٔ محیط‌ها نسخهٔ یکسان داشته باشند.</li>
+        </ul>
+        <p><strong>install در برابر update:</strong> <code>install</code> lock را نصب می‌کند (قطعی و قابل تکرار)؛ <code>update</code> lock را تغییر می‌دهد و باید آگاهانه و همراه با تست اجرا شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-18">
+      <summary>PSR-7، PSR-11 و PSR-15 را تعریف کنید. چرا استانداردهای PSR مهم‌اند و Laravel تا چه حد از آن‌ها پیروی می‌کند؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>PSR-7 (HTTP Message):</strong> interfaceهایی مثل <code>RequestInterface</code>، <code>ServerRequestInterface</code>، <code>ResponseInterface</code>، <code>StreamInterface</code> و <code>UriInterface</code>. ویژگی کلیدی <strong>immutability</strong> است: <code>$r2 = $r-&gt;withHeader('X', 'y')</code> object جدید برمی‌گرداند. Laravel از Symfony HttpFoundation (قابل تغییر) استفاده می‌کند، ولی با نصب PSR-7 bridge می‌توان در کنترلر <code>ServerRequestInterface</code> را type-hint کرد.</li>
+          <li><strong>PSR-11 (Container):</strong> <code>ContainerInterface</code> با <code>get(string $id)</code> و <code>has(string $id)</code>. Container لاراول آن را پیاده می‌کند؛ کتابخانه‌ها می‌توانند بدون وابستگی به Laravel از container استفاده کنند.</li>
+          <li><strong>PSR-15 (Server Request Handlers):</strong> <code>RequestHandlerInterface::handle()</code> و <code>MiddlewareInterface::process($request, $handler)</code>. middleware لاراول از الگوی مشابه ولی امضای اختصاصی <code>handle(Request $request, Closure $next)</code> استفاده می‌کند و PSR-15 نیست.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+final class TimingMiddleware implements MiddlewareInterface    // PSR-15
+{
+    public function process(ServerRequestInterface $req, RequestHandlerInterface $handler): ResponseInterface
+    {
+        $start = hrtime(true);
+        $res = $handler-&gt;handle($req);
+        return $res-&gt;withHeader('X-Time', (string) (hrtime(true) - $start));   // immutable
+    }
+}</code></pre>
+        <p><strong>اهمیت:</strong> <strong>interoperability</strong> و کاهش vendor lock-in؛ کتابخانه به interface استاندارد وابسته می‌شود (Dependency Inversion) و با هر پیاده‌سازی کار می‌کند. Laravel از PSR-3 (Log)، PSR-4، PSR-11، PSR-16 (Cache) کامل پیروی می‌کند، برای PSR-7 پل دارد و در کدنویسی Pint با preset لاراول (مبتنی بر PSR-12) استفاده می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-19">
+      <summary>کد زیر چه مشکلات امنیتی دارد؟ آن را بازنویسی کنید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+$email = $_POST['email'];
+$row = $pdo-&gt;query("SELECT * FROM users WHERE email = '$email'")-&gt;fetch();
+if ($row &amp;&amp; md5($_POST['password']) == $row['password']) {
+    $_SESSION['uid'] = $row['id'];
+    echo "Welcome " . $row['name'];
+}</code></pre>
+        <p><strong>مشکلات:</strong></p>
+        <ol>
+          <li><strong>SQL Injection</strong>: ورودی مستقیم داخل SQL. با <code>' OR '1'='1</code> احراز هویت دور زده می‌شود.</li>
+          <li><strong>md5 برای رمز</strong>: سریع و بدون salt؛ با rainbow table و GPU شکسته می‌شود.</li>
+          <li><strong>مقایسهٔ loose</strong> <code>==</code>: hashهایی مثل <code>"0e123..."</code> به‌عنوان عدد علمی برابر صفر می‌شوند («magic hash»)، و مقایسه timing-safe هم نیست.</li>
+          <li><strong>Session fixation</strong>: پس از login، session ID عوض نمی‌شود.</li>
+          <li><strong>XSS</strong>: <code>name</code> بدون escape چاپ می‌شود.</li>
+        </ol>
+        <pre><code class="language-php">&lt;?php
+$stmt = $pdo-&gt;prepare('SELECT id, name, password FROM users WHERE email = ?');
+$stmt-&gt;execute([$_POST['email'] ?? '']);
+$row = $stmt-&gt;fetch(PDO::FETCH_ASSOC);
+
+if ($row &amp;&amp; password_verify($_POST['password'] ?? '', $row['password'])) {
+    if (password_needs_rehash($row['password'], PASSWORD_DEFAULT)) {
+        // ذخیرهٔ password_hash(...) جدید
+    }
+    session_regenerate_id(true);
+    $_SESSION['uid'] = $row['id'];
+    echo 'Welcome ' . htmlspecialchars($row['name'], ENT_QUOTES, 'UTF-8');
+} else {
+    // پیام عمومی؛ نگویید ایمیل وجود ندارد یا رمز غلط است (user enumeration)
+}</code></pre>
+        <p><strong>در Laravel:</strong> <code>Auth::attempt()</code> (که از <code>Hash::check</code> و binding استفاده می‌کند)، سپس <code>$request-&gt;session()-&gt;regenerate()</code>، Blade <code>{{ }}</code> برای escape، و rate limiting روی route لاگین (<code>throttle</code>) برای جلوگیری از brute-force.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-php-20">
+      <summary>تفاوت <code>isset</code>، <code>array_key_exists</code> و <code>empty</code> و همچنین <code>array_merge</code> و عملگر <code>+</code> را با مثال توضیح دهید. خروجی را بنویسید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+$d = ['name' =&gt; null, 'age' =&gt; 0, 5 =&gt; 'x'];
+var_dump(isset($d['name']), array_key_exists('name', $d), empty($d['age']));
+print_r(array_merge($d, [5 =&gt; 'y', 'age' =&gt; 30]));
+print_r($d + [5 =&gt; 'y', 'city' =&gt; 'Tehran']);</code></pre>
+        <p><strong>خروجی:</strong></p>
+        <ul>
+          <li><code>isset($d['name'])</code> → <strong>false</strong>، چون مقدار null است. <code>array_key_exists</code> → <strong>true</strong>، چون کلید وجود دارد. <code>empty($d['age'])</code> → <strong>true</strong>، چون 0 falsy است.</li>
+          <li><code>array_merge</code> → <code>['name' =&gt; null, 'age' =&gt; 30, 0 =&gt; 'x', 1 =&gt; 'y']</code>: کلیدهای رشته‌ای را سمت راست بازنویسی می‌کند، کلیدهای عددی <strong>از نو شماره‌گذاری</strong> و الحاق می‌شوند.</li>
+          <li><code>+</code> → <code>['name' =&gt; null, 'age' =&gt; 0, 5 =&gt; 'x', 'city' =&gt; 'Tehran']</code>: union کلیدها؛ اگر کلید در سمت چپ باشد، <strong>سمت چپ برنده است</strong> و کلیدهای عددی حفظ می‌شوند.</li>
+        </ul>
+        <p><strong>کاربرد:</strong></p>
+        <ul>
+          <li><code>isset</code>/<code>??</code>: بررسی سریع «وجود و غیر null بودن»، حتی برای کلیدهای تودرتو بدون warning.</li>
+          <li><code>array_key_exists</code>: وقتی null معنادار است؛ مثلاً در PATCH باید بین «فیلد ارسال نشده» و «فیلد عمداً null شده» فرق گذاشت (در Laravel: <code>$request-&gt;has()</code> در برابر <code>filled()</code>).</li>
+          <li><code>empty</code>: بررسی «خالی بودن» در معنای falsy؛ مراقب <code>"0"</code> و <code>0</code> باشید.</li>
+          <li><code>$options + $defaults</code> برای اعمال مقادیر پیش‌فرض؛ <code>array_merge</code> برای الحاق لیست‌ها یا override تنظیمات.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>اجرا</h3>
+      <ul>
+        <li>Source → tokens → AST → <strong>opcodes</strong> → Zend VM. OPcache = کش opcode در shared memory. JIT (8.0) = کد ماشین، مفید برای CPU-bound.</li>
+        <li>FPM: master + workerها؛ هر worker یک درخواست؛ همروندی = <code>pm.max_children</code>.</li>
+        <li><strong>Shared-nothing</strong>: state بین درخواست‌ها نمی‌ماند. Octane = اپ ماندگار در حافظه؛ مراقب static و singleton.</li>
+      </ul>
+      <h3>نوع و مقایسه</h3>
+      <ul>
+        <li>PHP 8: <code>0 == "a"</code> false؛ رشتهٔ غیرعددی → عدد به رشته تبدیل می‌شود.</li>
+        <li>falsy: <code>false 0 0.0 "" "0" [] null</code>.</li>
+        <li><code>??</code> = isset/null؛ <code>?:</code> = falsy؛ <code>&lt;=&gt;</code> = -1/0/1.</li>
+        <li>strict_types: per-file، caller تعیین می‌کند، فقط int→float مجاز، روی عملگرها بی‌اثر.</li>
+      </ul>
+      <h3>نسخه‌ها</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>نسخه</th><th>قابلیت‌ها</th></tr></thead>
+        <tbody>
+          <tr><td>7.4</td><td>typed properties، arrow fn، <code>??=</code>، preloading، <code>__serialize</code></td></tr>
+          <tr><td>8.0</td><td>union، mixed، static return، named args، match، nullsafe، promotion، attributes، JIT، throw expr، <code>str_contains</code></td></tr>
+          <tr><td>8.1</td><td>enum، readonly prop، never، intersection، fibers، first-class callable، new in initializers</td></tr>
+          <tr><td>8.2</td><td>readonly class، DNF، null/false/true، deprecate dynamic props، const در trait</td></tr>
+          <tr><td>8.3</td><td>typed class constants، <code>#[\Override]</code>، <code>json_validate</code>، readonly در <code>__clone</code></td></tr>
+          <tr><td>8.4</td><td>property hooks، asymmetric visibility، lazy objects، <code>array_find/any/all</code>، <code>#[\Deprecated]</code></td></tr>
+        </tbody>
+      </table></div>
+      <h3>OOP</h3>
+      <ul>
+        <li><code>self</code> = کلاس تعریف؛ <code>static</code> = کلاس فراخوانی (LSB)؛ Eloquent: <code>new static</code>.</li>
+        <li>Interface = قرارداد؛ Abstract = پیاده‌سازی مشترک + state؛ Trait = کپی کد افقی، نوع نیست.</li>
+        <li>Trait conflict: <code>insteadof</code> + <code>as</code>؛ اولویت: class &gt; trait &gt; parent.</li>
+        <li>Magic: <code>__get/__set/__isset</code> (Eloquent attributes)، <code>__call/__callStatic</code> (Builder، Facade)، <code>__invoke</code> (action).</li>
+        <li><code>clone</code> سطحی است؛ deep copy در <code>__clone</code>؛ بهتر: immutable.</li>
+        <li>Object = by handle؛ array = by value + COW؛ <code>&amp;</code> = reference. <code>==</code> object: هم‌کلاس و propertyهای برابر؛ <code>===</code>: همان instance.</li>
+        <li><code>foreach (&amp;$v)</code> → حتماً <code>unset($v)</code>.</li>
+      </ul>
+      <h3>Closure و Generator</h3>
+      <ul>
+        <li><code>use ($x)</code> کپی در لحظهٔ تعریف؛ <code>use (&amp;$x)</code> reference؛ <code>fn</code> خودکار by value و تک‌expression.</li>
+        <li><code>Closure::bind/bindTo/call</code> تغییر <code>$this</code> و scope (Macroable).</li>
+        <li>Generator: lazy، حافظهٔ O(1)، یک‌بارمصرف؛ <code>yield from</code>، <code>send</code>، <code>getReturn</code>. Laravel: <code>cursor</code>، <code>lazy</code>، <code>LazyCollection</code>.</li>
+        <li><code>IteratorAggregate</code> + <code>Countable</code> + <code>ArrayAccess</code> = شیء شبه‌آرایه (Collection).</li>
+      </ul>
+      <h3>خطا</h3>
+      <ul>
+        <li>Throwable → Error (باگ: TypeError، ValueError، DivisionByZeroError) | Exception (Logic / Runtime).</li>
+        <li><code>catch (Exception)</code> خطای Error را نمی‌گیرد. finally همیشه اجرا؛ return در finally = بلعیدن exception.</li>
+      </ul>
+      <h3>Composer و PSR</h3>
+      <ul>
+        <li>PSR-4: prefix → پوشه. <code>install</code> از lock؛ <code>update</code> lock را عوض می‌کند. Prod: <code>--no-dev -o</code>.</li>
+        <li><code>^1.2</code> = &lt;2.0؛ <code>~1.2.3</code> = &lt;1.3.0.</li>
+        <li>PSR-1/12/PER: style؛ 3: Logger؛ 4: Autoload؛ 6/16: Cache؛ 7: HTTP message (immutable)؛ 11: Container؛ 14: Events؛ 15: Middleware؛ 17/18: HTTP factory/client.</li>
+        <li>Laravel middleware ≠ PSR-15؛ Request ≠ PSR-7 (Symfony).</li>
+      </ul>
+      <h3>آرایه و رشته</h3>
+      <ul>
+        <li><code>array_map(cb, arr)</code> ولی <code>array_filter(arr, cb)</code>؛ filter کلید را حفظ می‌کند → <code>array_values</code>.</li>
+        <li><code>isset</code> null را false می‌داند؛ <code>array_key_exists</code> نه.</li>
+        <li><code>array_merge</code>: عددی renumber، رشته‌ای راست برنده؛ <code>+</code>: چپ برنده.</li>
+        <li>sort توابع in-place و stable (8.0)؛ <code>a</code> = حفظ کلید، <code>k</code> = بر اساس کلید، <code>u</code> = callback.</li>
+        <li>فارسی: <code>mb_*</code> و regex با <code>/u</code>؛ <code>strpos(...) !== false</code>.</li>
+      </ul>
+      <h3>امنیت</h3>
+      <ul>
+        <li><code>password_hash/verify/needs_rehash</code>؛ نه md5/sha. <code>random_bytes</code>، <code>hash_equals</code>.</li>
+        <li>XSS: <code>htmlspecialchars(ENT_QUOTES)</code> هنگام خروجی؛ Blade <code>{{ }}</code>.</li>
+        <li>SQLi: prepared statement؛ نام ستون/جدول → whitelist؛ مراقب <code>whereRaw</code>/<code>orderBy($input)</code>.</li>
+        <li>Cookie: <code>Secure</code>، <code>HttpOnly</code>، <code>SameSite</code>. پس از login: <code>session_regenerate_id(true)</code>.</li>
+      </ul>
+      <h3>حافظه و ابزار</h3>
+      <ul>
+        <li>refcount → آزادسازی فوری؛ چرخه‌ها → cycle collector (<code>gc_collect_cycles</code>)؛ <code>WeakMap</code>.</li>
+        <li>leak در worker/Octane: static، query log، closureهای ذخیره‌شده؛ <code>--max-jobs</code>، <code>--memory</code>.</li>
+        <li>PHPStan (+Larastan، baseline، levels)، Psalm (taint)، generics در docblock، Rector، Pint.</li>
+      </ul>
+    </div>
+  </section>
+
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

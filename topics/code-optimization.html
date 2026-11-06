@@ -1,0 +1,1229 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Code Optimization — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="code-optimization">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Code Optimization</h1>
+    <p class="lead">بهینه‌سازی کد بک‌اند PHP/Laravel از «اول اندازه بگیر» تا پروفایلینگ، حل مسئله N+1، کار با داده‌های حجیم، کش، OPcache و JIT، تنظیم PHP-FPM، پیچیدگی الگوریتمی، صف‌ها، Octane، بهینه‌سازی لایه HTTP و تست بار.</p>
+  </header>
+
+  <section class="lesson" id="measure-first" data-title="اول اندازه‌گیری، بعد بهینه‌سازی">
+    <h2>اول اندازه‌گیری، بعد بهینه‌سازی</h2>
+    <p><strong>بهینه‌سازی (Optimization)</strong> یعنی کاهش مصرف یک منبع مشخص (زمان پاسخ، CPU، حافظه، تعداد کوئری، پهنای باند) برای یک سناریوی مشخص، بدون شکستن رفتار درست برنامه. کلمه‌ی کلیدی «مشخص» است: تا وقتی ندانیم چه چیزی کند است و چقدر، هر تغییری حدس است.</p>
+    <p>جمله‌ی معروف Donald Knuth این است: <strong>«Premature optimization is the root of all evil»</strong>. ادامه‌ی کمتر نقل‌شده‌اش مهم‌تر است: در حدود ۹۷٪ موارد بازدهی‌های کوچک را باید نادیده گرفت، اما نباید فرصت آن ۳٪ بحرانی را از دست داد. یعنی پیام این نیست که «به کارایی فکر نکن»؛ پیام این است که <strong>بدون داده بهینه نکن</strong> و تمرکزت را روی گلوگاه واقعی بگذار.</p>
+
+    <h3>چرخه‌ی درست بهینه‌سازی</h3>
+    <ol>
+      <li><strong>تعریف هدف قابل اندازه‌گیری:</strong> مثلاً «p95 زمان پاسخ endpoint لیست سفارش‌ها زیر ۳۰۰ms با ۲۰۰ کاربر هم‌زمان». هدف مبهم مثل «سریع‌تر شود» پایان ندارد.</li>
+      <li><strong>Baseline:</strong> وضعیت فعلی را در محیطی شبیه production اندازه بگیر (داده‌ی واقعی‌نما، OPcache روشن، debug خاموش).</li>
+      <li><strong>Profile:</strong> با ابزار مناسب پیدا کن زمان دقیقاً کجا صرف می‌شود.</li>
+      <li><strong>یک تغییر در هر بار:</strong> فقط گلوگاه اصلی را اصلاح کن.</li>
+      <li><strong>اندازه‌گیری مجدد و مقایسه:</strong> اگر بهبود معنادار نبود، تغییر را برگردان.</li>
+      <li><strong>جلوگیری از بازگشت (regression):</strong> مانیتورینگ، تست کارایی یا assertion روی تعداد کوئری.</li>
+    </ol>
+
+    <pre class="diagram">  هدف ──► Baseline ──► Profile ──► اصلاح گلوگاه ──► اندازه‌گیری مجدد
+   ▲                                                   │
+   └──────────── اگر هنوز به هدف نرسیدیم ◄──────────────┘</pre>
+
+    <h3>قانون Amdahl به زبان ساده</h3>
+    <p>اگر بخشی از درخواست فقط ۵٪ زمان کل را می‌گیرد، حتی اگر آن را بی‌نهایت سریع کنی، کل درخواست حداکثر ۵٪ سریع‌تر می‌شود. پس اول سراغ بخشی برو که سهم بزرگی از زمان دارد. در اپلیکیشن‌های وب معمولی، این بخش تقریباً همیشه <strong>I/O</strong> است: دیتابیس، فراخوانی APIهای خارجی، فایل و شبکه؛ نه حلقه‌های PHP.</p>
+
+    <h3>خوانایی در برابر کارایی</h3>
+    <ul>
+      <li>کد خوانا ارزان‌تر نگهداری می‌شود، باگ کمتری دارد و بهینه‌سازی بعدی‌اش هم آسان‌تر است.</li>
+      <li>بهینه‌سازی‌های «میکرو» (مثل <code>++$i</code> به جای <code>$i++</code> یا single quote به جای double quote) در PHP مدرن تقریباً اثری ندارند و ارزش قربانی کردن خوانایی را ندارند.</li>
+      <li>بهینه‌سازی‌های <strong>معماری و الگوریتمی</strong> (حذف N+1، کش، صف، ایندکس، O(n²) به O(n)) معمولاً هم اثر بزرگ دارند و هم اگر درست نوشته شوند خوانایی را خراب نمی‌کنند.</li>
+      <li>اگر بهینه‌سازی کد را پیچیده کرد، دلیلش را در کامنت بنویس و با benchmark مستند کن.</li>
+    </ul>
+
+    <div class="callout exam"><p>در پاسخ تشریحی به سوال «Premature optimization چیست؟» حتماً سه چیز را بگو: ۱) تعریف (بهینه‌سازی قبل از داشتن داده درباره‌ی گلوگاه)، ۲) هزینه‌اش (پیچیدگی، باگ، اتلاف زمان روی بخش کم‌اثر)، ۳) اینکه طراحی درست از ابتدا (مثل انتخاب ساختار داده‌ی مناسب، ایندکس، جلوگیری از N+1) premature optimization حساب نمی‌شود.</p></div>
+  </section>
+
+  <section class="lesson" id="profiling-tools" data-title="ابزارهای پروفایلینگ">
+    <h2>ابزارهای پروفایلینگ</h2>
+    <p><strong>Profiling</strong> یعنی اندازه‌گیری دقیق اینکه زمان و حافظه در کدام توابع، کوئری‌ها و فراخوانی‌ها صرف می‌شود. <strong>Monitoring/APM</strong> تصویر کلی سیستم در production را در طول زمان نشان می‌دهد؛ پروفایلر برای «چرا این درخواست کند است» و APM برای «کدام درخواست‌ها کند هستند» است.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ابزار</th><th>نوع</th><th>کاربرد اصلی</th><th>محیط مناسب</th></tr></thead>
+      <tbody>
+        <tr><td>Xdebug (mode=profile)</td><td>پروفایلر سطح تابع</td><td>تولید فایل cachegrind؛ زمان inclusive/exclusive هر تابع و تعداد فراخوانی</td><td>فقط development (سربار خیلی زیاد)</td></tr>
+        <tr><td>Blackfire</td><td>پروفایلر و call graph</td><td>پروفایل با سربار کم، مقایسه‌ی دو پروفایل، assertion کارایی در CI</td><td>dev، staging و حتی production (on-demand)</td></tr>
+        <tr><td>Laravel Telescope</td><td>دیباگ‌اسیستنت</td><td>ثبت requestها، کوئری‌ها (با زمان)، jobها، cache، exceptionها، کوئری‌های تکراری</td><td>local/staging؛ در production با احتیاط و فیلتر</td></tr>
+        <tr><td>Laravel Debugbar</td><td>نوار دیباگ در مرورگر</td><td>تعداد و زمان کوئری‌ها، کوئری‌های تکراری، viewها، حافظه، timeline</td><td>فقط local</td></tr>
+        <tr><td>Clockwork</td><td>افزونه‌ی مرورگر + پکیج</td><td>timeline، کوئری‌ها، cache، برای API و درخواست‌های AJAX هم مناسب</td><td>local</td></tr>
+        <tr><td>MySQL slow query log</td><td>لاگ دیتابیس</td><td>ثبت کوئری‌های کندتر از آستانه و کوئری‌های بدون ایندکس</td><td>production</td></tr>
+        <tr><td>EXPLAIN / EXPLAIN ANALYZE</td><td>تحلیل plan کوئری</td><td>دیدن full scan، ایندکس استفاده‌شده، تعداد ردیف بررسی‌شده</td><td>هر جا</td></tr>
+        <tr><td>APM (New Relic، Datadog، Sentry Performance و…)</td><td>مانیتورینگ</td><td>p95/p99، تریس توزیع‌شده، کندترین endpointها</td><td>production</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Xdebug profiler</h3>
+    <pre><code class="language-ini">; php.ini (فقط روی ماشین توسعه)
+xdebug.mode = profile
+xdebug.start_with_request = trigger   ; فقط وقتی XDEBUG_TRIGGER ارسال شود
+xdebug.output_dir = /tmp/xdebug
+; خروجی: cachegrind.out.* → با KCachegrind / QCachegrind / PhpStorm باز کنید</code></pre>
+    <p>در خروجی دو عدد مهم است: <strong>Inclusive time</strong> (زمان تابع به همراه توابعی که صدا زده) و <strong>Self/Exclusive time</strong> (زمان خود تابع). تابعی با self time بالا گلوگاه CPU است؛ تابعی با inclusive بالا اما self کم، فقط مسیر رسیدن به گلوگاه است.</p>
+    <div class="callout warn"><p>Xdebug حتی وقتی پروفایل نمی‌گیرد هم سربار دارد. روشن بودن آن روی سرور production یا موقع تست بار، نتایج را کاملاً بی‌اعتبار می‌کند. همیشه قبل از benchmark چک کنید: <code>php -m | grep -i xdebug</code>.</p></div>
+
+    <h3>اندازه‌گیری کوئری‌ها در خود Laravel</h3>
+    <pre><code class="language-php">&lt;?php
+// ثبت همه‌ی کوئری‌های کند در لاگ (مثلاً در AppServiceProvider::boot)
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+DB::listen(function ($query) {
+    if ($query-&gt;time &gt; 100) { // میلی‌ثانیه
+        Log::warning('Slow query', [
+            'sql'      =&gt; $query-&gt;sql,
+            'bindings' =&gt; $query-&gt;bindings,
+            'time_ms'  =&gt; $query-&gt;time,
+        ]);
+    }
+});
+
+// یا موقع دیباگ یک قطعه کد:
+DB::enableQueryLog();
+$orders = Order::with('items')-&gt;latest()-&gt;take(20)-&gt;get();
+dump(count(DB::getQueryLog()));</code></pre>
+
+    <h3>Slow query log در MySQL</h3>
+    <pre><code class="language-ini">[mysqld]
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 0.5            ; ثانیه
+log_queries_not_using_indexes = 1</code></pre>
+    <p>برای جمع‌بندی لاگ از <code>mysqldumpslow</code> یا <code>pt-query-digest</code> استفاده می‌شود تا کوئری‌هایی که <strong>مجموع</strong> زمانشان بیشتر است (نه لزوماً کندترین تک‌اجرا) پیدا شوند. یک کوئری ۲۰ میلی‌ثانیه‌ای که ۱۰۰ هزار بار در ساعت اجرا می‌شود، از یک کوئری ۲ ثانیه‌ای روزانه مهم‌تر است.</p>
+
+    <div class="callout exam"><p>تفاوت Telescope و Blackfire را بدانید: Telescope «چه اتفاقی افتاد» (کدام کوئری‌ها، jobها، exceptionها) را ثبت می‌کند؛ Blackfire و Xdebug «زمان دقیقاً در کدام تابع صرف شد» را با call graph نشان می‌دهند. برای مسائل دیتابیسی Telescope/Debugbar کافی است، برای گلوگاه CPU پروفایلر لازم است.</p></div>
+  </section>
+
+  <section class="lesson" id="bottlenecks" data-title="انواع گلوگاه">
+    <h2>تشخیص نوع گلوگاه: CPU، I/O، حافظه، دیتابیس</h2>
+    <p>قبل از هر اقدامی باید بفهمیم منبع محدودکننده کدام است، چون راه‌حل‌ها کاملاً متفاوت‌اند. اضافه کردن CPU به سیستمی که منتظر دیتابیس است هیچ اثری ندارد.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>نشانه‌ها</th><th>ابزار تشخیص</th><th>راه‌حل‌های معمول</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CPU-bound</strong></td><td>CPU نزدیک ۱۰۰٪، load average بالاتر از تعداد هسته، self time بالا در پروفایل</td><td><code>top</code>، <code>htop</code>، Blackfire، Xdebug</td><td>الگوریتم بهتر، کش نتیجه‌ی محاسبه، حذف کار تکراری، JIT (فقط محاسبات سنگین)، افزایش سرور</td></tr>
+        <tr><td><strong>I/O-bound</strong></td><td>CPU پایین ولی پاسخ کند، workerها در حالت انتظار، زمان شبکه/دیسک بالا</td><td>Telescope، APM، <code>iostat</code>، <code>strace</code></td><td>کش، صف کردن کار کند، timeout، فراخوانی موازی (<code>Http::pool</code>)، کاهش تعداد round-trip</td></tr>
+        <tr><td><strong>Memory-bound</strong></td><td>خطای <code>Allowed memory size exhausted</code>، swap، OOM killer، کم شدن تعداد worker قابل اجرا</td><td><code>memory_get_peak_usage()</code>، Debugbar، <code>free -m</code></td><td>پردازش جریانی (chunk، lazy، generator)، انتخاب ستون‌های لازم، آزاد کردن ارجاع‌ها</td></tr>
+        <tr><td><strong>Database-bound</strong></td><td>تعداد کوئری زیاد، کوئری کند، lock wait، CPU بالای سرور دیتابیس</td><td>slow log، <code>EXPLAIN</code>، Debugbar</td><td>eager loading، ایندکس، تجمیع در دیتابیس، کش، read replica</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>فرمول ساده‌ی زمان یک درخواست</h3>
+    <pre class="diagram">زمان پاسخ ≈ زمان صف (انتظار برای worker آزاد)
+          + bootstrap فریمورک
+          + Σ (round-trip هر کوئری + زمان اجرای آن)
+          + Σ فراخوانی‌های HTTP خارجی
+          + محاسبات PHP و رندر view
+          + انتقال در شبکه به کاربر</pre>
+    <p>این فرمول نشان می‌دهد چرا N+1 خطرناک است: حتی اگر هر کوئری ۱ میلی‌ثانیه طول بکشد، ۵۰۰ کوئری یعنی حداقل نیم ثانیه فقط round-trip. همچنین نشان می‌دهد چرا وقتی همه‌ی workerهای PHP-FPM مشغول‌اند، «زمان صف» ناگهان زمان پاسخ را چند برابر می‌کند.</p>
+
+    <div class="callout tip"><p>Latency را با درصدک (percentile) گزارش کنید نه میانگین. میانگین ۱۵۰ms ممکن است p99 برابر ۴ ثانیه را پنهان کند؛ یعنی از هر ۱۰۰ کاربر یکی تجربه‌ی بسیار بدی دارد.</p></div>
+  </section>
+
+  <section class="lesson" id="n-plus-one" data-title="مسئله N+1 و Eager Loading">
+    <h2>مسئله N+1 و Eager Loading</h2>
+    <p><strong>N+1</strong> یعنی یک کوئری برای گرفتن لیست اصلی (۱) و سپس یک کوئری جداگانه برای رابطه‌ی هر آیتم (N). در Eloquent این مشکل به‌خاطر <strong>Lazy Loading</strong> پیش می‌آید: دسترسی به <code>$post-&gt;author</code> اگر رابطه از قبل load نشده باشد، همان لحظه یک کوئری اجرا می‌کند.</p>
+
+    <h3>قبل: N+1</h3>
+    <pre><code class="language-php">&lt;?php
+// Controller
+$posts = Post::latest()-&gt;take(50)-&gt;get();          // 1 کوئری
+
+// Blade
+@foreach ($posts as $post)
+    {{ $post-&gt;author-&gt;name }}                      // 50 کوئری
+    {{ $post-&gt;comments-&gt;count() }}                 // 50 کوئری دیگر
+@endforeach
+// جمع: 101 کوئری</code></pre>
+    <pre><code class="language-sql">select * from posts order by created_at desc limit 50;
+select * from users where id = 7 limit 1;
+select * from users where id = 3 limit 1;
+select * from comments where post_id = 101;
+-- ... تکرار برای هر پست</code></pre>
+
+    <h3>بعد: Eager Loading</h3>
+    <pre><code class="language-php">&lt;?php
+$posts = Post::query()
+    -&gt;select(['id', 'title', 'user_id', 'created_at'])
+    -&gt;with('author:id,name')      // فقط ستون‌های لازم از users (کلید id لازم است)
+    -&gt;withCount('comments')        // شمارش در دیتابیس، بدون load کامنت‌ها
+    -&gt;latest()
+    -&gt;take(50)
+    -&gt;get();
+// جمع: 2 کوئری (posts با subquery شمارش + users)
+
+// در Blade:
+// {{ $post-&gt;author-&gt;name }}  و  {{ $post-&gt;comments_count }}</code></pre>
+    <pre><code class="language-sql">select id, title, user_id, created_at,
+       (select count(*) from comments where posts.id = comments.post_id) as comments_count
+from posts order by created_at desc limit 50;
+select id, name from users where id in (7, 3, 12, ...);</code></pre>
+
+    <h3>ابزارهای Eloquent برای کنترل load</h3>
+    <dl class="terms">
+      <dt>with()</dt><dd>Eager loading هنگام ساخت کوئری؛ برای هر رابطه یک کوئری <code>where in</code>.</dd>
+      <dt>with('a.b')</dt><dd>Eager loading تو در تو (nested).</dd>
+      <dt>with(['x' =&gt; fn])</dt><dd>محدود کردن رابطه با شرط، مرتب‌سازی یا انتخاب ستون.</dd>
+      <dt>load()</dt><dd>Lazy eager loading: وقتی مدل‌ها از قبل گرفته شده‌اند و بعداً تصمیم به load رابطه می‌گیریم.</dd>
+      <dt>loadMissing()</dt><dd>فقط اگر رابطه قبلاً load نشده باشد.</dd>
+      <dt>withCount / withSum / withAvg / withMax / withExists</dt><dd>محاسبه‌ی تجمیعی رابطه با subquery در دیتابیس، بدون hydrate کردن رکوردها.</dd>
+      <dt>$with در مدل</dt><dd>رابطه‌ای که همیشه eager load شود؛ با احتیاط، چون در همه‌ی کوئری‌ها هزینه دارد.</dd>
+    </dl>
+
+    <h3>جلوگیری خودکار از N+1</h3>
+    <pre><code class="language-php">&lt;?php
+// app/Providers/AppServiceProvider.php
+use Illuminate\Database\Eloquent\Model;
+
+public function boot(): void
+{
+    // در محیط توسعه هر lazy load یک exception می‌دهد
+    Model::preventLazyLoading(! $this-&gt;app-&gt;isProduction());
+
+    // یا مجموعه‌ی سخت‌گیری‌ها (lazy loading، attributeهای ناموجود، mass assignment بی‌صدا)
+    // Model::shouldBeStrict(! $this-&gt;app-&gt;isProduction());
+}</code></pre>
+
+    <div class="callout warn"><p>تفاوت <code>$user-&gt;posts()-&gt;count()</code> و <code>$user-&gt;posts-&gt;count()</code>: اولی یک کوئری <code>COUNT(*)</code> می‌زند؛ دومی همه‌ی پست‌ها را load و hydrate می‌کند و بعد در PHP می‌شمارد. اگر داخل حلقه باشد، هر دو N+1 هستند و راه‌حل درست <code>withCount</code> است.</p></div>
+
+    <div class="callout exam"><p>N+1 فقط در view رخ نمی‌دهد: در API Resourceها، accessorها، Policyها (مثلاً چک مالکیت با رابطه) و jobها هم رایج است. برای تست، می‌توان تعداد کوئری را assert کرد: با <code>DB::enableQueryLog()</code> و شمارش <code>DB::getQueryLog()</code> در یک تست Feature.</p></div>
+  </section>
+
+  <section class="lesson" id="query-efficiency" data-title="کوئری بهینه از سمت اپلیکیشن">
+    <h2>کوئری بهینه از سمت اپلیکیشن</h2>
+
+    <h3>فقط ستون‌های لازم</h3>
+    <p><code>SELECT *</code> یعنی انتقال ستون‌های حجیم (مثل <code>body</code>، JSON، blob) از شبکه، مصرف حافظه برای hydrate مدل‌ها و از دست رفتن فرصت <strong>covering index</strong> (وقتی همه‌ی ستون‌های لازم داخل ایندکس هستند و دیتابیس اصلاً سراغ جدول نمی‌رود).</p>
+    <pre><code class="language-php">&lt;?php
+// بد: کل ردیف‌ها برای ساخت یک dropdown
+$users = User::all();
+
+// خوب: فقط داده‌ی لازم، بدون ساخت مدل Eloquent
+$options = User::where('active', true)-&gt;orderBy('name')-&gt;pluck('name', 'id');</code></pre>
+
+    <h3>کار را به دیتابیس بسپار</h3>
+    <p>دیتابیس برای فیلتر، مرتب‌سازی، تجمیع و join بهینه شده و از ایندکس استفاده می‌کند. آوردن داده به PHP و فیلتر با Collection هم حافظه می‌خورد و هم کندتر است.</p>
+    <pre><code class="language-php">&lt;?php
+// بد: همه‌ی سفارش‌ها به حافظه می‌آیند
+$total = Order::all()-&gt;where('status', 'paid')-&gt;sum('amount');
+
+// خوب: یک کوئری SUM
+$total = Order::where('status', 'paid')-&gt;sum('amount');
+
+// گزارش گروه‌بندی‌شده
+$daily = Order::query()
+    -&gt;selectRaw('DATE(created_at) as day, COUNT(*) as orders, SUM(amount) as revenue')
+    -&gt;where('created_at', '&gt;=', now()-&gt;subDays(30))
+    -&gt;groupBy('day')
+    -&gt;orderBy('day')
+    -&gt;get();</code></pre>
+
+    <h3>exists در برابر count</h3>
+    <pre><code class="language-php">&lt;?php
+// بد: همه‌ی ردیف‌های منطبق شمرده می‌شوند
+if (Order::where('user_id', $id)-&gt;count() &gt; 0) { /* ... */ }
+
+// بدتر: همه‌ی ردیف‌ها load می‌شوند
+if (Order::where('user_id', $id)-&gt;get()-&gt;isNotEmpty()) { /* ... */ }
+
+// خوب: دیتابیس با اولین ردیف متوقف می‌شود (select exists(...))
+if (Order::where('user_id', $id)-&gt;exists()) { /* ... */ }</code></pre>
+
+    <h3>کوئری داخل حلقه ممنوع</h3>
+    <pre><code class="language-php">&lt;?php
+// بد: یک کوئری برای هر شناسه
+foreach ($productIds as $id) {
+    $product = Product::find($id);
+    $prices[$id] = $product-&gt;price;
+}
+
+// خوب: یک کوئری و دسترسی O(1) با کلید
+$prices = Product::whereIn('id', $productIds)-&gt;pluck('price', 'id');
+
+// بد: آپدیت تک‌تک
+foreach ($expiredIds as $id) {
+    Coupon::where('id', $id)-&gt;update(['active' =&gt; false]);
+}
+
+// خوب: یک UPDATE
+Coupon::whereIn('id', $expiredIds)-&gt;update(['active' =&gt; false]);</code></pre>
+
+    <h3>ایندکس از دید توسعه‌دهنده‌ی اپلیکیشن</h3>
+    <ul>
+      <li>ستون‌هایی که در <code>WHERE</code>، <code>JOIN</code>، <code>ORDER BY</code> و foreign key استفاده می‌شوند کاندید ایندکس‌اند. در migration: <code>$table-&gt;index(['status', 'created_at'])</code>؛ <code>foreignId()-&gt;constrained()</code> روی MySQL/InnoDB ایندکس هم می‌سازد.</li>
+      <li><strong>ترتیب ستون‌ها در ایندکس ترکیبی مهم است</strong> (قاعده‌ی leftmost prefix): ایندکس <code>(status, created_at)</code> برای <code>WHERE status = ? ORDER BY created_at</code> عالی است، اما برای فیلتر فقط روی <code>created_at</code> به کار نمی‌آید.</li>
+      <li>اعمال تابع روی ستون ایندکس‌دار معمولاً ایندکس را بی‌اثر می‌کند: <code>WHERE DATE(created_at) = ?</code> را به بازه تبدیل کنید: <code>whereBetween('created_at', [$start, $end])</code>.</li>
+      <li><code>LIKE '%term%'</code> با wildcard در ابتدا از B-Tree index استفاده نمی‌کند؛ برای جستجوی متنی از full-text index یا Laravel Scout و موتور جستجو استفاده کنید.</li>
+      <li>ایندکس هزینه‌ی نوشتن و فضای دیسک دارد؛ برای ستون‌هایی با تنوع کم (مثل boolean تنها) معمولاً مفید نیست.</li>
+      <li>همیشه با <code>EXPLAIN</code> تأیید کنید: ستون <code>type=ALL</code> یعنی full table scan؛ <code>rows</code> تعداد تخمینی ردیف‌های بررسی‌شده است.</li>
+    </ul>
+
+    <h3>صفحه‌بندی</h3>
+    <p><code>paginate()</code> علاوه بر داده یک کوئری <code>COUNT</code> هم می‌زند؛ <code>simplePaginate()</code> این کوئری را ندارد. روی جدول‌های بزرگ، <code>OFFSET</code> بزرگ (صفحه‌ی ۱۰۰۰۰) کند است چون دیتابیس باید همه‌ی ردیف‌های قبلی را رد کند؛ <code>cursorPaginate()</code> با شرط <code>where id &gt; ?</code> این مشکل را ندارد ولی پرش به صفحه‌ی دلخواه را پشتیبانی نمی‌کند.</p>
+
+    <div class="callout exam"><p>«کار را تا جای ممکن در دیتابیس انجام بده» یک اصل کلی است، اما مطلق نیست: منطق کسب‌وکار پیچیده در SQL خام سخت تست می‌شود و دیتابیس معمولاً سخت‌تر از سرورهای اپلیکیشن scale می‌شود. فیلتر، تجمیع و join را به دیتابیس بسپارید؛ محاسبات سنگین غیرپایگاه‌داده‌ای را در اپلیکیشن یا صف انجام دهید.</p></div>
+  </section>
+
+  <section class="lesson" id="large-datasets" data-title="داده‌های حجیم و عملیات دسته‌ای">
+    <h2>داده‌های حجیم: chunk، lazy، cursor و عملیات دسته‌ای</h2>
+    <p>وقتی باید صدها هزار رکورد را پردازش کنیم، <code>Model::all()</code> همه‌ی ردیف‌ها را هم‌زمان به مدل Eloquent تبدیل و در حافظه نگه می‌دارد و به‌راحتی از <code>memory_limit</code> عبور می‌کند. Laravel چند روش پردازش تدریجی دارد:</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>نحوه‌ی کار</th><th>حافظه</th><th>نکته‌ی مهم</th></tr></thead>
+      <tbody>
+        <tr><td><code>chunk(1000, fn)</code></td><td>کوئری‌های پشت‌سرهم با <code>LIMIT/OFFSET</code></td><td>حداکثر یک chunk</td><td>اگر حین پردازش ستونی را که در WHERE یا ORDER است تغییر دهید، رکوردها جا می‌افتند؛ OFFSET در صفحات انتهایی کند است.</td></tr>
+        <tr><td><code>chunkById(1000, fn)</code></td><td>کوئری با <code>where id &gt; lastId order by id limit 1000</code></td><td>حداکثر یک chunk</td><td>برای وقتی که حین پردازش رکوردها را update می‌کنید امن است و روی جدول بزرگ سریع است (keyset).</td></tr>
+        <tr><td><code>lazy()</code> / <code>lazyById()</code></td><td>همان chunk در پشت صحنه، اما خروجی یک <code>LazyCollection</code> تخت</td><td>حداکثر یک chunk</td><td>API راحت‌تر (<code>-&gt;each</code>، <code>-&gt;filter</code>) بدون callback تو در تو.</td></tr>
+        <tr><td><code>cursor()</code></td><td>فقط <strong>یک</strong> کوئری؛ با generator هر بار یک مدل hydrate می‌شود</td><td>یک مدل Eloquent در هر لحظه، اما…</td><td>درایور PDO به‌طور پیش‌فرض کل نتیجه‌ی خام را بافر می‌کند، پس روی داده‌ی خیلی بزرگ باز هم حافظه تمام می‌شود؛ eager loading هم پشتیبانی نمی‌شود.</td></tr>
+      </tbody>
+    </table></div>
+
+    <pre><code class="language-php">&lt;?php
+// ارسال ایمیل به کاربرانی که هنوز اطلاع‌رسانی نشده‌اند و همزمان update می‌کنیم
+User::where('notified', false)
+    -&gt;chunkById(500, function ($users) {
+        foreach ($users as $user) {
+            SendNoticeJob::dispatch($user-&gt;id);
+        }
+        User::whereIn('id', $users-&gt;pluck('id'))-&gt;update(['notified' =&gt; true]);
+    });
+
+// خروجی CSV از جدول بزرگ با LazyCollection
+return response()-&gt;streamDownload(function () {
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['id', 'email', 'created_at']);
+    User::select(['id', 'email', 'created_at'])
+        -&gt;lazyById(2000)
+        -&gt;each(fn ($u) =&gt; fputcsv($out, [$u-&gt;id, $u-&gt;email, $u-&gt;created_at]));
+    fclose($out);
+}, 'users.csv');</code></pre>
+
+    <div class="callout warn"><p>اشتباه کلاسیک: <code>User::where('notified', false)-&gt;chunk(...)</code> و داخل callback ستون <code>notified</code> را true کنید. در کوئری بعدی OFFSET جلو رفته اما مجموعه‌ی نتیجه کوچک شده، پس تقریباً نیمی از رکوردها پردازش نمی‌شوند. راه‌حل: <code>chunkById</code>.</p></div>
+
+    <h3>درج و به‌روزرسانی دسته‌ای (Bulk)</h3>
+    <pre><code class="language-php">&lt;?php
+// بد: 10,000 بار INSERT و 10,000 بار fire شدن event مدل
+foreach ($rows as $row) {
+    Product::create($row);
+}
+
+// خوب: INSERT چند ردیفی، در دسته‌های ۱۰۰۰تایی
+$now = now();
+foreach (array_chunk($rows, 1000) as $batch) {
+    $batch = array_map(fn ($r) =&gt; $r + ['created_at' =&gt; $now, 'updated_at' =&gt; $now], $batch);
+    Product::insert($batch);
+}
+
+// Upsert: درج یا به‌روزرسانی بر اساس کلید یکتا (در یک کوئری)
+Product::upsert(
+    $rows,
+    uniqueBy: ['sku'],
+    update: ['price', 'stock', 'updated_at']
+);
+
+// چند تغییر وابسته به هم: داخل تراکنش
+DB::transaction(function () use ($order) {
+    $order-&gt;update(['status' =&gt; 'paid']);
+    Stock::whereIn('product_id', $order-&gt;items-&gt;pluck('product_id'))-&gt;decrement('qty');
+});</code></pre>
+    <ul>
+      <li><code>insert()</code> و <code>upsert()</code> و <code>update()</code> روی Query Builder، <strong>model eventها</strong> (creating، saved، observerها) را اجرا نمی‌کنند و timestamps را خودکار پر نمی‌کنند (<code>upsert</code> روی مدل، timestamps را در صورت فعال بودن اضافه می‌کند). اگر منطق مهمی در observer دارید، این را در نظر بگیرید.</li>
+      <li>در MySQL، <code>upsert</code> به ایندکس <code>PRIMARY</code> یا <code>UNIQUE</code> متکی است و پارامتر <code>uniqueBy</code> عملاً بر اساس همان ایندکس‌ها کار می‌کند.</li>
+      <li>تعداد placeholderها در یک کوئری محدودیت دارد؛ به همین خاطر دسته‌بندی (مثلاً ۵۰۰ تا ۱۰۰۰ ردیف) لازم است.</li>
+      <li>هزاران INSERT جدا در یک تراکنش هم بسیار سریع‌تر از هزاران تراکنش auto-commit است، چون هر commit یک flush به دیسک دارد.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="caching" data-title="کش و دستورات optimize">
+    <h2>کش (Caching) و دستورات optimize لاراول</h2>
+    <p><strong>Cache</strong> یعنی نگهداری نتیجه‌ی یک عملیات پرهزینه در محلی سریع‌تر تا درخواست‌های بعدی دوباره آن را محاسبه نکنند. کش قوی‌ترین ابزار کارایی است، اما «یکی از دو مسئله‌ی سخت علوم کامپیوتر» یعنی <strong>invalidation</strong> را با خود می‌آورد.</p>
+
+    <h3>لایه‌های کش</h3>
+    <pre class="diagram">مرورگر (Cache-Control) ─► CDN ─► Reverse proxy (Nginx) ─► اپلیکیشن (Redis/Memcached)
+                                                               └─► OPcache (bytecode)
+                                                               └─► Query/Buffer cache دیتابیس</pre>
+
+    <h3>کش داده در اپلیکیشن</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\Cache;
+
+// Cache-aside: اگر بود بخوان، نبود محاسبه کن و ذخیره کن
+$stats = Cache::remember('dashboard:stats', now()-&gt;addMinutes(10), function () {
+    return [
+        'users'   =&gt; User::count(),
+        'revenue' =&gt; Order::where('status', 'paid')-&gt;sum('amount'),
+    ];
+});
+
+// invalidation بعد از تغییر داده
+Cache::forget("product:{$product-&gt;id}");
+
+// Stale-while-revalidate: تا 5 دقیقه تازه، تا 15 دقیقه مقدار قدیمی برگردان و در پس‌زمینه تازه کن
+$top = Cache::flexible('products:top', [300, 900], fn () =&gt; Product::topSelling()-&gt;get());
+
+// Memoization در طول یک درخواست (بدون ذخیره در Redis)
+function currentTenantSettings(): array
+{
+    return once(fn () =&gt; Setting::forTenant(tenant())-&gt;pluck('value', 'key')-&gt;all());
+}</code></pre>
+
+    <h3>مشکلات رایج کش</h3>
+    <dl class="terms">
+      <dt>Cache stampede</dt><dd>وقتی یک کلید پرطرفدار منقضی می‌شود و صدها درخواست هم‌زمان آن را دوباره محاسبه می‌کنند. راه‌حل: lock (<code>Cache::lock</code>)، stale-while-revalidate، TTL تصادفی (jitter)، یا گرم کردن کش با job زمان‌بندی‌شده.</dd>
+      <dt>Stale data</dt><dd>نمایش داده‌ی قدیمی. باید TTL را با میزان تحمل کسب‌وکار تنظیم کرد و پس از نوشتن، کلید را پاک یا به‌روز کرد.</dd>
+      <dt>Cache key collision</dt><dd>کلیدی که به همه‌ی پارامترهای مؤثر (کاربر، زبان، صفحه، فیلتر) وابسته نیست و داده‌ی یک کاربر را به دیگری نشان می‌دهد.</dd>
+      <dt>Cache tags</dt><dd>گروه‌بندی کلیدها برای پاک‌سازی دسته‌جمعی؛ فقط روی driverهایی مثل Redis و Memcached (نه file/database).</dd>
+    </dl>
+
+    <h3>کش HTTP</h3>
+    <ul>
+      <li><code>Cache-Control: public, max-age=3600</code> اجازه می‌دهد مرورگر و CDN پاسخ را نگه دارند؛ <code>private</code> فقط مرورگر؛ <code>no-store</code> هیچ‌جا.</li>
+      <li><code>ETag</code> و <code>Last-Modified</code>: درخواست شرطی با <code>If-None-Match</code>؛ اگر تغییری نبود سرور <code>304 Not Modified</code> بدون body برمی‌گرداند.</li>
+      <li>در Laravel: middleware آماده‌ی <code>cache.headers</code>.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+Route::middleware('cache.headers:public;max_age=600;etag')-&gt;group(function () {
+    Route::get('/api/categories', [CategoryController::class, 'index']);
+});</code></pre>
+
+    <h3>دستورات کش فریمورک (Deploy-time caching)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دستور</th><th>چه می‌کند</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td><code>php artisan config:cache</code></td><td>همه‌ی فایل‌های config را در یک فایل PHP ادغام می‌کند</td><td>بعد از آن فایل <code>.env</code> بارگذاری نمی‌شود و <code>env()</code> خارج از فایل‌های config مقدار null برمی‌گرداند.</td></tr>
+        <tr><td><code>php artisan route:cache</code></td><td>ثبت routeها را به یک فایل از پیش کامپایل‌شده تبدیل می‌کند</td><td>برای اپ با تعداد route زیاد ثبت route را بسیار سریع‌تر می‌کند.</td></tr>
+        <tr><td><code>php artisan view:cache</code></td><td>همه‌ی Blade viewها را از قبل کامپایل می‌کند</td><td>اولین درخواست بعد از deploy دیگر هزینه‌ی کامپایل ندارد.</td></tr>
+        <tr><td><code>php artisan event:cache</code></td><td>نگاشت event به listener (از auto-discovery) را کش می‌کند</td><td>اسکن پوشه‌ی listenerها در هر درخواست حذف می‌شود.</td></tr>
+        <tr><td><code>php artisan optimize</code></td><td>اجرای یکجای دستورات بالا (config، event، route، view)</td><td><code>optimize:clear</code> همه را پاک می‌کند.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>این دستورات فقط در production/deploy اجرا شوند. در local اگر config را کش کنید، تغییرات <code>.env</code> اعمال نمی‌شود و مدتی دنبال «باگ» می‌گردید. یادتان باشد در کد اپلیکیشن به جای <code>env('KEY')</code> از <code>config('app.key')</code> استفاده کنید.</p></div>
+
+    <div class="callout exam"><p>سوال رایج: «چرا بعد از <code>config:cache</code> مقدار <code>env()</code> در کنترلر null است؟» پاسخ: چون با وجود فایل کش، Laravel دیگر فایل <code>.env</code> را بارگذاری نمی‌کند؛ مقدارها فقط در زمان ساخت کش و فقط داخل فایل‌های config خوانده شده‌اند. راه‌حل: تعریف مقدار در یک فایل config و استفاده از <code>config()</code>.</p></div>
+  </section>
+
+  <section class="lesson" id="php-runtime" data-title="Composer، OPcache، Preloading و JIT">
+    <h2>Composer Autoloader، OPcache، Preloading و JIT</h2>
+
+    <h3>Autoloader بهینه</h3>
+    <p>به‌صورت پیش‌فرض autoloader مبتنی بر PSR-4 برای پیدا کردن هر کلاس، نام فضای نام را به مسیر تبدیل می‌کند و وجود فایل را روی دیسک بررسی می‌کند. در production می‌توان یک <strong>classmap</strong> کامل ساخت.</p>
+    <pre><code class="language-bash">composer install --no-dev --optimize-autoloader --classmap-authoritative --no-interaction
+# یا بعداً:
+composer dump-autoload -o        # --optimize: ساخت classmap از PSR-4/PSR-0
+composer dump-autoload -a        # --classmap-authoritative: فقط classmap، بدون جستجوی فایل‌سیستم</code></pre>
+    <ul>
+      <li><code>--optimize-autoloader</code> (<code>-o</code>): برای کلاس‌های موجود در classmap مستقیم فایل پیدا می‌شود؛ اگر کلاسی در classmap نبود، همچنان به جستجوی PSR-4 برمی‌گردد.</li>
+      <li><code>--classmap-authoritative</code> (<code>-a</code>): اگر کلاس در classmap نبود، دیگر جستجو نمی‌کند و فرض می‌کند وجود ندارد. سریع‌تر است، اما کلاس‌هایی که بعد از build ساخته می‌شوند (کد تولیدشده در runtime) پیدا نمی‌شوند.</li>
+      <li><code>--no-dev</code>: پکیج‌های توسعه (Debugbar، Telescope در صورت dev بودن، PHPUnit) نصب نمی‌شوند.</li>
+    </ul>
+
+    <h3>OPcache</h3>
+    <p>PHP در هر اجرا فایل‌ها را parse و به <strong>opcode</strong> (bytecode) کامپایل می‌کند. <strong>OPcache</strong> این opcodeها را در shared memory نگه می‌دارد تا فرایندهای PHP-FPM دیگر کامپایل تکراری نکنند. برای هر اپلیکیشن production الزامی است و معمولاً بیشترین اثر را با کمترین هزینه دارد.</p>
+    <pre><code class="language-ini">; /etc/php/8.3/fpm/conf.d/10-opcache.ini  (نمونه‌ی production)
+opcache.enable = 1
+opcache.enable_cli = 0
+opcache.memory_consumption = 256          ; مگابایت
+opcache.interned_strings_buffer = 16      ; مگابایت، برای رشته‌های تکراری
+opcache.max_accelerated_files = 20000     ; بیشتر از تعداد فایل‌های PHP پروژه + vendor
+opcache.validate_timestamps = 0           ; تغییر فایل را چک نکن (بعد از deploy باید FPM را reload کرد)
+opcache.save_comments = 1                 ; برای annotation/attribute خوانی برخی کتابخانه‌ها لازم است</code></pre>
+    <div class="callout warn"><p>با <code>validate_timestamps=0</code> بعد از هر deploy کد جدید اجرا نمی‌شود مگر OPcache پاک شود؛ معمولاً با <code>sudo systemctl reload php8.3-fpm</code>. در deployهای مبتنی بر symlink هم reload لازم است (و در Nginx از <code>$realpath_root</code> استفاده کنید). اجرای <code>opcache_reset()</code> از CLI روی کش FPM اثری ندارد، چون CLI حافظه‌ی مشترک جدای خودش را دارد.</p></div>
+    <p>برای بررسی وضعیت: <code>opcache_get_status()</code> (درصد پر شدن حافظه، hit rate، تعداد کلیدها). اگر حافظه یا <code>max_accelerated_files</code> پر شود، OPcache ممکن است ری‌استارت شود و ناگهان CPU بالا برود.</p>
+
+    <h3>Preloading (از PHP 7.4)</h3>
+    <p>با <code>opcache.preload</code> یک اسکریپت هنگام شروع سرور FPM اجرا می‌شود و کلاس‌ها و توابع مشخص‌شده را یک‌بار load و link می‌کند تا برای همه‌ی درخواست‌ها از قبل در حافظه باشند.</p>
+    <pre><code class="language-ini">opcache.preload = /var/www/app/preload.php
+opcache.preload_user = www-data</code></pre>
+    <ul>
+      <li>مزیت: حذف هزینه‌ی autoload و link برای کلاس‌های پرتکرار فریمورک. بهبود معمولاً چند درصد است، نه چند برابر.</li>
+      <li>عیب: هر تغییر در فایل‌های preload‌شده نیاز به <strong>restart</strong> کامل FPM دارد؛ مدیریت لیست فایل‌ها هم دشوار است. باید قبل و بعد اندازه گرفت.</li>
+    </ul>
+
+    <h3>JIT (از PHP 8.0)</h3>
+    <p><strong>JIT (Just-In-Time compiler)</strong> بخشی از opcodeها را در زمان اجرا به کد ماشین native تبدیل می‌کند. JIT بخشی از OPcache است و به یک بافر حافظه نیاز دارد.</p>
+    <pre><code class="language-ini">opcache.jit_buffer_size = 64M
+opcache.jit = tracing     ; حالت‌های رایج: tracing یا function؛ disable برای خاموش کردن</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4>JIT کجا کمک می‌کند</h4><ul><li>کدهای <strong>CPU-bound</strong>: محاسبات ریاضی، پردازش تصویر به‌صورت خالص PHP، الگوریتم‌های سنگین، حلقه‌های داغ طولانی.</li><li>اسکریپت‌های CLI و workerهای طولانی‌مدت محاسباتی.</li></ul></div>
+      <div class="card"><h4>JIT کجا تقریباً بی‌اثر است</h4><ul><li>اپلیکیشن وب معمولی Laravel که بیشتر زمانش منتظر دیتابیس، Redis، شبکه و فایل است (I/O-bound).</li><li>وقتی گلوگاه N+1 یا کوئری کند است.</li><li>مصرف حافظه‌ی بیشتر و دیباگ سخت‌تر را هم باید در نظر داشت.</li></ul></div>
+    </div>
+
+    <div class="callout exam"><p>تفاوت OPcache و JIT را دقیق بنویسید: OPcache کامپایل <strong>source به opcode</strong> را حذف می‌کند (همیشه مفید)؛ JIT اجرای <strong>opcode</strong> توسط ماشین مجازی Zend را با کد ماشین جایگزین می‌کند (فقط برای کد CPU-bound مفید). JIT بدون OPcache کار نمی‌کند.</p></div>
+  </section>
+
+  <section class="lesson" id="php-fpm" data-title="تنظیم PHP-FPM">
+    <h2>تنظیم PHP-FPM Process Manager</h2>
+    <p><strong>PHP-FPM</strong> یک pool از فرایندهای worker نگه می‌دارد. هر worker در هر لحظه فقط <strong>یک</strong> درخواست را پردازش می‌کند. پس حداکثر درخواست هم‌زمانی که PHP پردازش می‌کند برابر <code>pm.max_children</code> است؛ بقیه در صف (backlog سوکت) منتظر می‌مانند و این همان «زمان صف» است.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>حالت <code>pm</code></th><th>رفتار</th><th>مناسب برای</th></tr></thead>
+      <tbody>
+        <tr><td><code>static</code></td><td>همیشه دقیقاً <code>pm.max_children</code> فرایند فعال است</td><td>سرور اختصاصی با ترافیک بالا و قابل پیش‌بینی؛ بدون هزینه‌ی fork در لحظه‌ی پیک</td></tr>
+        <tr><td><code>dynamic</code></td><td>بین <code>min_spare_servers</code> و <code>max_spare_servers</code> فرایند بیکار نگه می‌دارد و تا <code>max_children</code> بالا می‌رود</td><td>حالت پیش‌فرض و متعادل برای بیشتر سرورها</td></tr>
+        <tr><td><code>ondemand</code></td><td>فرایند فقط هنگام درخواست ساخته می‌شود و پس از <code>process_idle_timeout</code> از بین می‌رود</td><td>سرورهای کم‌ترافیک یا چند سایت روی یک سرور با حافظه‌ی محدود؛ اولین درخواست‌ها هزینه‌ی fork دارند</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>محاسبه‌ی pm.max_children</h3>
+    <pre class="diagram">pm.max_children ≈ (RAM کل − RAM لازم برای OS، دیتابیس، Redis، Nginx و…) ÷ میانگین RSS یک worker PHP
+
+مثال: سرور 8GB، حدود 2GB برای سیستم‌عامل و سرویس‌های دیگر، هر worker حدود 60MB
+       (8192 − 2048) ÷ 60 ≈ 102  ← با حاشیه‌ی اطمینان حدود 90</pre>
+    <pre><code class="language-bash"># میانگین حافظه‌ی (RSS) فرایندهای php-fpm به مگابایت
+ps --no-headers -o rss -C php-fpm8.3 | awk '{ sum += $1; n++ } END { if (n) printf "%.1f MB\n", sum/n/1024 }'</code></pre>
+
+    <pre><code class="language-ini">; /etc/php/8.3/fpm/pool.d/www.conf
+pm = dynamic
+pm.max_children = 90
+pm.start_servers = 20
+pm.min_spare_servers = 10
+pm.max_spare_servers = 30
+pm.max_requests = 500              ; بازیافت worker برای مهار نشت حافظه
+request_terminate_timeout = 60s    ; کشتن درخواست‌های گیرکرده
+request_slowlog_timeout = 5s       ; ثبت stack trace درخواست‌های کند
+slowlog = /var/log/php8.3-fpm-slow.log
+pm.status_path = /fpm-status       ; فقط از داخل شبکه/localhost در دسترس باشد</code></pre>
+
+    <ul>
+      <li>اگر در لاگ FPM پیام <strong>server reached pm.max_children setting</strong> دیدید، یعنی درخواست‌ها در صف مانده‌اند. اما قبل از افزایش، مطمئن شوید RAM کافی است؛ وگرنه سرور swap می‌کند یا OOM killer فرایندها را می‌کشد و وضعیت بدتر می‌شود.</li>
+      <li>اگر workerها کند هستند چون منتظر دیتابیس‌اند، افزایش <code>max_children</code> فقط فشار بیشتری به دیتابیس می‌آورد. اول علت کندی را رفع کنید.</li>
+      <li>برای workloadهای CPU-bound، تعداد worker خیلی بیشتر از تعداد هسته‌ها فقط context switch اضافه می‌کند. برای workloadهای I/O-bound (حالت معمول وب) تعداد worker می‌تواند چند برابر هسته‌ها باشد.</li>
+      <li>صفحه‌ی status (<code>/fpm-status</code>) مقادیر active processes، idle processes، listen queue و max children reached را نشان می‌دهد و برای مانیتورینگ عالی است.</li>
+    </ul>
+
+    <div class="callout exam"><p>در پاسخ به «pm.max_children را چگونه تعیین می‌کنید؟» فرمول حافظه را بنویسید، روش اندازه‌گیری RSS را بگویید، به حاشیه‌ی اطمینان و سرویس‌های دیگر روی همان سرور اشاره کنید و در نهایت بگویید با تست بار و صفحه‌ی status اعتبارسنجی می‌کنید. اشاره به <code>pm.max_requests</code> برای مهار memory leak امتیاز اضافه دارد.</p></div>
+  </section>
+
+  <section class="lesson" id="algorithms" data-title="پیچیدگی الگوریتمی در کد واقعی">
+    <h2>پیچیدگی الگوریتمی در کد واقعی</h2>
+    <p>پیچیدگی زمانی (Big-O) نشان می‌دهد زمان اجرا با رشد ورودی چگونه رشد می‌کند. کدی که روی ۱۰۰ رکورد تست شده و O(n²) است، روی ۱۰۰ هزار رکورد ده میلیارد عملیات دارد. بیشتر مشکلات واقعی از <strong>حلقه‌ی پنهان</strong> می‌آیند: تابعی که داخل حلقه صدا زده می‌شود و خودش یک حلقه است.</p>
+
+    <h3>in_array داخل حلقه → isset روی آرایه‌ی flip‌شده</h3>
+    <pre><code class="language-php">&lt;?php
+// O(n × m): in_array هر بار کل آرایه را خطی می‌گردد
+$result = [];
+foreach ($orders as $order) {                       // n
+    if (in_array($order['user_id'], $blockedIds)) { // m
+        $result[] = $order;
+    }
+}
+
+// O(n + m): ساخت یک hash map یک‌بار، سپس جستجوی O(1)
+$blocked = array_flip($blockedIds);                 // کلیدها = شناسه‌ها
+$result = [];
+foreach ($orders as $order) {
+    if (isset($blocked[$order['user_id']])) {
+        $result[] = $order;
+    }
+}</code></pre>
+    <p>آرایه‌های PHP در واقع <strong>hash table</strong> هستند؛ دسترسی با کلید (<code>isset</code>، <code>array_key_exists</code>) به‌طور میانگین O(1) است اما جستجوی مقدار (<code>in_array</code>، <code>array_search</code>) O(n) است. با ۱۰ هزار سفارش و ۵ هزار شناسه، تفاوت بین ۵۰ میلیون مقایسه و ۱۵ هزار عملیات است.</p>
+    <div class="callout note"><p><code>isset</code> برای کلیدی که مقدارش <code>null</code> است false برمی‌گرداند؛ اگر null معنادار است از <code>array_key_exists</code> استفاده کنید. همچنین <code>in_array</code> بدون پارامتر سوم (<code>strict: true</code>) مقایسه‌ی loose انجام می‌دهد که می‌تواند باگ ایجاد کند.</p></div>
+
+    <h3>Join در حافظه با keyBy</h3>
+    <pre><code class="language-php">&lt;?php
+// O(n × m): برای هر سفارش کل مجموعه‌ی محصولات را می‌گردد
+foreach ($orders as $order) {
+    $product = $products-&gt;firstWhere('id', $order-&gt;product_id);
+}
+
+// O(n + m)
+$productsById = $products-&gt;keyBy('id');
+foreach ($orders as $order) {
+    $product = $productsById-&gt;get($order-&gt;product_id);
+}</code></pre>
+
+    <h3>هزینه‌ی متدهای Collection</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عملیات</th><th>هزینه</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td><code>contains</code>، <code>firstWhere</code>، <code>where</code>، <code>search</code></td><td>O(n)</td><td>داخل حلقه به O(n²) تبدیل می‌شوند.</td></tr>
+        <tr><td><code>keyBy</code>، <code>groupBy</code>، <code>pluck</code>، <code>map</code>، <code>filter</code></td><td>O(n)</td><td>یک‌بار بیرون از حلقه اجرا کنید.</td></tr>
+        <tr><td><code>get($key)</code>، <code>has($key)</code></td><td>O(1)</td><td>بعد از <code>keyBy</code>.</td></tr>
+        <tr><td><code>sortBy</code></td><td>O(n log n)</td><td>اگر داده از دیتابیس می‌آید، <code>ORDER BY</code> معمولاً بهتر است.</td></tr>
+        <tr><td><code>unique</code></td><td>معمولاً O(n) با هش، اما با callback هزینه‌ی بیشتر</td><td>در صورت امکان <code>DISTINCT</code> در SQL.</td></tr>
+      </tbody>
+    </table></div>
+    <p>زنجیره‌ی <code>-&gt;map()-&gt;filter()-&gt;values()</code> روی Collection معمولی هر مرحله یک آرایه‌ی کامل جدید می‌سازد. برای داده‌ی کوچک مهم نیست و خوانایی ارزشمندتر است؛ برای داده‌ی بزرگ از <code>LazyCollection</code> یا یک حلقه‌ی ساده استفاده کنید.</p>
+
+    <h3>الگوهای پرهزینه‌ی دیگر</h3>
+    <pre><code class="language-php">&lt;?php
+// array_merge در حلقه: هر بار کل آرایه کپی می‌شود → O(n²)
+$all = [];
+foreach ($pages as $page) {
+    $all = array_merge($all, $page);
+}
+// بهتر: یک‌بار در انتها
+$all = array_merge(...$pages);
+
+// محاسبه‌ی تکراری داخل شرط حلقه
+for ($i = 0; $i &lt; count($items); $i++) { /* count هر بار؛ معمولاً ارزان ولی بی‌دلیل */ }
+// بهتر و خواناتر:
+foreach ($items as $item) { /* ... */ }
+
+// Regex یا کار سنگین ثابت داخل حلقه
+foreach ($rows as $row) {
+    $config = config('pricing.rules');   // هر بار؛ بیرون از حلقه بیاورید
+}</code></pre>
+
+    <h3>ساختن رشته‌ها</h3>
+    <ul>
+      <li>عملگر <code>.=</code> در PHP برای الحاق پشت‌سرهم کارایی خوبی دارد و <code>implode()</code> روی آرایه هم انتخاب خوانایی است؛ تفاوت این دو معمولاً قابل‌اندازه‌گیری نیست.</li>
+      <li>مشکل واقعی ساختن یک رشته‌ی <strong>خیلی بزرگ</strong> (مثلاً CSV صدمگابایتی) در حافظه است. راه درست، <strong>stream</strong> کردن خروجی است: <code>fputcsv</code> روی <code>php://output</code> با <code>response()-&gt;streamDownload()</code>، یا نوشتن تدریجی در فایل.</li>
+      <li>برای قالب‌بندی‌های پیچیده <code>sprintf</code> خواناتر است؛ برای HTML از Blade استفاده کنید، نه الحاق دستی.</li>
+    </ul>
+
+    <div class="callout exam"><p>سوال‌های «این کد چه مشکلی دارد؟» معمولاً یک <code>in_array</code>، <code>firstWhere</code> یا کوئری داخل <code>foreach</code> دارند. پاسخ کامل: ۱) پیچیدگی فعلی (O(n×m) یا N کوئری)، ۲) راه‌حل (hash map با <code>array_flip</code>/<code>keyBy</code> یا <code>whereIn</code>)، ۳) پیچیدگی جدید، ۴) هزینه‌ی حافظه‌ی اضافه برای ساخت map.</p></div>
+  </section>
+
+  <section class="lesson" id="memory" data-title="مدیریت حافظه">
+    <h2>مدیریت حافظه: Generator، LazyCollection و آرایه‌های بزرگ</h2>
+    <p>PHP حافظه را با <strong>reference counting</strong> و یک <strong>garbage collector</strong> برای ارجاع‌های چرخه‌ای مدیریت می‌کند. در مدل FPM، بعد از هر درخواست کل حافظه آزاد می‌شود؛ به همین دلیل مشکلات حافظه بیشتر در <strong>jobها، دستورات Artisan، importهای بزرگ و پروسه‌های طولانی‌مدت (queue worker، Octane)</strong> دیده می‌شوند.</p>
+
+    <h3>Generator</h3>
+    <p>Generator با <code>yield</code> مقادیر را یکی‌یکی تولید می‌کند، بدون اینکه کل مجموعه در حافظه ساخته شود. مصرف حافظه O(1) نسبت به تعداد آیتم‌هاست.</p>
+    <pre><code class="language-php">&lt;?php
+// بد: کل فایل 2GB در حافظه
+$lines = file('/data/huge.csv');
+
+// خوب: خواندن خط‌به‌خط با Generator
+function readCsv(string $path): \Generator
+{
+    $handle = fopen($path, 'r');
+    try {
+        while (($row = fgetcsv($handle)) !== false) {
+            yield $row;
+        }
+    } finally {
+        fclose($handle);
+    }
+}
+
+foreach (readCsv('/data/huge.csv') as $row) {
+    // پردازش یک ردیف
+}</code></pre>
+
+    <h3>LazyCollection</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\LazyCollection;
+
+LazyCollection::make(function () {
+    $handle = fopen(storage_path('import/products.csv'), 'r');
+    while (($row = fgetcsv($handle)) !== false) {
+        yield $row;
+    }
+    fclose($handle);
+})
+-&gt;skip(1)                                   // header
+-&gt;map(fn ($r) =&gt; ['sku' =&gt; $r[0], 'price' =&gt; (int) $r[1]])
+-&gt;chunk(1000)
+-&gt;each(fn ($chunk) =&gt; Product::upsert($chunk-&gt;all(), ['sku'], ['price']));</code></pre>
+    <p>در این مثال در هر لحظه حداکثر ۱۰۰۰ ردیف در حافظه است، حتی اگر فایل ده میلیون ردیف داشته باشد. ترکیب <strong>stream خواندن + chunk + bulk upsert</strong> الگوی استاندارد import است.</p>
+
+    <h3>نکات دیگر</h3>
+    <ul>
+      <li><code>unset($bigArray)</code> ارجاع را حذف می‌کند و اگر ارجاع دیگری نباشد حافظه قابل استفاده‌ی مجدد می‌شود؛ در حلقه‌های طولانی برای متغیرهای حجیم موقت مفید است.</li>
+      <li>آرایه‌های PHP سربار قابل‌توجهی برای هر عنصر دارند (هش‌تیبل)؛ یک میلیون عنصر عدد صحیح ده‌ها مگابایت حافظه می‌گیرد. مدل‌های Eloquent بسیار سنگین‌تر از آرایه‌ی خام‌اند؛ برای گزارش‌گیری حجیم، <code>toBase()</code> یا Query Builder (<code>DB::table</code>) سبک‌تر است.</li>
+      <li>PHP برای آرایه‌ها <strong>copy-on-write</strong> دارد: پاس دادن آرایه به تابع کپی نمی‌کند مگر آن را تغییر دهید. استفاده از reference (<code>&amp;</code>) برای «صرفه‌جویی حافظه» معمولاً لازم نیست و کد را گیج‌کننده می‌کند.</li>
+      <li>در queue workerها، کش‌های static، singletonها و Query Log فعال باعث رشد تدریجی حافظه می‌شوند. گزینه‌های <code>--memory</code>، <code>--max-jobs</code> و <code>--max-time</code> در <code>queue:work</code> worker را قبل از مشکل بازیافت می‌کنند.</li>
+      <li>اندازه‌گیری: <code>memory_get_usage()</code> و <code>memory_get_peak_usage(true)</code>.</li>
+    </ul>
+    <div class="callout warn"><p>بالا بردن <code>memory_limit</code> به <code>-1</code> یا چند گیگابایت «راه‌حل» نیست؛ فقط مشکل را به OOM killer سیستم‌عامل منتقل می‌کند. راه‌حل، پردازش جریانی است.</p></div>
+  </section>
+
+  <section class="lesson" id="async-octane" data-title="صف‌ها و Octane">
+    <h2>انتقال کار کند به صف و Laravel Octane</h2>
+
+    <h3>Queue: کاربر نباید منتظر کار پس‌زمینه بماند</h3>
+    <p>هر کاری که برای ساختن پاسخ HTTP لازم نیست (ارسال ایمیل و SMS، تولید PDF، فراخوانی webhook، پردازش تصویر، همگام‌سازی با سرویس خارجی) باید به <strong>صف</strong> منتقل شود. زمان پاسخ از چند ثانیه به چند ده میلی‌ثانیه می‌رسد و workerهای FPM هم زودتر آزاد می‌شوند.</p>
+    <pre><code class="language-php">&lt;?php
+// قبل: کاربر منتظر SMTP و تولید PDF می‌ماند
+public function store(StoreOrderRequest $request)
+{
+    $order = Order::create($request-&gt;validated());
+    $pdf = InvoicePdf::generate($order);               // 1.5s
+    Mail::to($order-&gt;user)-&gt;send(new OrderPlaced($order, $pdf)); // 1s
+    return new OrderResource($order);
+}
+
+// بعد: پاسخ فوری، کار سنگین در worker
+public function store(StoreOrderRequest $request)
+{
+    $order = Order::create($request-&gt;validated());
+    ProcessPlacedOrder::dispatch($order)-&gt;afterCommit();
+    return new OrderResource($order);
+}</code></pre>
+    <ul>
+      <li><code>afterCommit()</code> تضمین می‌کند job فقط بعد از commit شدن تراکنش dispatch شود؛ وگرنه ممکن است worker رکوردی را بخواند که هنوز commit نشده.</li>
+      <li>Jobها باید <strong>idempotent</strong> باشند چون ممکن است دوباره اجرا شوند (retry). <code>$tries</code>، <code>$backoff</code> و <code>$timeout</code> را تنظیم کنید.</li>
+      <li>به job فقط شناسه یا مدل (که با <code>SerializesModels</code> فقط شناسه‌اش ذخیره می‌شود) پاس دهید، نه داده‌ی حجیم.</li>
+      <li>برای فراخوانی چند API خارجی مستقل در همان درخواست، <code>Http::pool()</code> آن‌ها را هم‌زمان اجرا می‌کند؛ زمان کل ≈ کندترین درخواست، نه مجموع.</li>
+      <li>در Laravel می‌توان کار کوچک را بعد از ارسال پاسخ اجرا کرد (مثل <code>dispatch(...)-&gt;afterResponse()</code>)، ولی این کار همچنان worker FPM را اشغال نگه می‌دارد و retry ندارد؛ برای کار جدی صف واقعی بهتر است.</li>
+    </ul>
+
+    <h3>Laravel Octane</h3>
+    <p>در مدل سنتی PHP-FPM، برای <strong>هر درخواست</strong> کل فریمورک bootstrap می‌شود: autoload، ساخت container، ثبت service providerها، خواندن config. <strong>Octane</strong> اپلیکیشن را یک‌بار boot می‌کند و در حافظه نگه می‌دارد و درخواست‌ها را با همان نمونه سرو می‌کند. سرورهای پشتیبانی‌شده: <strong>FrankenPHP</strong>، <strong>Swoole</strong>، <strong>Open Swoole</strong> و <strong>RoadRunner</strong>.</p>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul><li>حذف هزینه‌ی bootstrap در هر درخواست؛ throughput بسیار بالاتر برای endpointهای سبک.</li><li>امکاناتی مثل concurrent tasks و Octane cache (در Swoole).</li><li>تعداد کمتر سرور برای همان ترافیک.</li></ul></div>
+      <div class="card"><h4>ریسک‌ها</h4><ul><li><strong>نشت state بین درخواست‌ها</strong>: singletonهایی که Request، کاربر یا config را در خودشان نگه می‌دارند، متغیرهای static، آرایه‌هایی که مدام بزرگ می‌شوند.</li><li>نشت حافظه در طول زمان؛ گزینه‌ی <code>--max-requests</code> worker را بازیافت می‌کند.</li><li>بعد از deploy باید workerها reload شوند (<code>octane:reload</code>).</li><li>اگر گلوگاه دیتابیس است، Octane آن را حل نمی‌کند.</li></ul></div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+// خطرناک در Octane: Request درون singleton گیر می‌کند و در درخواست بعدی هم همان می‌ماند
+$this-&gt;app-&gt;singleton(ReportService::class, function ($app) {
+    return new ReportService($app['request']);
+});
+
+// امن: Request را در زمان استفاده resolve کنید یا به متد پاس دهید
+$this-&gt;app-&gt;singleton(ReportService::class, fn ($app) =&gt; new ReportService(
+    fn () =&gt; $app['request']
+));</code></pre>
+    <div class="callout exam"><p>Octane سرعت «PHP» را بالا نمی‌برد؛ هزینه‌ی <strong>bootstrap</strong> را حذف می‌کند. بنابراین بیشترین اثر را روی درخواست‌های سبک و پرتعداد دارد. اگر یک endpoint یک ثانیه منتظر کوئری است، با Octane هم تقریباً یک ثانیه طول می‌کشد.</p></div>
+  </section>
+
+  <section class="lesson" id="http-frontend" data-title="بهینه‌سازی لایه HTTP و فرانت">
+    <h2>بهینه‌سازی لایه HTTP و کارایی ادراک‌شده</h2>
+
+    <h3>فشرده‌سازی</h3>
+    <p>پاسخ‌های متنی (HTML، JSON، CSS، JS، SVG) با <strong>gzip</strong> یا <strong>Brotli</strong> معمولاً ۷۰ تا ۹۰ درصد کوچک‌تر می‌شوند. Brotli معمولاً نسبت فشرده‌سازی بهتری دارد اما در Nginx به ماژول جداگانه (ngx_brotli) نیاز دارد. تصاویر JPEG/PNG/WebP و فایل‌های zip را دوباره فشرده نکنید؛ فقط CPU هدر می‌رود.</p>
+    <pre><code class="language-nginx">gzip on;
+gzip_comp_level 5;
+gzip_min_length 1024;
+gzip_types text/plain text/css application/json application/javascript
+           application/xml image/svg+xml;
+gzip_vary on;
+
+# دارایی‌های ساخته‌شده توسط Vite نام hash‌دار دارند و می‌توان آن‌ها را برای همیشه کش کرد
+location /build/ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+    access_log off;
+}</code></pre>
+
+    <h3>HTTP/2 و HTTP/3</h3>
+    <ul>
+      <li><strong>HTTP/2</strong>: multiplexing (چند درخواست هم‌زمان روی یک اتصال TCP)، فشرده‌سازی header (HPACK) و پروتکل باینری. مشکل head-of-line blocking در سطح HTTP را حل می‌کند و نیاز به ترفندهایی مثل domain sharding را از بین می‌برد. عملاً روی HTTPS استفاده می‌شود.</li>
+      <li><strong>HTTP/3</strong>: روی QUIC (مبتنی بر UDP)؛ head-of-line blocking در سطح TCP را هم ندارد و روی شبکه‌های موبایل با packet loss بهتر عمل می‌کند.</li>
+    </ul>
+
+    <h3>CDN</h3>
+    <p><strong>CDN</strong> فایل‌های ثابت (و در صورت تنظیم، پاسخ‌های قابل کش) را در سرورهای لبه نزدیک کاربر نگه می‌دارد: latency کمتر، بار کمتر روی origin و مقاومت بیشتر در برابر پیک ترافیک. نام فایل‌های hash‌دار (cache busting) اجازه می‌دهد TTL طولانی بدون نگرانی از نسخه‌ی قدیمی تنظیم شود.</p>
+
+    <h3>Vite و دارایی‌های فرانت</h3>
+    <ul>
+      <li><code>npm run build</code> فایل‌ها را minify، tree-shake و با نام hash‌دار در <code>public/build</code> می‌سازد؛ دایرکتیو <code>@vite</code> در Blade از روی manifest، تگ‌های درست را تولید می‌کند.</li>
+      <li>code splitting با <code>import()</code> دینامیک باعث می‌شود کاربر فقط JS صفحه‌ی فعلی را دانلود کند.</li>
+      <li>در production هرگز dev server را اجرا نکنید و فایل <code>public/hot</code> نباید روی سرور باشد.</li>
+    </ul>
+
+    <h3>کارایی ادراک‌شده (Perceived performance)</h3>
+    <ul>
+      <li>آنچه کاربر حس می‌کند مهم است: <strong>TTFB</strong> (زمان تا اولین بایت، مسئولیت مستقیم بک‌اند)، و Core Web Vitals مثل <strong>LCP</strong> (بزرگ‌ترین محتوای قابل‌مشاهده)، <strong>INP</strong> (پاسخ‌گویی به تعامل) و <strong>CLS</strong> (جابه‌جایی چیدمان).</li>
+      <li>ترفندها: skeleton/placeholder، lazy loading تصاویر (<code>loading="lazy"</code>)، تعیین ابعاد تصویر، فرمت‌های WebP/AVIF، صفحه‌بندی یا infinite scroll به جای لیست کامل، پاسخ ۲۰۲ و نمایش وضعیت برای کارهای طولانی.</li>
+      <li>کاهش حجم payload در API: فقط فیلدهای لازم در API Resource، صفحه‌بندی، فشرده‌سازی.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="load-testing" data-title="تست بار و Benchmark">
+    <h2>تست بار (Load Testing) و اشتباهات Benchmark</h2>
+    <dl class="terms">
+      <dt>Benchmark</dt><dd>اندازه‌گیری کارایی یک قطعه کد یا endpoint در شرایط کنترل‌شده برای مقایسه.</dd>
+      <dt>Load test</dt><dd>شبیه‌سازی بار مورد انتظار برای بررسی اینکه سیستم اهداف latency و خطا را برآورده می‌کند.</dd>
+      <dt>Stress test</dt><dd>افزایش بار تا شکستن سیستم برای یافتن ظرفیت حداکثر و نحوه‌ی خرابی.</dd>
+      <dt>Soak test</dt><dd>بار ثابت طولانی‌مدت (ساعت‌ها) برای کشف نشت حافظه و پر شدن منابع.</dd>
+      <dt>Spike test</dt><dd>افزایش ناگهانی بار برای بررسی رفتار autoscaling و صف‌ها.</dd>
+      <dt>Throughput</dt><dd>تعداد درخواست موفق در ثانیه (RPS).</dd>
+      <dt>Latency percentiles</dt><dd>p50، p95، p99: درصدی از درخواست‌ها که زیر این زمان پاسخ گرفته‌اند.</dd>
+    </dl>
+
+    <h3>ابزارها</h3>
+    <pre><code class="language-bash"># ab (ApacheBench): ساده و سریع، تک‌نخی
+ab -n 2000 -c 50 -H "Accept: application/json" https://staging.example.com/api/products
+
+# wrk: چندنخی، توان تولید بار بالا، خروجی latency distribution
+wrk -t4 -c200 -d30s --latency https://staging.example.com/api/products</code></pre>
+    <pre><code class="language-javascript">// k6: سناریو با JavaScript، مراحل بار و threshold قابل استفاده در CI
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+export const options = {
+  stages: [
+    { duration: '1m', target: 50 },   // ramp-up
+    { duration: '3m', target: 200 },  // بار پایدار
+    { duration: '1m', target: 0 },    // ramp-down
+  ],
+  thresholds: {
+    http_req_duration: ['p(95)&lt;300'],  // در غیر این صورت تست fail شود
+    http_req_failed: ['rate&lt;0.01'],
+  },
+};
+
+export default function () {
+  const res = http.get('https://staging.example.com/api/products?page=1');
+  check(res, { 'status is 200': (r) =&gt; r.status === 200 });
+  sleep(1); // think time کاربر واقعی
+}</code></pre>
+    <pre><code class="language-bash">k6 run load-test.js</code></pre>
+
+    <h3>اشتباهات رایج Benchmark</h3>
+    <ul>
+      <li><strong>محیط غیرواقعی:</strong> <code>APP_DEBUG=true</code>، Xdebug روشن، OPcache خاموش، config کش نشده، یا دیتابیس با ۱۰۰ ردیف به جای ۱۰ میلیون.</li>
+      <li><strong>تولید بار از همان سرور:</strong> ابزار تست با اپلیکیشن سر CPU رقابت می‌کند؛ مولد بار را روی ماشین جدا اجرا کنید.</li>
+      <li><strong>نبود warm-up:</strong> اولین درخواست‌ها OPcache و کش‌ها را پر می‌کنند؛ آن‌ها را از نتایج کنار بگذارید یا جداگانه گزارش دهید.</li>
+      <li><strong>فقط میانگین:</strong> p95/p99 و نرخ خطا را گزارش کنید. RPS بالا با ۲۰٪ خطای 502 موفقیت نیست.</li>
+      <li><strong>کش همیشه داغ:</strong> اگر همه‌ی درخواست‌ها یک URL را می‌زنند، فقط کارایی کش را سنجیده‌اید. داده و پارامترهای متنوع استفاده کنید.</li>
+      <li><strong>Microbenchmark گمراه‌کننده:</strong> اندازه‌گیری ۱۰ میلیون بار یک عملیات بی‌اهمیت در حلقه با <code>microtime</code> چیزی درباره‌ی اپلیکیشن واقعی نمی‌گوید؛ از <code>hrtime(true)</code> و تکرار چندباره استفاده کنید و نتیجه را در بستر واقعی بسنجید.</li>
+      <li><strong>تست روی production بدون هماهنگی:</strong> می‌تواند سرویس را برای کاربران واقعی از کار بیندازد یا داده‌ی جعلی بسازد. staging هم‌اندازه بهترین گزینه است.</li>
+      <li><strong>نادیده گرفتن وابستگی‌ها:</strong> rate limit سرویس‌های خارجی، محدودیت اتصال دیتابیس (<code>max_connections</code>)، ظرفیت Redis.</li>
+    </ul>
+
+    <div class="callout exam"><p>اگر پرسیدند «چطور ثابت می‌کنید بهینه‌سازی شما مؤثر بوده؟»: baseline قبل از تغییر، همان سناریوی تست بار با همان داده و محیط، مقایسه‌ی p95/p99، throughput و نرخ خطا، و تکرار چندباره برای حذف نویز. همچنین بعد از deploy، مانیتورینگ production را با بازه‌ی قبل مقایسه کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-code-optimization-1">
+      <summary>مفهوم «Premature Optimization» را توضیح دهید. چرا گفته می‌شود باید ابتدا اندازه‌گیری کرد؟ رویکرد شما برای بهینه‌سازی یک سیستم کند چیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Premature optimization یعنی صرف وقت و پیچیده کردن کد برای بهبود کارایی بخشی که هنوز با داده ثابت نشده گلوگاه است. جمله‌ی Knuth می‌گوید در حدود ۹۷٪ موارد بازدهی‌های کوچک ارزش ندارند، ولی آن ۳٪ بحرانی را نباید از دست داد.</p>
+        <p><strong>چرا اول اندازه‌گیری:</strong></p>
+        <ul>
+          <li>شهود توسعه‌دهنده درباره‌ی محل کندی معمولاً اشتباه است؛ در وب اغلب زمان در I/O (دیتابیس، شبکه) صرف می‌شود نه حلقه‌های PHP.</li>
+          <li>طبق قانون <strong>Amdahl</strong>، بهبود بخشی که ۵٪ زمان را می‌گیرد حداکثر ۵٪ اثر دارد.</li>
+          <li>بدون baseline نمی‌توان ثابت کرد تغییر مفید بوده یا حتی کارایی را بدتر نکرده.</li>
+        </ul>
+        <p><strong>رویکرد:</strong> ۱) هدف قابل اندازه‌گیری (مثلاً p95 زیر ۳۰۰ms)؛ ۲) baseline در محیط شبیه production؛ ۳) پیدا کردن گلوگاه با APM، Telescope/Debugbar برای کوئری‌ها، slow query log و Blackfire/Xdebug برای CPU؛ ۴) اصلاح بزرگ‌ترین گلوگاه با یک تغییر در هر بار؛ ۵) اندازه‌گیری مجدد؛ ۶) جلوگیری از regression با مانیتورینگ و تست.</p>
+        <p><strong>نکته‌ی تکمیلی:</strong> طراحی درست از ابتدا (ایندکس مناسب، جلوگیری از N+1، استفاده از صف برای کار کند) premature optimization نیست؛ این‌ها مهندسی خوب است. آنچه باید از آن پرهیز کرد میکروبهینه‌سازی‌های بی‌اثر به قیمت خوانایی است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-2">
+      <summary>مسئله‌ی N+1 در ORMها چیست؟ با یک مثال در Laravel توضیح دهید، تعداد کوئری‌ها را قبل و بعد از اصلاح بنویسید و بگویید چگونه از تکرار آن جلوگیری می‌کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> وقتی یک کوئری لیست N رکورد را می‌گیرد و سپس برای رابطه‌ی هر رکورد یک کوئری جداگانه اجرا می‌شود، مجموعاً N+1 کوئری داریم. علت در Eloquent، <strong>lazy loading</strong> رابطه‌ها هنگام دسترسی به property است.</p>
+        <pre><code class="language-php">&lt;?php
+// N+1: برای 100 سفارش، 1 + 100 کوئری
+$orders = Order::latest()-&gt;take(100)-&gt;get();
+foreach ($orders as $o) {
+    echo $o-&gt;customer-&gt;name;
+}
+
+// اصلاح: 2 کوئری (orders + customers با where in)
+$orders = Order::with('customer:id,name')-&gt;latest()-&gt;take(100)-&gt;get();</code></pre>
+        <p>اگر روی هر سفارش تعداد آیتم‌ها هم نمایش داده شود، به جای <code>$o-&gt;items-&gt;count()</code> از <code>withCount('items')</code> استفاده می‌کنیم تا شمارش در یک subquery انجام شود و آیتم‌ها load نشوند.</p>
+        <p><strong>چرا مهم است:</strong> هر کوئری هزینه‌ی round-trip شبکه دارد؛ ۵۰۰ کوئری یک‌میلی‌ثانیه‌ای یعنی نیم ثانیه فقط انتظار، به‌علاوه‌ی بار روی دیتابیس که با هم‌زمانی کاربران چند برابر می‌شود.</p>
+        <p><strong>پیشگیری:</strong></p>
+        <ul>
+          <li><code>Model::preventLazyLoading(! app()-&gt;isProduction())</code> تا در توسعه هر lazy load خطا بدهد.</li>
+          <li>Debugbar/Telescope برای دیدن تعداد کوئری و کوئری‌های تکراری.</li>
+          <li>تست Feature که تعداد کوئری endpoint را assert می‌کند.</li>
+          <li>دقت در API Resourceها و accessorها؛ استفاده از <code>whenLoaded()</code> در Resource.</li>
+        </ul>
+        <p><strong>نکته:</strong> eager loading بی‌رویه (load رابطه‌هایی که استفاده نمی‌شوند) هم هزینه است؛ فقط رابطه‌ها و ستون‌های لازم را load کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-3">
+      <summary>متدهای chunk، chunkById، lazy و cursor در Eloquent را از نظر نحوه‌ی کار و مصرف حافظه مقایسه کنید. هر کدام را در چه شرایطی انتخاب می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>هدف مشترک:</strong> پردازش تعداد زیادی رکورد بدون اینکه همه هم‌زمان در حافظه باشند (برخلاف <code>get()</code>/<code>all()</code>).</p>
+        <ul>
+          <li><strong>chunk(n):</strong> کوئری‌های متوالی با <code>LIMIT/OFFSET</code>؛ در هر لحظه یک دسته در حافظه است. مشکل: اگر حین پردازش ستون شرط را تغییر دهید رکوردها جا می‌افتند، و OFFSET بزرگ روی جدول بزرگ کند است.</li>
+          <li><strong>chunkById(n):</strong> keyset pagination با <code>where id &gt; last order by id</code>؛ هم سریع است و هم وقتی رکوردها را حین پردازش update می‌کنید امن است. انتخاب پیش‌فرض من برای jobهای دسته‌ای.</li>
+          <li><strong>lazy() / lazyById():</strong> همان chunk در پشت صحنه اما خروجی <code>LazyCollection</code> تخت؛ کد خواناتر با <code>each</code>، <code>map</code>، <code>filter</code>. مناسب export و pipelineهای پردازش.</li>
+          <li><strong>cursor():</strong> فقط یک کوئری اجرا می‌کند و با generator هر بار یک مدل می‌سازد؛ کمترین مدل Eloquent هم‌زمان در حافظه. اما PDO به‌طور پیش‌فرض کل نتیجه‌ی خام را بافر می‌کند، پس روی داده‌ی خیلی بزرگ باز هم حافظه کم می‌آید؛ و eager loading ندارد (خطر N+1).</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+Invoice::where('status', 'pending')-&gt;chunkById(500, function ($invoices) {
+    foreach ($invoices as $invoice) {
+        $invoice-&gt;update(['status' =&gt; 'processing']);
+    }
+});</code></pre>
+        <p><strong>جمع‌بندی:</strong> برای update در حین پردازش ← <code>chunkById</code>؛ برای export/pipeline ← <code>lazyById</code>؛ برای مجموعه‌ی متوسط بدون رابطه و یک کوئری ← <code>cursor</code>. در همه‌ی موارد ستون‌ها را محدود کنید و برای کارهای خیلی بزرگ هر دسته را به یک job در صف بسپارید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-4">
+      <summary>کد زیر چه مشکلات کارایی دارد؟ نسخه‌ی بهینه را بنویسید و پیچیدگی قبل و بعد را تحلیل کنید.
+        <code>foreach ($orders as $o) { if (in_array($o-&gt;user_id, $vipIds)) { $o-&gt;product = Product::find($o-&gt;product_id); } }</code></summary>
+      <div class="answer">
+        <p><strong>مشکلات:</strong></p>
+        <ul>
+          <li><code>in_array</code> جستجوی خطی است؛ داخل حلقه پیچیدگی O(n × m) می‌شود (n سفارش، m شناسه‌ی VIP).</li>
+          <li><code>Product::find</code> داخل حلقه یعنی یک کوئری برای هر سفارش VIP (الگوی N+1)؛ محصولات تکراری هم چند بار خوانده می‌شوند.</li>
+          <li><code>in_array</code> بدون strict مقایسه‌ی loose دارد.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+$vip = array_flip($vipIds);                       // O(m) – hash map
+$vipOrders = $orders-&gt;filter(fn ($o) =&gt; isset($vip[$o-&gt;user_id]));   // O(n)
+
+$products = Product::whereIn('id', $vipOrders-&gt;pluck('product_id')-&gt;unique())
+    -&gt;get(['id', 'name', 'price'])
+    -&gt;keyBy('id');                                // 1 کوئری
+
+foreach ($vipOrders as $o) {
+    $o-&gt;setRelation('product', $products-&gt;get($o-&gt;product_id)); // O(1)
+}</code></pre>
+        <p><strong>تحلیل:</strong> قبل: O(n × m) مقایسه + تا n کوئری. بعد: O(n + m) عملیات در حافظه + ۱ کوئری. هزینه‌ی اضافه، حافظه‌ی hash map است که معمولاً ناچیز است.</p>
+        <p><strong>بهتر از آن:</strong> اگر <code>$orders</code> از دیتابیس می‌آید و رابطه‌ی <code>product</code> تعریف شده، کل منطق را در کوئری انجام دهید: <code>Order::whereIn('user_id', $vipIds)-&gt;with('product:id,name,price')-&gt;get()</code> تا فیلتر هم با ایندکس دیتابیس انجام شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-5">
+      <summary>OPcache چیست و چه تنظیماتی برای production پیشنهاد می‌کنید؟ تنظیم validate_timestamps=0 چه پیامدی برای فرایند deploy دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> PHP در حالت عادی در هر درخواست فایل‌ها را parse و به opcode کامپایل می‌کند. <strong>OPcache</strong> opcodeهای کامپایل‌شده را در shared memory نگه می‌دارد تا همه‌ی workerهای FPM بدون کامپایل مجدد از آن استفاده کنند. بهبود معمولاً چشمگیر و تقریباً بدون هزینه است.</p>
+        <p><strong>تنظیمات کلیدی:</strong></p>
+        <ul>
+          <li><code>opcache.enable=1</code></li>
+          <li><code>opcache.memory_consumption</code> (مثلاً 256MB) به اندازه‌ای که کل کد پروژه و vendor جا شود.</li>
+          <li><code>opcache.max_accelerated_files</code> بیشتر از تعداد فایل‌های PHP (مثلاً 20000).</li>
+          <li><code>opcache.interned_strings_buffer</code> (مثلاً 16) برای رشته‌های تکراری.</li>
+          <li><code>opcache.validate_timestamps=0</code> تا در هر درخواست mtime فایل‌ها چک نشود.</li>
+        </ul>
+        <p><strong>پیامد validate_timestamps=0:</strong> OPcache دیگر تغییر فایل‌ها را تشخیص نمی‌دهد؛ بعد از deploy کد قدیمی اجرا می‌شود، یا بدتر، ترکیبی از فایل‌های قدیمی و جدید. بنابراین در اسکریپت deploy باید بعد از جایگزینی کد، PHP-FPM را reload کرد (<code>systemctl reload php8.3-fpm</code>) یا از ابزاری برای پاک کردن کش FPM استفاده کرد. فراخوانی <code>opcache_reset()</code> از CLI کافی نیست چون CLI حافظه‌ی جدا دارد.</p>
+        <p><strong>مانیتورینگ:</strong> با <code>opcache_get_status()</code> درصد پر شدن حافظه و hit rate را بررسی کنید؛ پر شدن حافظه یا تعداد کلیدها باعث ری‌استارت OPcache و افت ناگهانی کارایی می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-6">
+      <summary>JIT در PHP 8 چیست و چه تفاوتی با OPcache دارد؟ آیا فعال کردن JIT یک اپلیکیشن Laravel معمولی را سریع‌تر می‌کند؟ چرا؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> JIT (Just-In-Time) بخشی از OPcache است که opcodeهای پرتکرار را در زمان اجرا به <strong>کد ماشین native</strong> تبدیل می‌کند تا به جای تفسیر توسط Zend VM مستقیماً روی CPU اجرا شوند. با <code>opcache.jit_buffer_size</code> (غیرصفر) و <code>opcache.jit</code> (مثلاً <code>tracing</code>) فعال می‌شود.</p>
+        <p><strong>تفاوت با OPcache:</strong></p>
+        <ul>
+          <li>OPcache مرحله‌ی <strong>کامپایل source به opcode</strong> را حذف می‌کند؛ برای همه‌ی اپلیکیشن‌ها مفید است.</li>
+          <li>JIT مرحله‌ی <strong>اجرای opcode</strong> را سریع‌تر می‌کند؛ فقط وقتی مفید است که زمان قابل‌توجهی صرف اجرای خود کد PHP شود.</li>
+          <li>JIT بدون OPcache وجود ندارد.</li>
+        </ul>
+        <p><strong>برای Laravel معمولی:</strong> اثر معمولاً ناچیز است، چون چنین اپلیکیشنی <strong>I/O-bound</strong> است: بیشتر زمان درخواست صرف انتظار برای MySQL، Redis، APIهای خارجی و فایل می‌شود. JIT زمان انتظار را کم نمی‌کند. علاوه بر این حافظه‌ی بیشتری مصرف می‌کند و در برخی موارد دیباگ را سخت‌تر می‌کند.</p>
+        <p><strong>کجا مفید است:</strong> کدهای CPU-bound مثل محاسبات عددی، پردازش تصویر یا داده به‌صورت خالص PHP، الگوریتم‌های سنگین در CLI یا workerها.</p>
+        <p><strong>نتیجه‌گیری:</strong> فعال کردن JIT را با benchmark روی workload واقعی تصمیم می‌گیرم؛ برای اپ وب معمولی اولویت با حذف N+1، کش و صف است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-7">
+      <summary>یک سرور ۸ گیگابایتی دارید که Nginx، PHP-FPM و Redis روی آن اجرا می‌شوند. pm.max_children را چگونه محاسبه می‌کنید؟ تفاوت حالت‌های static، dynamic و ondemand چیست؟</summary>
+      <div class="answer">
+        <p><strong>اصل:</strong> هر worker FPM در هر لحظه یک درخواست پردازش می‌کند و حافظه‌ی خودش را دارد؛ پس سقف worker را حافظه تعیین می‌کند.</p>
+        <p><strong>محاسبه:</strong></p>
+        <ol>
+          <li>میانگین RSS هر worker را زیر بار واقعی اندازه می‌گیرم: <code>ps -o rss -C php-fpm8.3</code> و میانگین با awk؛ فرض کنیم ۷۰MB.</li>
+          <li>حافظه‌ی رزرو برای OS، Nginx، Redis و بافر: مثلاً ۲.۵GB.</li>
+          <li>(8192 − 2560) ÷ 70 ≈ 80؛ با حاشیه‌ی اطمینان حدود ۷۰.</li>
+        </ol>
+        <p>سپس با تست بار و صفحه‌ی <code>pm.status_path</code> (listen queue، max children reached) و <code>free -m</code> اعتبارسنجی می‌کنم.</p>
+        <p><strong>حالت‌ها:</strong></p>
+        <ul>
+          <li><strong>static:</strong> همیشه max_children فرایند؛ بدون هزینه‌ی fork هنگام پیک؛ برای سرور اختصاصی پرترافیک.</li>
+          <li><strong>dynamic:</strong> تعداد بین min/max spare تنظیم می‌شود؛ تعادل حافظه و پاسخ‌گویی؛ پیش‌فرض.</li>
+          <li><strong>ondemand:</strong> فرایند فقط هنگام نیاز ساخته و پس از idle timeout حذف می‌شود؛ صرفه‌جویی حافظه برای سایت‌های کم‌ترافیک، با تأخیر اولیه.</li>
+        </ul>
+        <p><strong>هشدار:</strong> اگر workerها کندند چون منتظر دیتابیس‌اند، افزایش max_children مشکل را حل نمی‌کند و حتی دیتابیس را بیشتر تحت فشار می‌گذارد. <code>pm.max_requests</code> را هم برای بازیافت workerها و مهار memory leak تنظیم می‌کنم.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-8">
+      <summary>استراتژی‌های کش در یک اپلیکیشن Laravel را توضیح دهید. Cache stampede چیست و چگونه از آن جلوگیری می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>لایه‌ها:</strong></p>
+        <ul>
+          <li><strong>کش HTTP:</strong> هدرهای <code>Cache-Control</code>، <code>ETag</code> و پاسخ 304؛ CDN برای فایل‌های ثابت و پاسخ‌های عمومی.</li>
+          <li><strong>کش داده در اپ:</strong> <code>Cache::remember</code> روی Redis برای نتایج کوئری‌های سنگین و محاسبات (الگوی cache-aside).</li>
+          <li><strong>Memoization درون درخواست:</strong> helper <code>once()</code> یا property در سرویس.</li>
+          <li><strong>کش فریمورک:</strong> <code>config:cache</code>، <code>route:cache</code>، <code>view:cache</code>، <code>event:cache</code> یا <code>php artisan optimize</code> در deploy.</li>
+          <li><strong>کش opcode:</strong> OPcache.</li>
+        </ul>
+        <p><strong>Invalidation:</strong> TTL متناسب با تحمل داده‌ی قدیمی، پاک کردن کلید در observer یا بعد از نوشتن، کلیدهای نسخه‌دار، cache tags روی Redis.</p>
+        <p><strong>Cache stampede:</strong> وقتی کلید پرمصرفی منقضی می‌شود و تعداد زیادی درخواست هم‌زمان cache miss می‌گیرند و همه با هم کوئری سنگین را اجرا می‌کنند؛ دیتابیس زیر بار می‌رود.</p>
+        <p><strong>راه‌حل‌ها:</strong></p>
+        <ul>
+          <li><strong>Lock:</strong> فقط یک درخواست با <code>Cache::lock('key')</code> بازسازی کند و بقیه مقدار قدیمی یا انتظار کوتاه.</li>
+          <li><strong>Stale-while-revalidate:</strong> <code>Cache::flexible()</code> مقدار قدیمی را برمی‌گرداند و در پس‌زمینه تازه می‌کند.</li>
+          <li><strong>Jitter:</strong> TTL تصادفی تا همه‌ی کلیدها هم‌زمان منقضی نشوند.</li>
+          <li><strong>گرم کردن پیش‌دستانه:</strong> job زمان‌بندی‌شده که قبل از انقضا کش را می‌سازد.</li>
+        </ul>
+        <p><strong>ریسک‌ها:</strong> داده‌ی کهنه، کلیدی که به کاربر/زبان وابسته نیست و نشت داده بین کاربران، و پنهان شدن کوئری کند پشت کش تا روز انقضا.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-9">
+      <summary>سناریو: endpoint ثبت سفارش به‌طور میانگین ۴ ثانیه طول می‌کشد. پروفایل نشان می‌دهد ۳ ثانیه صرف تولید فاکتور PDF و ارسال ایمیل می‌شود. چه می‌کنید و چه نکاتی را رعایت می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تحلیل:</strong> تولید PDF و ارسال ایمیل برای ساختن پاسخ HTTP لازم نیستند؛ کاربر فقط باید بداند سفارش ثبت شد. پس این کارها را به <strong>صف (Queue)</strong> منتقل می‌کنم.</p>
+        <pre><code class="language-php">&lt;?php
+$order = DB::transaction(fn () =&gt; Order::createFromCart($cart));
+GenerateInvoiceAndNotify::dispatch($order)-&gt;afterCommit();
+return response()-&gt;json(new OrderResource($order), 201);</code></pre>
+        <p><strong>نکات:</strong></p>
+        <ul>
+          <li><code>afterCommit</code> تا worker رکورد commit‌نشده را نخواند.</li>
+          <li>Job <strong>idempotent</strong> باشد (مثلاً اگر فاکتور ساخته شده دوباره نسازد)، چون retry ممکن است.</li>
+          <li><code>$tries</code>، <code>$backoff</code> و <code>$timeout</code> مناسب؛ مدیریت failed jobs و هشدار.</li>
+          <li>اجرای worker با Supervisor یا systemd، و <code>queue:restart</code> در deploy.</li>
+          <li>اگر کاربر باید فاکتور را ببیند، وضعیت «در حال آماده‌سازی» و اطلاع‌رسانی بعدی (یا polling/WebSocket).</li>
+          <li>صف‌های جدا با اولویت (مثلاً <code>emails</code> و <code>default</code>) تا کار سنگین کارهای فوری را معطل نکند.</li>
+        </ul>
+        <p><strong>نتیجه:</strong> زمان پاسخ به حدود ۱ ثانیه (یا کمتر) می‌رسد و workerهای FPM سریع‌تر آزاد می‌شوند و ظرفیت هم‌زمانی بالا می‌رود. سپس همان ۱ ثانیه‌ی باقی‌مانده را هم پروفایل می‌کنم (کوئری‌ها، N+1، فراخوانی‌های خارجی هم‌زمان با <code>Http::pool</code>).</p>
+        <p><strong>Trade-off:</strong> پیچیدگی عملیاتی بیشتر (مانیتورینگ صف، workerها) و eventual consistency.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-10">
+      <summary>دستورات config:cache، route:cache، view:cache، event:cache و optimize در Laravel چه می‌کنند؟ چه مشکلاتی ممکن است ایجاد کنند؟</summary>
+      <div class="answer">
+        <p><strong>هدف کلی:</strong> حذف کارهای تکراری bootstrap در هر درخواست با ساختن فایل‌های PHP آماده در <code>bootstrap/cache</code> در زمان deploy.</p>
+        <ul>
+          <li><strong>config:cache:</strong> همه‌ی فایل‌های config را در یک آرایه‌ی واحد ادغام می‌کند؛ دیگر نیاز به خواندن ده‌ها فایل و <code>.env</code> نیست.</li>
+          <li><strong>route:cache:</strong> routeها را از پیش ثبت و serialize می‌کند؛ برای اپ‌های با route زیاد اثر محسوسی دارد.</li>
+          <li><strong>view:cache:</strong> همه‌ی Blade templateها را از قبل کامپایل می‌کند.</li>
+          <li><strong>event:cache:</strong> نگاشت eventها به listenerها را کش می‌کند تا discovery در هر درخواست انجام نشود.</li>
+          <li><strong>optimize:</strong> همه‌ی موارد بالا را یکجا اجرا می‌کند؛ <code>optimize:clear</code> برعکس.</li>
+        </ul>
+        <p><strong>مشکلات رایج:</strong></p>
+        <ul>
+          <li>بعد از <code>config:cache</code>، فراخوانی <code>env()</code> خارج از فایل‌های config مقدار null می‌دهد. باید همیشه از <code>config()</code> استفاده کرد.</li>
+          <li>تغییر <code>.env</code> یا config روی سرور بدون اجرای مجدد کش اعمال نمی‌شود.</li>
+          <li>اجرای این دستورات در محیط local باعث گیجی هنگام توسعه می‌شود.</li>
+          <li>کش باید در هر deploy با کد جدید دوباره ساخته شود؛ کش قدیمی می‌تواند به کلاس یا routeای اشاره کند که دیگر وجود ندارد.</li>
+        </ul>
+        <p>این دستورات در کنار <code>composer install --no-dev -o</code> و OPcache بخشی از چک‌لیست استاندارد deploy هستند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-11">
+      <summary>یک job شبانه باید یک فایل CSV با ۵ میلیون ردیف را import کند و با خطای Allowed memory size exhausted متوقف می‌شود. علت را تحلیل کنید و راه‌حل بدهید.</summary>
+      <div class="answer">
+        <p><strong>علت‌های محتمل:</strong></p>
+        <ul>
+          <li>خواندن کل فایل با <code>file()</code> یا <code>file_get_contents</code> و ساخت آرایه‌ی ۵ میلیون عنصری.</li>
+          <li>ساختن مدل Eloquent برای هر ردیف و نگه داشتن همه در یک Collection.</li>
+          <li>Query log فعال یا eventهایی که اشیاء را نگه می‌دارند.</li>
+          <li>درج تک‌تک که علاوه بر کندی، اشیاء زیادی می‌سازد.</li>
+        </ul>
+        <p><strong>راه‌حل: پردازش جریانی + دسته‌ای</strong></p>
+        <pre><code class="language-php">&lt;?php
+LazyCollection::make(function () use ($path) {
+    $h = fopen($path, 'r');
+    fgetcsv($h); // header
+    while (($row = fgetcsv($h)) !== false) {
+        yield ['sku' =&gt; $row[0], 'price' =&gt; (int) $row[1], 'stock' =&gt; (int) $row[2]];
+    }
+    fclose($h);
+})
+-&gt;chunk(1000)
+-&gt;each(function ($chunk) {
+    Product::upsert($chunk-&gt;all(), ['sku'], ['price', 'stock']);
+});</code></pre>
+        <ul>
+          <li>حافظه در هر لحظه فقط یک دسته‌ی ۱۰۰۰تایی است: O(chunk) به جای O(n).</li>
+          <li><code>upsert</code> دسته‌ای به جای ۵ میلیون کوئری، تعداد کوئری را به حدود ۵۰۰۰ می‌رساند.</li>
+          <li><code>DB::disableQueryLog()</code> در اسکریپت‌های طولانی.</li>
+          <li>برای مقیاس بیشتر: شکستن فایل و dispatch هر بخش به یک job (یا <code>Bus::batch</code>) برای پردازش موازی و قابلیت ادامه از نقطه‌ی خطا.</li>
+        </ul>
+        <p><strong>چیزی که راه‌حل نیست:</strong> افزایش <code>memory_limit</code> به ۴GB؛ مشکل را با رشد داده دوباره ظاهر می‌کند و سرور را در معرض OOM killer قرار می‌دهد. توجه: <code>upsert</code> model eventها را اجرا نمی‌کند؛ اگر منطقی در observer هست باید جداگانه مدیریت شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-12">
+      <summary>Laravel Octane چگونه کارایی را افزایش می‌دهد؟ چه ریسک‌هایی دارد و در چه شرایطی استفاده از آن را توصیه نمی‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>مکانیزم:</strong> در PHP-FPM، هر درخواست از صفر شروع می‌شود: autoload، ساخت service container، ثبت و boot کردن service providerها، بارگذاری config و routeها. Octane اپلیکیشن را <strong>یک‌بار boot</strong> می‌کند و در workerهای طولانی‌مدت (FrankenPHP، Swoole، RoadRunner) نگه می‌دارد؛ هر درخواست فقط از یک نمونه‌ی آماده استفاده می‌کند. نتیجه کاهش latency و افزایش throughput برای درخواست‌های سبک است.</p>
+        <p><strong>ریسک‌ها:</strong></p>
+        <ul>
+          <li><strong>نشت state:</strong> singletonی که Request یا کاربر جاری را در constructor گرفته، در درخواست‌های بعدی هم همان را دارد؛ ممکن است داده‌ی یک کاربر به کاربر دیگر نشان داده شود.</li>
+          <li><strong>متغیرهای static و آرایه‌های رشدکننده</strong> که باعث memory leak می‌شوند؛ نیاز به <code>--max-requests</code>.</li>
+          <li>پکیج‌های third-party که برای مدل «هر درخواست از صفر» نوشته شده‌اند.</li>
+          <li>نیاز به reload workerها در deploy و تغییر در شیوه‌ی دیباگ و مانیتورینگ.</li>
+        </ul>
+        <p><strong>چه وقت توصیه نمی‌کنم:</strong></p>
+        <ul>
+          <li>وقتی گلوگاه دیتابیس یا API خارجی است؛ Octane فقط هزینه‌ی bootstrap را حذف می‌کند.</li>
+          <li>کدبیس قدیمی با state سراسری زیاد و بدون پوشش تست.</li>
+          <li>ترافیک کم که FPM به‌راحتی جوابگوست و پیچیدگی اضافه توجیه ندارد.</li>
+        </ul>
+        <p>قبل از مهاجرت، با تست بار مقایسه می‌کنم و کد را برای state در singletonها بررسی می‌کنم.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-13">
+      <summary>تفاوت exists() و count() و همچنین تفاوت $user-&gt;posts()-&gt;count() و $user-&gt;posts-&gt;count() را توضیح دهید. چرا انجام تجمیع در دیتابیس بهتر است؟</summary>
+      <div class="answer">
+        <p><strong>exists در برابر count:</strong></p>
+        <ul>
+          <li><code>exists()</code> کوئری <code>select exists(...)</code> می‌سازد؛ دیتابیس با پیدا کردن <strong>اولین</strong> ردیف متوقف می‌شود.</li>
+          <li><code>count()</code> باید <strong>همه‌ی</strong> ردیف‌های منطبق را بشمارد.</li>
+          <li>برای سوال «آیا وجود دارد؟» همیشه <code>exists()</code> درست‌تر و سریع‌تر است.</li>
+        </ul>
+        <p><strong>رابطه با پرانتز و بدون پرانتز:</strong></p>
+        <ul>
+          <li><code>$user-&gt;posts()</code> یک Query Builder برمی‌گرداند؛ <code>-&gt;count()</code> یک <code>SELECT COUNT(*)</code> اجرا می‌کند.</li>
+          <li><code>$user-&gt;posts</code> رابطه را load می‌کند (همه‌ی ستون‌ها و همه‌ی ردیف‌ها، hydrate به مدل) و سپس <code>count()</code> روی Collection در PHP اجرا می‌شود.</li>
+          <li>اگر رابطه از قبل eager load شده، دومی کوئری جدید نمی‌زند؛ در غیر این صورت اولی بسیار سبک‌تر است.</li>
+          <li>در لیست کاربران، هر دو داخل حلقه N+1 هستند؛ راه‌حل <code>User::withCount('posts')</code> و استفاده از <code>$user-&gt;posts_count</code>.</li>
+        </ul>
+        <p><strong>چرا تجمیع در دیتابیس:</strong> دیتابیس داده را محلی دارد و با ایندکس فیلتر و تجمیع می‌کند؛ فقط یک عدد از شبکه منتقل می‌شود. در PHP باید همه‌ی ردیف‌ها منتقل، به آرایه یا مدل تبدیل و در حافظه نگه داشته شوند: هم کندتر، هم پرمصرف‌تر و با رشد داده غیرقابل‌مقیاس.</p>
+        <pre><code class="language-php">&lt;?php
+$users = User::withCount('posts')
+    -&gt;withSum('orders as total_spent', 'amount')
+    -&gt;withExists('subscription as is_subscribed')
+    -&gt;paginate(20);</code></pre>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-14">
+      <summary>برای تست بار یک API چه ابزارها و چه روشی استفاده می‌کنید؟ اشتباهات رایجی که نتایج benchmark را بی‌اعتبار می‌کنند کدام‌اند؟</summary>
+      <div class="answer">
+        <p><strong>ابزارها:</strong></p>
+        <ul>
+          <li><strong>ab:</strong> ساده و همه‌جا موجود؛ برای تست سریع یک URL؛ تک‌نخی و محدود.</li>
+          <li><strong>wrk:</strong> چندنخی، تولید بار بسیار بالا، توزیع latency؛ سناریوهای پیچیده با Lua.</li>
+          <li><strong>k6:</strong> سناریو با JavaScript، stageهای ramp-up، thresholdها (مثلاً <code>p(95)&lt;300</code>) و ادغام با CI؛ انتخاب اصلی من.</li>
+        </ul>
+        <p><strong>روش:</strong> هدف مشخص (RPS و p95 مورد انتظار)، محیط staging هم‌اندازه‌ی production با داده‌ی واقعی‌نما، سناریوی واقعی (ترکیب endpointها، think time، توکن‌های متفاوت)، ramp-up تدریجی، مانیتورینگ هم‌زمان سرور (CPU، RAM، FPM status، کوئری‌های کند) و گزارش p50/p95/p99، throughput و نرخ خطا.</p>
+        <p><strong>اشتباهات رایج:</strong></p>
+        <ul>
+          <li>Xdebug روشن، <code>APP_DEBUG=true</code>، OPcache خاموش یا کش‌های config/route ساخته نشده.</li>
+          <li>اجرای مولد بار روی همان سرور اپلیکیشن.</li>
+          <li>دیتابیس خیلی کوچک که همه‌چیز در حافظه جا می‌شود.</li>
+          <li>زدن یک URL ثابت که فقط کش را تست می‌کند.</li>
+          <li>نبود warm-up و گزارش فقط میانگین.</li>
+          <li>نادیده گرفتن نرخ خطا (RPS بالا با پاسخ‌های 502).</li>
+          <li>تغییر چند متغیر هم‌زمان بین دو اجرا و اجرای تنها یک‌بار (نویز).</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-15">
+      <summary>Composer با گزینه‌های --optimize-autoloader و --classmap-authoritative چه تفاوتی ایجاد می‌کند؟ چه ریسکی در گزینه‌ی دوم وجود دارد؟</summary>
+      <div class="answer">
+        <p><strong>پیش‌زمینه:</strong> autoloader پیش‌فرض PSR-4 برای هر کلاس جدید، namespace را به مسیر فایل تبدیل و با <code>file_exists</code> روی دیسک چک می‌کند؛ برای هزاران کلاس هزینه‌ی قابل‌توجهی دارد (حتی با stat cache).</p>
+        <ul>
+          <li><strong><code>--optimize-autoloader</code> (<code>-o</code>):</strong> با اسکن پوشه‌های PSR-4/PSR-0 یک <strong>classmap</strong> کامل (نام کلاس ← مسیر فایل) می‌سازد. کلاس‌های موجود مستقیم پیدا می‌شوند؛ اگر کلاسی در map نبود، به روش PSR-4 برمی‌گردد.</li>
+          <li><strong><code>--classmap-authoritative</code> (<code>-a</code>):</strong> classmap را تنها منبع حقیقت می‌داند؛ اگر کلاس در map نبود، بلافاصله «وجود ندارد» فرض می‌شود و هیچ جستجوی فایل‌سیستمی انجام نمی‌شود. حتی برای کلاس‌های ناموجود (مثلاً <code>class_exists</code>های پیاپی پکیج‌ها) سریع‌تر است. <code>-a</code> به‌طور ضمنی <code>-o</code> را هم شامل می‌شود.</li>
+        </ul>
+        <p><strong>ریسک گزینه‌ی دوم:</strong> کلاس‌هایی که بعد از ساخت classmap روی دیسک ایجاد می‌شوند (کد تولیدشده در runtime، فایل‌های proxy یا کلاس اضافه‌شده بدون اجرای مجدد dump-autoload) هرگز load نمی‌شوند و خطای <code>Class not found</code> می‌گیریم. به همین دلیل فقط در production و در build تمیز استفاده می‌شود و در development نه.</p>
+        <pre><code class="language-bash">composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader --classmap-authoritative</code></pre>
+        <p><strong>نکته:</strong> اثر این گزینه‌ها همراه با OPcache بیشتر می‌شود؛ <code>--no-dev</code> هم پکیج‌های توسعه را حذف می‌کند که هم امنیت و هم حجم را بهتر می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-code-optimization-16">
+      <summary>بین خوانایی کد و کارایی چگونه تعادل برقرار می‌کنید؟ یک مثال بیاورید که بهینه‌سازی ارزش پیچیده کردن کد را داشته باشد و یک مثال که نداشته باشد.</summary>
+      <div class="answer">
+        <p><strong>اصل:</strong> پیش‌فرض با خوانایی است، چون بیشتر هزینه‌ی نرم‌افزار در نگهداری است و کد خوانا باگ کمتری دارد. پیچیدگی را فقط وقتی می‌پذیرم که <strong>اندازه‌گیری</strong> نشان دهد آن بخش گلوگاه است و بهبود از نظر کسب‌وکار معنادار است.</p>
+        <p><strong>بهینه‌سازی ارزشمند:</strong> گزارشی که با Collection روی ۲ میلیون سفارش جمع می‌زد و ۴۰ ثانیه طول می‌کشید، با یک کوئری <code>GROUP BY</code> و ایندکس مناسب به ۲۰۰ms رسید. کد کمی SQL-محورتر شد اما اثر ۲۰۰ برابری دارد؛ با کامنت و تست پوشش می‌دهم.</p>
+        <p><strong>بهینه‌سازی بی‌ارزش:</strong> تبدیل یک <code>collect($items)-&gt;map()-&gt;filter()</code> روی ۲۰ آیتم به حلقه‌ی دستی با reference، یا جایگزینی double quote با single quote. اثری قابل‌اندازه‌گیری روی زمان درخواست ندارد ولی خوانایی را کم می‌کند.</p>
+        <p><strong>راهکارها برای داشتن هر دو:</strong></p>
+        <ul>
+          <li>کپسوله کردن بخش بهینه‌شده در یک متد یا کلاس با نام گویا (مثلاً <code>OrderReport::dailyRevenue()</code>).</li>
+          <li>کامنت درباره‌ی «چرا» به همراه عدد benchmark.</li>
+          <li>تست برای حفظ رفتار و تست کارایی یا assertion تعداد کوئری برای جلوگیری از regression.</li>
+          <li>ترجیح بهینه‌سازی‌های معماری (کش، صف، ایندکس) که در لایه‌ی جدا اعمال می‌شوند و منطق اصلی را پیچیده نمی‌کنند.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>اصول</h4>
+      <ul>
+        <li>هدف قابل اندازه‌گیری → baseline → profile → یک تغییر → اندازه‌گیری مجدد.</li>
+        <li>Amdahl: فقط بخش پرسهم ارزش بهینه‌سازی دارد.</li>
+        <li>وب معمولاً I/O-bound است؛ اول دیتابیس و شبکه.</li>
+        <li>p95/p99 گزارش کن، نه میانگین.</li>
+      </ul>
+      <h4>ابزارها</h4>
+      <ul>
+        <li>Xdebug profile (فقط dev) → cachegrind؛ Blackfire (کم‌سربار، مقایسه).</li>
+        <li>Telescope / Debugbar / Clockwork → کوئری‌ها، تعداد، تکرار.</li>
+        <li>slow query log + <code>EXPLAIN</code>؛ <code>DB::listen</code>.</li>
+      </ul>
+      <h4>دیتابیس از سمت اپ</h4>
+      <ul>
+        <li>N+1 → <code>with()</code>، <code>withCount()</code>، <code>preventLazyLoading</code>.</li>
+        <li>فقط ستون لازم: <code>select</code>، <code>pluck</code>، <code>with('rel:id,name')</code>.</li>
+        <li><code>exists()</code> نه <code>count() &gt; 0</code>؛ <code>sum()</code> در SQL نه Collection.</li>
+        <li>کوئری در حلقه → <code>whereIn</code> + <code>keyBy</code>.</li>
+        <li>ایندکس ترکیبی: leftmost prefix؛ تابع روی ستون = بدون ایندکس.</li>
+        <li>OFFSET بزرگ کند → <code>cursorPaginate</code>/<code>chunkById</code>.</li>
+      </ul>
+      <h4>داده‌ی حجیم</h4>
+      <ul>
+        <li><code>chunk</code>: offset؛ با تغییر ستون شرط رکورد جا می‌افتد.</li>
+        <li><code>chunkById</code>: keyset؛ امن برای update.</li>
+        <li><code>lazy</code>: LazyCollection روی chunk.</li>
+        <li><code>cursor</code>: یک کوئری، یک مدل؛ بافر PDO، بدون eager load.</li>
+        <li>Bulk: <code>insert</code>، <code>upsert</code>، <code>update</code> با whereIn؛ بدون model event.</li>
+      </ul>
+      <h4>کش</h4>
+      <ul>
+        <li><code>Cache::remember</code>، <code>flexible</code> (SWR)، <code>once()</code>، lock ضد stampede.</li>
+        <li>HTTP: <code>Cache-Control</code>، <code>ETag</code> → 304؛ <code>cache.headers</code>.</li>
+        <li><code>php artisan optimize</code> = config + event + route + view cache.</li>
+        <li>بعد از <code>config:cache</code>: <code>env()</code> بیرون config = null.</li>
+      </ul>
+      <h4>Runtime</h4>
+      <ul>
+        <li>Composer: <code>--no-dev -o -a</code>؛ <code>-a</code> = بدون fallback فایل‌سیستم.</li>
+        <li>OPcache: source→opcode در shared memory؛ <code>validate_timestamps=0</code> → reload FPM در deploy.</li>
+        <li>Preload: load کلاس‌ها هنگام start؛ تغییر = restart.</li>
+        <li>JIT: opcode→کد ماشین؛ فقط CPU-bound.</li>
+      </ul>
+      <h4>PHP-FPM</h4>
+      <ul>
+        <li>هر worker = یک درخواست هم‌زمان.</li>
+        <li><code>max_children ≈ RAM آزاد ÷ RSS هر worker</code>.</li>
+        <li>static (پرترافیک)، dynamic (پیش‌فرض)، ondemand (کم‌ترافیک).</li>
+        <li><code>pm.max_requests</code> ضد leak؛ slowlog؛ status page.</li>
+      </ul>
+      <h4>کد و حافظه</h4>
+      <ul>
+        <li><code>in_array</code> در حلقه O(n·m) → <code>array_flip</code> + <code>isset</code> O(n+m).</li>
+        <li><code>firstWhere</code> در حلقه → <code>keyBy</code> + <code>get</code>.</li>
+        <li><code>array_merge</code> در حلقه O(n²) → <code>array_merge(...$parts)</code>.</li>
+        <li>Generator / LazyCollection / stream → حافظه‌ی ثابت.</li>
+        <li><code>memory_limit</code> بالا راه‌حل نیست.</li>
+      </ul>
+      <h4>معماری و HTTP</h4>
+      <ul>
+        <li>کار کند → Queue (<code>afterCommit</code>، idempotent، retry).</li>
+        <li><code>Http::pool</code> برای فراخوانی هم‌زمان.</li>
+        <li>Octane: حذف bootstrap؛ خطر state leak؛ <code>--max-requests</code>.</li>
+        <li>gzip/brotli، HTTP/2 multiplexing، CDN، Vite با hash → <code>immutable</code>.</li>
+        <li>TTFB مسئولیت بک‌اند؛ LCP، INP، CLS.</li>
+      </ul>
+      <h4>تست بار</h4>
+      <ul>
+        <li>ab (ساده)، wrk (پربار)، k6 (سناریو + threshold + CI).</li>
+        <li>Load / Stress / Soak / Spike.</li>
+        <li>پرهیز: Xdebug، debug mode، مولد بار روی همان سرور، کش داغ، بدون warm-up، فقط میانگین.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

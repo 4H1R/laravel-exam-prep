@@ -1,0 +1,1439 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scripting — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="scripting">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Scripting</h1>
+    <p class="lead">اسکریپت‌نویسی برای خودکارسازی کارهای سرور و توسعه: مبانی Bash (متغیر، quoting، شرط، حلقه، تابع، exit code)، مدیریت خطا با set -euo pipefail و trap، redirection و pipe، ابزارهای پردازش متن، cron و scheduler لاراول، نوشتن اسکریپت‌های مقاوم (بکاپ، deploy، health check)، دستورات Artisan و مقایسه با Python و Makefile.</p>
+  </header>
+
+  <section class="lesson" id="intro" data-title="اسکریپت چیست و کی خودکارسازی کنیم">
+    <h2>اسکریپت چیست و کی خودکارسازی کنیم</h2>
+    <p><strong>Script</strong> برنامه‌ای است که توسط یک <strong>interpreter</strong> (bash، php، python) اجرا می‌شود و معمولاً برای <strong>به هم چسباندن</strong> ابزارها و خودکارسازی کارهای تکراری نوشته می‌شود: بکاپ، deploy، پاک‌سازی لاگ، import داده، بررسی سلامت سرویس، آماده‌سازی محیط توسعه. تفاوت اصلی با برنامه‌ی کامپایلی: نیاز به build ندارد، سریع نوشته و تغییر داده می‌شود و معمولاً به محیط اجرا (سیستم‌عامل و دستورات موجود) وابسته است.</p>
+
+    <h3>چه زمانی خودکارسازی کنیم؟</h3>
+    <ul>
+      <li>کار <strong>تکراری</strong> است (روزانه، در هر deploy، روی هر سرور جدید).</li>
+      <li>کار <strong>حساس به خطا</strong> است و یک قدم فراموش‌شده هزینه دارد (deploy، migration، بکاپ).</li>
+      <li>کار باید در زمان مشخص و بدون حضور انسان اجرا شود (cron).</li>
+      <li>نیاز به <strong>مستندسازی اجرایی</strong> دارید: اسکریپت خودش دقیق‌ترین مستند «چطور انجامش می‌دهیم» است.</li>
+      <li>قاعده‌ی سرانگشتی: اگر کاری را سومین بار دستی انجام می‌دهید، وقت اسکریپت کردنش است؛ اما هزینه‌ی نوشتن و نگهداری را با زمان صرفه‌جویی‌شده مقایسه کنید.</li>
+    </ul>
+
+    <h3>Shebang و مجوز اجرا</h3>
+    <p>خط اول اسکریپت با <code>#!</code> (<strong>shebang</strong>) مشخص می‌کند کرنل فایل را با کدام interpreter اجرا کند.</p>
+    <pre><code class="language-bash">#!/usr/bin/env bash
+# env مسیر bash را از PATH پیدا می‌کند؛ قابل‌حمل‌تر از /bin/bash ثابت
+set -euo pipefail
+
+echo "Hello from $(hostname)"</code></pre>
+    <pre><code class="language-bash">chmod +x hello.sh      # افزودن بیت اجرا
+./hello.sh             # اجرا با interpreter مشخص‌شده در shebang
+bash hello.sh          # اجرا مستقیم با bash (shebang نادیده گرفته می‌شود)
+sh hello.sh            # خطرناک: با sh (مثلاً dash در اوبونتو) اجرا می‌شود و قابلیت‌های bash کار نمی‌کنند</code></pre>
+    <ul>
+      <li><code>./</code> لازم است چون پوشه‌ی جاری به‌طور پیش‌فرض در <code>PATH</code> نیست (به دلایل امنیتی).</li>
+      <li>در اوبونتو <code>/bin/sh</code> به <code>dash</code> اشاره می‌کند که POSIX خالص است؛ <code>[[ ]]</code>، آرایه‌ها و <code>pipefail</code> (در نسخه‌های قدیمی dash) را ندارد. اگر از امکانات bash استفاده می‌کنید، shebang باید bash باشد.</li>
+      <li>shebangهای دیگر: <code>#!/usr/bin/env php</code>، <code>#!/usr/bin/env python3</code>.</li>
+    </ul>
+    <div class="callout warn"><p>اسکریپتی که روی ویندوز ذخیره شده و خطای <code>/usr/bin/env: 'bash\r': No such file or directory</code> یا <code>bad interpreter</code> می‌دهد، پایان خط CRLF دارد. با <code>dos2unix script.sh</code> یا <code>sed -i 's/\r$//' script.sh</code> اصلاح کنید و در git با <code>.gitattributes</code> (<code>*.sh text eol=lf</code>) جلوی تکرار را بگیرید.</p></div>
+  </section>
+
+  <section class="lesson" id="variables-quoting" data-title="متغیرها، Quoting و Parameter Expansion">
+    <h2>متغیرها، Quoting و Parameter Expansion</h2>
+    <pre><code class="language-bash">name="Ali"               # بدون فاصله دور =
+echo "$name"             # خواندن با $
+echo "${name}_backup"    # آکولاد برای جدا کردن نام از متن بعدی
+today=$(date +%F)        # command substitution (ترجیحاً به جای backtick)
+readonly APP_DIR=/var/www/app
+export APP_ENV=production   # متغیر محیطی؛ برای فرایندهای فرزند قابل مشاهده</code></pre>
+    <div class="callout warn"><p><code>name = "Ali"</code> (با فاصله) یعنی اجرای دستوری به نام <code>name</code> با آرگومان‌های <code>=</code> و <code>Ali</code>؛ خطای command not found می‌گیرید.</p></div>
+
+    <h3>قواعد Quoting</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>شکل</th><th>رفتار</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td>بدون quote</td><td>expansion انجام می‌شود، سپس <strong>word splitting</strong> (بر اساس IFS) و <strong>globbing</strong> (<code>*</code>)</td><td><code>rm $file</code> با مقدار «my file.txt» دو فایل را هدف می‌گیرد</td></tr>
+        <tr><td><code>"double"</code></td><td>متغیر و <code>$( )</code> expand می‌شوند، اما بدون word splitting و globbing</td><td><code>rm "$file"</code> ✓</td></tr>
+        <tr><td><code>'single'</code></td><td>همه‌چیز لفظی؛ هیچ expansionی انجام نمی‌شود</td><td><code>echo '$HOME'</code> → <code>$HOME</code></td></tr>
+        <tr><td><code>$'...'</code></td><td>تفسیر escapeها مثل <code>\n</code> و <code>\t</code></td><td><code>echo $'a\tb'</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>قاعده‌ی طلایی: <strong>همه‌ی متغیرها را در double quote بگذارید</strong> مگر آگاهانه word splitting بخواهید. ShellCheck این خطا را با کد <code>SC2086</code> گزارش می‌دهد.</p>
+
+    <h3>Parameter Expansion</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عبارت</th><th>معنا</th><th>مثال (<code>f=/var/log/app.log.gz</code>)</th></tr></thead>
+      <tbody>
+        <tr><td><code>${v:-def}</code></td><td>اگر unset یا خالی بود، <code>def</code> را برگردان (متغیر تغییر نمی‌کند)</td><td><code>${ENV:-staging}</code></td></tr>
+        <tr><td><code>${v-def}</code></td><td>فقط اگر unset بود (خالی را قبول می‌کند)</td><td></td></tr>
+        <tr><td><code>${v:=def}</code></td><td>مثل <code>:-</code> اما مقدار را به متغیر هم اختصاص می‌دهد</td><td><code>: "${RETENTION:=7}"</code></td></tr>
+        <tr><td><code>${v:?msg}</code></td><td>اگر unset یا خالی بود با پیام خطا خارج شو</td><td><code>rm -rf "${DIR:?}/tmp"</code></td></tr>
+        <tr><td><code>${v:+alt}</code></td><td>اگر مقدار داشت <code>alt</code> را برگردان</td><td><code>${DEBUG:+--verbose}</code></td></tr>
+        <tr><td><code>${#v}</code></td><td>طول رشته</td><td></td></tr>
+        <tr><td><code>${v#pat}</code> / <code>${v##pat}</code></td><td>حذف کوتاه‌ترین / بلندترین پیشوند منطبق</td><td><code>${f##*/}</code> → <code>app.log.gz</code> (basename)</td></tr>
+        <tr><td><code>${v%pat}</code> / <code>${v%%pat}</code></td><td>حذف کوتاه‌ترین / بلندترین پسوند منطبق</td><td><code>${f%/*}</code> → <code>/var/log</code>؛ <code>${f%.gz}</code> → <code>/var/log/app.log</code>؛ <code>${f%%.*}</code> → <code>/var/log/app</code></td></tr>
+        <tr><td><code>${v/a/b}</code> / <code>${v//a/b}</code></td><td>جایگزینی اولین / همه‌ی موارد</td><td><code>${f//\//_}</code></td></tr>
+        <tr><td><code>${v:off:len}</code></td><td>زیررشته</td><td><code>${today:0:4}</code> → سال</td></tr>
+        <tr><td><code>${v^^}</code> / <code>${v,,}</code></td><td>تبدیل به حروف بزرگ / کوچک (bash 4+)</td><td></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>پارامترهای ویژه</h3>
+    <dl class="terms">
+      <dt>$0</dt><dd>نام اسکریپت.</dd>
+      <dt>$1 … $9، ${10}</dt><dd>آرگومان‌های موقعیتی.</dd>
+      <dt>$#</dt><dd>تعداد آرگومان‌ها.</dd>
+      <dt>"$@"</dt><dd>همه‌ی آرگومان‌ها، هر کدام یک کلمه‌ی جدا (حالت درست برای پاس دادن آرگومان‌ها).</dd>
+      <dt>"$*"</dt><dd>همه‌ی آرگومان‌ها به صورت یک رشته‌ی واحد.</dd>
+      <dt>$?</dt><dd>کد خروج آخرین دستور.</dd>
+      <dt>$$</dt><dd>PID شل جاری.</dd>
+      <dt>$!</dt><dd>PID آخرین فرایند پس‌زمینه.</dd>
+    </dl>
+  </section>
+
+  <section class="lesson" id="arrays-arithmetic" data-title="آرایه‌ها و محاسبات">
+    <h2>آرایه‌ها و محاسبات عددی</h2>
+    <h3>آرایه‌ی اندیس‌دار</h3>
+    <pre><code class="language-bash">servers=(web1 web2 "web 3")
+servers+=(web4)                 # افزودن
+echo "${servers[0]}"            # اولین عضو
+echo "${#servers[@]}"           # تعداد اعضا
+for s in "${servers[@]}"; do    # پیمایش امن (با quote)
+    echo "deploying to $s"
+done
+echo "${servers[@]:1:2}"        # برش (slice)
+unset 'servers[1]'              # حذف عضو</code></pre>
+    <div class="callout warn"><p><code>${servers[@]}</code> بدون quote عضو «web 3» را به دو کلمه می‌شکند. <code>"${servers[@]}"</code> هر عضو را دقیقاً یک کلمه نگه می‌دارد.</p></div>
+
+    <h3>آرایه‌ی انجمنی (Associative)</h3>
+    <pre><code class="language-bash">declare -A ports=([nginx]=80 [mysql]=3306 [redis]=6379)
+ports[ssh]=22
+echo "${ports[mysql]}"
+for svc in "${!ports[@]}"; do          # ${!arr[@]} = کلیدها
+    printf '%-6s %s\n' "$svc" "${ports[$svc]}"
+done</code></pre>
+
+    <h3>محاسبات</h3>
+    <pre><code class="language-bash">a=7; b=3
+echo $(( a + b ))        # 10  (داخل (( )) نیازی به $ نیست)
+echo $(( a / b ))        # 2   (فقط عدد صحیح)
+echo $(( a % b ))        # 1
+(( count++ ))            # افزایش
+(( a &gt; b )) &amp;&amp; echo "a is bigger"
+echo "scale=2; $a / $b" | bc     # اعشاری: 2.33
+awk -v x="$a" -v y="$b" 'BEGIN { printf "%.2f\n", x / y }'</code></pre>
+    <div class="callout warn"><p>تله‌ی مهم با <code>set -e</code>: وقتی <code>count=0</code> است، <code>(( count++ ))</code> مقدار قبلی (صفر) را ارزیابی می‌کند و کد خروج <strong>1</strong> برمی‌گرداند، پس اسکریپت بی‌صدا خارج می‌شود. از <code>count=$(( count + 1 ))</code> یا <code>(( ++count ))</code> استفاده کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="control-flow" data-title="شرط‌ها، case و حلقه‌ها">
+    <h2>شرط‌ها، case و حلقه‌ها</h2>
+    <h3>if و دستور test</h3>
+    <p>در Bash، <code>if</code> روی <strong>کد خروج یک دستور</strong> تصمیم می‌گیرد: صفر یعنی موفق (true). <code>[</code> در واقع یک دستور (همان <code>test</code>) است و <code>]</code> آخرین آرگومان آن؛ به همین دلیل فاصله‌ها اجباری‌اند.</p>
+    <pre><code class="language-bash">if [[ -f "$config" &amp;&amp; -r "$config" ]]; then
+    echo "config is readable"
+elif [[ -d "$config" ]]; then
+    echo "it is a directory"
+else
+    echo "missing" &gt;&amp;2
+fi
+
+# هر دستوری می‌تواند شرط باشد
+if grep -q "APP_DEBUG=true" .env; then
+    echo "debug is on!" &gt;&amp;2
+fi
+
+if ! command -v jq &gt;/dev/null 2&gt;&amp;1; then
+    echo "jq is required" &gt;&amp;2; exit 1
+fi</code></pre>
+
+    <div class="grid-2">
+      <div class="card"><h4><code>[ ]</code> (POSIX test)</h4><ul><li>یک دستور معمولی؛ در همه‌ی شل‌های POSIX (sh، dash) موجود است.</li><li>متغیرها word splitting و globbing می‌شوند؛ <strong>quote اجباری</strong>: <code>[ "$a" = "b" ]</code>.</li><li>برای AND/OR: <code>[ … ] &amp;&amp; [ … ]</code> (گزینه‌های <code>-a</code>/<code>-o</code> منسوخ‌اند).</li><li><code>&lt;</code> و <code>&gt;</code> به عنوان redirection تفسیر می‌شوند.</li></ul></div>
+      <div class="card"><h4><code>[[ ]]</code> (کلمه‌ی کلیدی bash)</h4><ul><li>بخشی از syntax شل؛ word splitting و globbing روی متغیرها ندارد (quote همچنان عادت خوبی است).</li><li><code>&amp;&amp;</code>، <code>||</code> و <code>!</code> داخل آن مجاز است.</li><li>تطبیق الگو: <code>[[ $f == *.log ]]</code>.</li><li>regex: <code>[[ $v =~ ^[0-9]+$ ]]</code> و گروه‌ها در <code>BASH_REMATCH</code>.</li><li>قابل‌حمل به sh نیست.</li></ul></div>
+    </div>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>عملگر</th><th>معنا</th><th>عملگر</th><th>معنا</th></tr></thead>
+      <tbody>
+        <tr><td><code>-e</code></td><td>وجود دارد</td><td><code>-z</code></td><td>رشته خالی است</td></tr>
+        <tr><td><code>-f</code></td><td>فایل معمولی است</td><td><code>-n</code></td><td>رشته خالی نیست</td></tr>
+        <tr><td><code>-d</code></td><td>دایرکتوری است</td><td><code>=</code> / <code>!=</code></td><td>برابری رشته</td></tr>
+        <tr><td><code>-L</code></td><td>symlink است</td><td><code>-eq -ne</code></td><td>برابری عددی</td></tr>
+        <tr><td><code>-r -w -x</code></td><td>قابل خواندن/نوشتن/اجرا</td><td><code>-lt -le -gt -ge</code></td><td>مقایسه‌ی عددی</td></tr>
+        <tr><td><code>-s</code></td><td>وجود دارد و خالی نیست</td><td><code>-nt</code> / <code>-ot</code></td><td>جدیدتر / قدیمی‌تر از فایل دیگر</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>برای مقایسه‌ی عددی خواناتر از <code>(( ))</code> استفاده کنید: <code>if (( usage &gt; 90 )); then</code>. در <code>[ ]</code>، <code>&gt;</code> مقایسه‌ی عددی نیست؛ <code>[ 10 &gt; 9 ]</code> یک فایل به نام <code>9</code> می‌سازد!</p></div>
+
+    <h3>case</h3>
+    <pre><code class="language-bash">case "$1" in
+    start|up)    systemctl start app ;;
+    stop)        systemctl stop app ;;
+    restart)     systemctl restart app ;;
+    *.sql.gz)    echo "restore from $1" ;;
+    -h|--help)   usage; exit 0 ;;
+    *)           echo "unknown command: $1" &gt;&amp;2; exit 2 ;;
+esac</code></pre>
+
+    <h3>حلقه‌ها</h3>
+    <pre><code class="language-bash"># پیمایش فایل‌ها با glob (نه با ls)
+shopt -s nullglob                    # اگر چیزی match نشد، حلقه اجرا نشود
+for f in /var/backups/*.sql.gz; do
+    echo "found $f"
+done
+
+# بازه‌ی عددی
+for i in {1..5}; do echo "$i"; done
+for (( i = 0; i &lt; 3; i++ )); do echo "try $i"; done
+
+# خواندن خط‌به‌خط فایل (IFS= و -r برای حفظ فاصله‌ها و backslash)
+while IFS= read -r line; do
+    echo "&gt; $line"
+done &lt; hosts.txt
+
+# خواندن ستون‌ها
+while IFS=: read -r user _ uid _; do
+    (( uid &gt;= 1000 )) &amp;&amp; echo "$user"
+done &lt; /etc/passwd
+
+# retry با until
+attempt=0
+until curl -fsS http://localhost/up &gt;/dev/null; do
+    attempt=$(( attempt + 1 ))
+    (( attempt &gt;= 5 )) &amp;&amp; { echo "service did not come up" &gt;&amp;2; exit 1; }
+    sleep 2
+done</code></pre>
+    <div class="callout warn"><p>تله‌ی subshell: در <code>cat file | while read -r line; do count=$((count+1)); done</code> حلقه در یک subshell اجرا می‌شود و بعد از حلقه <code>count</code> تغییر نکرده است. به جای pipe از redirection (<code>done &lt; file</code>) یا process substitution (<code>done &lt; &lt;(command)</code>) استفاده کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="functions-errors" data-title="توابع، Exit Code و مدیریت خطا">
+    <h2>توابع، Exit Code و مدیریت خطا</h2>
+    <h3>توابع</h3>
+    <pre><code class="language-bash">log() {
+    local level="$1"; shift
+    printf '%s [%s] %s\n' "$(date '+%F %T')" "$level" "$*" &gt;&amp;2
+}
+
+is_port_open() {
+    local host="$1" port="$2"
+    timeout 3 bash -c "&lt;/dev/tcp/${host}/${port}" 2&gt;/dev/null
+}
+
+get_release_dir() {
+    echo "/var/www/app/releases/$(date +%Y%m%d%H%M%S)"   # «برگرداندن» مقدار با stdout
+}
+
+log INFO "starting"
+release=$(get_release_dir)
+if is_port_open 127.0.0.1 3306; then log INFO "mysql is up"; fi</code></pre>
+    <ul>
+      <li>آرگومان‌های تابع با <code>$1</code>، <code>$2</code> و <code>"$@"</code> خوانده می‌شوند، نه با پرانتز.</li>
+      <li><code>local</code> متغیر را محلی می‌کند؛ بدون آن همه‌ی متغیرها <strong>سراسری</strong> هستند و تابع‌ها روی هم اثر می‌گذارند.</li>
+      <li><code>return N</code> فقط یک <strong>کد وضعیت</strong> (۰ تا ۲۵۵) برمی‌گرداند؛ داده را با <code>echo</code> و <code>$( )</code> برگردانید.</li>
+      <li>لاگ و پیام‌ها را به stderr (<code>&gt;&amp;2</code>) بفرستید تا با خروجی داده‌ای که با <code>$( )</code> گرفته می‌شود قاطی نشوند.</li>
+    </ul>
+
+    <h3>Exit code و عملگرهای &amp;&amp; و ||</h3>
+    <p>هر دستور یک <strong>exit status</strong> برمی‌گرداند: <code>0</code> یعنی موفقیت، هر مقدار دیگر (۱ تا ۲۵۵) یعنی خطا. قراردادهای رایج: <code>1</code> خطای عمومی، <code>2</code> استفاده‌ی نادرست، <code>126</code> قابل اجرا نیست، <code>127</code> دستور پیدا نشد، <code>128+N</code> کشته شدن با سیگنال N (مثلاً 130 برای Ctrl+C و 137 برای SIGKILL).</p>
+    <pre><code class="language-bash">mkdir -p /tmp/work &amp;&amp; cd /tmp/work     # دومی فقط اگر اولی موفق بود
+cd "$APP_DIR" || exit 1                  # اگر شکست خورد، خارج شو
+grep -q ERROR app.log; echo "status: $?" # 0 = پیدا شد، 1 = پیدا نشد، 2 = خطا
+
+# الگوی کوتاه مدیریت خطا
+command -v composer &gt;/dev/null || { echo "composer missing" &gt;&amp;2; exit 127; }</code></pre>
+    <div class="callout warn"><p><code>a &amp;&amp; b || c</code> معادل if/else نیست: اگر <code>a</code> موفق و <code>b</code> ناموفق باشد، <code>c</code> هم اجرا می‌شود. برای منطق شرطی واقعی از <code>if</code> استفاده کنید.</p></div>
+
+    <h3>Strict mode: set -euo pipefail</h3>
+    <dl class="terms">
+      <dt>set -e (errexit)</dt><dd>اگر دستوری با کد غیرصفر تمام شد، اسکریپت فوراً خارج شود. استثناها: دستورات داخل شرط <code>if</code>/<code>while</code>، دستورات قبل از آخرین عضو زنجیره‌ی <code>&amp;&amp;</code>/<code>||</code>، و دستوری که با <code>!</code> منفی شده.</dd>
+      <dt>set -u (nounset)</dt><dd>استفاده از متغیر تعریف‌نشده خطاست؛ جلوی اشتباه تایپی و فاجعه‌هایی مثل <code>rm -rf "$DIR/"</code> با DIR خالی را می‌گیرد. برای متغیر اختیاری: <code>${VAR:-}</code>.</dd>
+      <dt>set -o pipefail</dt><dd>کد خروج pipeline برابر کد آخرین دستوری است که شکست خورده (نه فقط آخرین دستور). بدون آن <code>mysqldump … | gzip &gt; f.gz</code> حتی اگر mysqldump شکست بخورد موفق گزارش می‌شود.</dd>
+      <dt>set -x</dt><dd>چاپ هر دستور پیش از اجرا؛ برای دیباگ (<code>bash -x script.sh</code>).</dd>
+    </dl>
+    <div class="callout warn"><p><code>local out=$(cmd)</code> کد خروج <code>cmd</code> را با کد خروج <code>local</code> (که همیشه صفر است) می‌پوشاند و <code>set -e</code> عمل نمی‌کند (ShellCheck: <code>SC2155</code>). جدا بنویسید: <code>local out; out=$(cmd)</code>.</p></div>
+
+    <h3>trap برای تمیزکاری</h3>
+    <pre><code class="language-bash">#!/usr/bin/env bash
+set -euo pipefail
+
+tmpdir=$(mktemp -d)
+cleanup() {
+    rm -rf "$tmpdir"
+}
+trap cleanup EXIT                                        # در هر نوع خروج (موفق، خطا، exit)
+trap 'echo "error on line $LINENO" &gt;&amp;2' ERR             # هنگام خطای یک دستور
+trap 'echo "interrupted" &gt;&amp;2; exit 130' INT TERM        # Ctrl+C یا kill
+
+cd "$tmpdir"
+curl -fsSLo data.json https://example.com/export
+# ... پردازش؛ پوشه‌ی موقت در هر حال پاک می‌شود</code></pre>
+    <div class="callout exam"><p>در پاسخ به «<code>set -euo pipefail</code> چه می‌کند؟» هر سه گزینه را جدا تعریف کنید، یک مثال برای هر کدام بزنید (به‌خصوص pipefail با mysqldump | gzip) و حتماً به محدودیت‌های <code>set -e</code> اشاره کنید (داخل if، زنجیره‌ی &amp;&amp;، <code>local var=$(...)</code>، <code>((i++))</code> با صفر). این نشان می‌دهد ابزار را عمیق می‌شناسید.</p></div>
+  </section>
+
+  <section class="lesson" id="io-redirection" data-title="ورودی/خروجی، Redirection و Pipe">
+    <h2>ورودی/خروجی، Redirection، Pipe و Here-doc</h2>
+    <p>هر فرایند سه جریان استاندارد دارد: <strong>stdin</strong> (FD 0)، <strong>stdout</strong> (FD 1) و <strong>stderr</strong> (FD 2). جدا بودن stderr باعث می‌شود پیام‌های خطا وارد داده‌ای که به دستور بعدی pipe می‌شود نشوند.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>شکل</th><th>معنا</th></tr></thead>
+      <tbody>
+        <tr><td><code>cmd &gt; file</code></td><td>stdout به فایل (بازنویسی)</td></tr>
+        <tr><td><code>cmd &gt;&gt; file</code></td><td>stdout به انتهای فایل (append)</td></tr>
+        <tr><td><code>cmd 2&gt; err.log</code></td><td>stderr به فایل</td></tr>
+        <tr><td><code>cmd &gt; out.log 2&gt;&amp;1</code></td><td>هر دو به یک فایل (ترتیب مهم است)</td></tr>
+        <tr><td><code>cmd &amp;&gt; out.log</code></td><td>معادل کوتاه bash برای مورد قبل</td></tr>
+        <tr><td><code>cmd &gt; /dev/null 2&gt;&amp;1</code></td><td>دور ریختن همه‌ی خروجی</td></tr>
+        <tr><td><code>cmd &lt; file</code></td><td>stdin از فایل</td></tr>
+        <tr><td><code>cmd1 | cmd2</code></td><td>stdout اولی به stdin دومی (هر دو هم‌زمان اجرا می‌شوند)</td></tr>
+        <tr><td><code>cmd1 |&amp; cmd2</code></td><td>stdout و stderr با هم به pipe (bash)</td></tr>
+        <tr><td><code>diff &lt;(cmd1) &lt;(cmd2)</code></td><td>process substitution: خروجی دستور به شکل یک فایل</td></tr>
+        <tr><td><code>echo "x" &gt;&amp;2</code></td><td>نوشتن روی stderr</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p><strong>چرا ترتیب در <code>2&gt;&amp;1</code> مهم است؟</strong> redirectionها از چپ به راست پردازش می‌شوند و <code>2&gt;&amp;1</code> یعنی «FD 2 را به همان جایی ببر که FD 1 <em>الان</em> اشاره می‌کند». در <code>cmd &gt; file 2&gt;&amp;1</code> اول stdout به فایل می‌رود و بعد stderr به همان فایل؛ در <code>cmd 2&gt;&amp;1 &gt; file</code> اول stderr به ترمینال (جای فعلی stdout) و بعد فقط stdout به فایل می‌رود، پس خطاها در فایل نیستند.</p></div>
+
+    <h3>tee</h3>
+    <pre><code class="language-bash">./deploy.sh 2&gt;&amp;1 | tee -a deploy.log      # هم روی صفحه، هم در فایل
+echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swap.conf &gt;/dev/null</code></pre>
+    <div class="callout warn"><p><code>sudo echo "x" &gt; /etc/file</code> کار نمی‌کند: redirection توسط شل <strong>کاربر فعلی</strong> (نه root) انجام می‌شود و فقط echo با sudo اجرا می‌شود. راه درست: <code>echo "x" | sudo tee /etc/file</code>.</p></div>
+
+    <h3>Here-document و Here-string</h3>
+    <pre><code class="language-bash"># متغیرها expand می‌شوند
+cat &gt; /etc/nginx/sites-available/"$DOMAIN" &lt;&lt;EOF
+server {
+    server_name $DOMAIN;
+    root $APP_DIR/current/public;
+}
+EOF
+
+# با 'EOF' هیچ expansionی انجام نمی‌شود (برای نوشتن اسکریپت یا متن حاوی $)
+cat &gt; /usr/local/bin/hello &lt;&lt;'EOF'
+#!/usr/bin/env bash
+echo "user is $USER"
+EOF
+
+# &lt;&lt;- تب‌های ابتدای خطوط را حذف می‌کند (فقط tab، نه space)
+# اجرای چند کوئری
+mysql --defaults-extra-file=/root/.my.cnf app &lt;&lt;'SQL'
+DELETE FROM sessions WHERE last_activity &lt; UNIX_TIMESTAMP(NOW() - INTERVAL 7 DAY);
+SQL
+
+# here-string
+grep -c "x" &lt;&lt;&lt; "$content"</code></pre>
+  </section>
+
+  <section class="lesson" id="text-processing" data-title="ابزارهای پردازش متن">
+    <h2>ابزارهای پردازش متن</h2>
+    <p>فلسفه‌ی Unix: هر ابزار یک کار را خوب انجام دهد و ابزارها با pipe روی <strong>جریان متن</strong> ترکیب شوند.</p>
+
+    <h3>grep: جستجوی الگو</h3>
+    <pre><code class="language-bash">grep -i "error" laravel.log              # بدون حساسیت به حروف
+grep -n "Exception" laravel.log          # شماره‌ی خط
+grep -v "DEBUG" app.log                  # خطوطی که شامل نیستند
+grep -c "production.ERROR" laravel.log   # شمارش خطوط منطبق
+grep -rn "env(" app/ --include="*.php"   # جستجوی بازگشتی در کد
+grep -l "TODO" -r src/                   # فقط نام فایل‌ها
+grep -E "5[0-9]{2} " access.log          # regex گسترده (ERE)
+grep -oE "[0-9]{1,3}(\.[0-9]{1,3}){3}" access.log   # فقط بخش منطبق
+grep -F "[2026-11-07" laravel.log        # رشته‌ی ثابت (بدون تفسیر regex)
+grep -A 5 -B 2 "SQLSTATE" laravel.log    # context بعد و قبل</code></pre>
+
+    <h3>sed: ویرایش جریانی</h3>
+    <pre><code class="language-bash">sed 's/old/new/' file           # اولین مورد در هر خط
+sed 's/old/new/g' file          # همه‌ی موارد
+sed -n '10,20p' file            # چاپ خطوط 10 تا 20
+sed '/^#/d; /^$/d' nginx.conf   # حذف کامنت‌ها و خطوط خالی
+sed -i 's/^APP_DEBUG=.*/APP_DEBUG=false/' .env      # ویرایش درجا (GNU sed)
+sed -i.bak 's|/old/path|/new/path|g' config.ini     # با بکاپ؛ جداکننده‌ی دلخواه |
+sed -E 's/([0-9]+)ms/\1 ms/g' file                  # گروه در regex گسترده</code></pre>
+    <div class="callout note"><p><code>sed -i</code> در GNU (لینوکس) و BSD (macOS) متفاوت است؛ در macOS باید <code>sed -i '' 's/a/b/' file</code> نوشت. برای اسکریپت‌های قابل‌حمل از <code>-i.bak</code> استفاده کنید که روی هر دو کار می‌کند.</p></div>
+
+    <h3>awk: پردازش ستونی</h3>
+    <pre><code class="language-bash">awk '{ print $1 }' access.log                   # ستون اول (جداکننده: فاصله)
+awk -F: '{ print $1, $7 }' /etc/passwd          # جداکننده‌ی :
+awk '$9 &gt;= 500' access.log                      # فیلتر: status 5xx
+awk '{ sum += $10 } END { print sum/1024/1024 " MB" }' access.log   # جمع ستون
+awk 'NR &gt; 1 &amp;&amp; NF &gt; 0' data.csv                 # رد کردن header و خطوط خالی
+awk '{ count[$9]++ } END { for (s in count) print s, count[s] }' access.log   # گروه‌بندی</code></pre>
+    <p>متغیرهای مهم awk: <code>$0</code> کل خط، <code>$1..$n</code> ستون‌ها، <code>NF</code> تعداد ستون‌ها (<code>$NF</code> ستون آخر)، <code>NR</code> شماره‌ی خط، <code>-F</code> جداکننده، و بلوک‌های <code>BEGIN</code>/<code>END</code>.</p>
+
+    <h3>cut، sort، uniq، wc، tr</h3>
+    <pre><code class="language-bash">cut -d: -f1 /etc/passwd          # فیلد اول با جداکننده‌ی :
+cut -d, -f2,4 data.csv
+cut -c1-10 file                  # کاراکترهای 1 تا 10
+
+sort file                        # مرتب‌سازی الفبایی
+sort -n / -rn                    # عددی / عددی نزولی
+sort -t, -k3,3n data.csv         # بر اساس ستون سوم عددی
+sort -u                          # یکتا
+sort -h                          # اندازه‌های خوانا (1K، 2M) – مثلاً خروجی du -h
+
+uniq                             # حذف تکرارهای «مجاور» (پس قبلش sort لازم است)
+uniq -c                          # شمارش هر گروه
+uniq -d                          # فقط تکراری‌ها
+
+wc -l file                       # تعداد خطوط
+wc -w / wc -c                    # کلمات / بایت‌ها
+
+tr 'a-z' 'A-Z'                   # تبدیل کاراکترها
+tr -d '\r'                       # حذف CR ویندوزی
+tr -s ' '                        # فشرده کردن فاصله‌های تکراری</code></pre>
+
+    <h3>find و xargs</h3>
+    <pre><code class="language-bash">find /var/log -name "*.log" -size +100M            # فایل‌های بزرگ
+find storage/logs -name "*.log" -mtime +14 -delete # حذف لاگ‌های قدیمی‌تر از 14 روز
+find . -type f -name "*.php" -newer composer.lock  # تغییرکرده بعد از فایل مرجع
+find storage -type d -exec chmod 775 {} +          # {} + : یک‌بار با چندین فایل (سریع‌تر)
+find . -name "*.tmp" -exec rm {} \;                # {} \; : یک‌بار به ازای هر فایل
+
+# xargs: تبدیل ورودی به آرگومان؛ با -print0 / -0 نام‌های دارای فاصله امن می‌مانند
+find . -name "*.php" -print0 | xargs -0 grep -l "DB::raw"
+find images -name "*.png" -print0 | xargs -0 -n 10 -P 4 optipng   # موازی: 4 فرایند
+cat servers.txt | xargs -I{} ssh {} "uptime"</code></pre>
+
+    <h3>jq: پردازش JSON</h3>
+    <pre><code class="language-bash">curl -s https://api.example.com/users | jq '.'                       # pretty print
+jq -r '.data[].email' users.json                                     # -r: رشته‌ی خام بدون quote
+jq '.data[] | select(.status == "active") | {id, name}' users.json   # فیلتر و انتخاب فیلد
+jq -r '.data[] | [.id, .name, .email] | @csv' users.json &gt; users.csv
+jq '.data | length' users.json                                       # تعداد
+jq -r '.version' composer.json
+jq '.scripts.build = "vite build"' package.json &gt; tmp &amp;&amp; mv tmp package.json   # ویرایش
+
+# لاگ‌های JSON (مثلاً channel با JsonFormatter در Laravel)
+jq -r 'select(.level_name == "ERROR") | .message' storage/logs/laravel.json.log</code></pre>
+  </section>
+
+  <section class="lesson" id="one-liners" data-title="One-linerهای کاربردی">
+    <h2>One-linerهای کاربردی برای سرور</h2>
+    <p>فرمت پیش‌فرض لاگ Nginx (<code>combined</code>):</p>
+    <pre><code class="language-plaintext">203.0.113.7 - - [07/Nov/2026:10:15:32 +0330] "GET /api/products?page=2 HTTP/2.0" 200 5123 "-" "Mozilla/5.0 ..."
+$1=IP        $4=[زمان                       $6="متد $7=مسیر         $8=پروتکل" $9=status $10=bytes</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>هدف</th><th>دستور</th></tr></thead>
+      <tbody>
+        <tr><td>۱۰ IP پرتکرار</td><td><code>awk '{print $1}' access.log | sort | uniq -c | sort -rn | head -10</code></td></tr>
+        <tr><td>تعداد هر status code</td><td><code>awk '{print $9}' access.log | sort | uniq -c | sort -rn</code></td></tr>
+        <tr><td>تعداد خطاهای 5xx</td><td><code>awk '$9 ~ /^5/' access.log | wc -l</code></td></tr>
+        <tr><td>پرتکرارترین URLهای 404</td><td><code>awk '$9 == 404 {print $7}' access.log | sort | uniq -c | sort -rn | head</code></td></tr>
+        <tr><td>درخواست در هر دقیقه</td><td><code>awk '{print substr($4, 2, 17)}' access.log | uniq -c | tail</code></td></tr>
+        <tr><td>endpointهای پرترافیک بدون query string</td><td><code>awk '{split($7, a, "?"); print a[1]}' access.log | sort | uniq -c | sort -rn | head</code></td></tr>
+        <tr><td>حجم کل ارسال‌شده (MB)</td><td><code>awk '{s += $10} END {print s/1048576}' access.log</code></td></tr>
+        <tr><td>لاگ‌های فشرده‌ی چرخیده</td><td><code>zcat access.log.*.gz | awk '{print $1}' | sort | uniq -c | sort -rn | head</code></td></tr>
+        <tr><td>دنبال کردن زنده‌ی خطاها</td><td><code>tail -f access.log | awk '$9 &gt;= 500'</code></td></tr>
+        <tr><td>تعداد ERROR امروز در Laravel</td><td><code>grep -c "^\[$(date +%F).*production.ERROR" storage/logs/laravel.log</code></td></tr>
+        <tr><td>پرتکرارترین پیام‌های خطا</td><td><code>grep -oE "production.ERROR: [^{]{0,80}" laravel.log | sort | uniq -c | sort -rn | head</code></td></tr>
+        <tr><td>۱۰ پوشه‌ی بزرگ</td><td><code>du -h --max-depth=1 /var | sort -h | tail -10</code></td></tr>
+        <tr><td>فرایندهای پرمصرف حافظه</td><td><code>ps aux --sort=-%mem | head -6</code></td></tr>
+        <tr><td>تعداد اتصال‌ها به تفکیک وضعیت</td><td><code>ss -tan | awk 'NR&gt;1 {print $1}' | sort | uniq -c</code></td></tr>
+        <tr><td>جستجوی env() خارج از config</td><td><code>grep -rn "env(" app/ routes/ --include="*.php"</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>الگوی <code>sort | uniq -c | sort -rn | head</code> را حفظ کنید؛ پاسخ اکثر سوالات «پرتکرارترین X در لاگ» همین است. یادتان باشد <code>uniq</code> فقط خطوط تکراری <strong>مجاور</strong> را ادغام می‌کند، پس <code>sort</code> اول لازم است (به جز وقتی داده مثل زمان، از قبل مرتب است).</p></div>
+  </section>
+
+  <section class="lesson" id="cron" data-title="Cron و Scheduler لاراول">
+    <h2>Cron و Scheduler لاراول</h2>
+    <p><strong>cron</strong> سرویس زمان‌بندی اجرای دستورات در لینوکس است. هر کاربر یک <strong>crontab</strong> دارد.</p>
+    <pre class="diagram">┌───────────── دقیقه (0-59)
+│ ┌─────────── ساعت (0-23)
+│ │ ┌───────── روز ماه (1-31)
+│ │ │ ┌─────── ماه (1-12)
+│ │ │ │ ┌───── روز هفته (0-7؛ 0 و 7 = یکشنبه)
+│ │ │ │ │
+* * * * *  command</pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عبارت</th><th>معنا</th></tr></thead>
+      <tbody>
+        <tr><td><code>* * * * *</code></td><td>هر دقیقه</td></tr>
+        <tr><td><code>*/5 * * * *</code></td><td>هر ۵ دقیقه</td></tr>
+        <tr><td><code>0 2 * * *</code></td><td>هر روز ساعت ۰۲:۰۰</td></tr>
+        <tr><td><code>30 1 * * 1-5</code></td><td>دوشنبه تا جمعه ساعت ۰۱:۳۰</td></tr>
+        <tr><td><code>0 0 1 * *</code></td><td>اول هر ماه نیمه‌شب</td></tr>
+        <tr><td><code>0 */6 * * *</code></td><td>هر ۶ ساعت (دقیقه‌ی صفر)</td></tr>
+        <tr><td><code>15 3 * * 0</code></td><td>یکشنبه‌ها ساعت ۰۳:۱۵</td></tr>
+        <tr><td><code>@reboot</code>، <code>@daily</code>، <code>@hourly</code></td><td>میان‌برها</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-bash">crontab -e                  # ویرایش crontab کاربر جاری
+crontab -l                  # نمایش
+sudo crontab -u www-data -e # crontab کاربر دیگر
+# فایل‌های /etc/cron.d/* یک فیلد «کاربر» اضافه بعد از زمان دارند:
+# 0 2 * * * root /usr/local/bin/backup.sh</code></pre>
+
+    <h3>تله‌های cron</h3>
+    <ul>
+      <li><strong>محیط حداقلی:</strong> cron متغیرهای <code>.bashrc</code> را ندارد و <code>PATH</code> آن محدود است (مثلاً <code>/usr/bin:/bin</code>). از مسیر کامل استفاده کنید یا <code>PATH</code> را بالای crontab تعریف کنید.</li>
+      <li><strong>کاراکتر <code>%</code></strong> در crontab به معنای newline است و باید escape شود: <code>date +\%F</code>.</li>
+      <li><strong>پوشه‌ی جاری</strong> home کاربر است؛ <code>cd</code> صریح انجام دهید.</li>
+      <li><strong>خروجی</strong>: اگر خروجی redirect نشود، cron سعی می‌کند آن را ایمیل کند؛ لاگ کنید: <code>&gt;&gt; /var/log/job.log 2&gt;&amp;1</code>.</li>
+      <li><strong>هم‌پوشانی</strong>: اگر اجرای قبلی تمام نشده باشد، cron باز هم اجرای جدید را شروع می‌کند؛ با <code>flock</code> جلوگیری کنید.</li>
+      <li>منطقه‌ی زمانی سرور (<code>timedatectl</code>) را بدانید.</li>
+    </ul>
+    <pre><code class="language-plaintext">SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+MAILTO=""
+
+0 2 * * * flock -n /tmp/db-backup.lock /usr/local/bin/db-backup.sh &gt;&gt; /var/log/db-backup.log 2&gt;&amp;1
+*/10 * * * * /usr/local/bin/healthcheck.sh &gt;&gt; /var/log/healthcheck.log 2&gt;&amp;1</code></pre>
+
+    <h3>Scheduler لاراول</h3>
+    <p>به جای ده‌ها خط cron، Laravel زمان‌بندی را در کد (نسخه‌دار و قابل review) تعریف می‌کند و فقط <strong>یک</strong> cron لازم است که هر دقیقه <code>schedule:run</code> را اجرا کند. این دستور بررسی می‌کند کدام تسک‌ها در این دقیقه موعدشان است و آن‌ها را اجرا می‌کند.</p>
+    <pre><code class="language-plaintext">* * * * * cd /var/www/app/current &amp;&amp; php artisan schedule:run &gt;&gt; /dev/null 2&gt;&amp;1</code></pre>
+    <pre><code class="language-php">&lt;?php
+// routes/console.php  (Laravel 11+)
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('reports:daily --email')
+    -&gt;dailyAt('02:00')
+    -&gt;timezone('Asia/Tehran')
+    -&gt;withoutOverlapping()        // اگر اجرای قبلی هنوز در جریان است، اجرا نکن (با cache lock)
+    -&gt;onOneServer()               // روی چند سرور فقط یک‌بار (نیاز به cache مشترک مثل Redis)
+    -&gt;runInBackground()           // تسک‌های دیگر همان دقیقه را معطل نکند
+    -&gt;emailOutputOnFailure('ops@example.com');
+
+Schedule::command('queue:prune-failed --hours=168')-&gt;daily();
+Schedule::command('sanctum:prune-expired --hours=24')-&gt;daily();
+Schedule::job(new SyncExchangeRates)-&gt;everyFifteenMinutes();
+Schedule::exec('/usr/local/bin/db-backup.sh')-&gt;dailyAt('03:00');</code></pre>
+    <ul>
+      <li><code>php artisan schedule:list</code>: نمایش تسک‌ها و زمان اجرای بعدی.</li>
+      <li><code>php artisan schedule:test</code>: اجرای دستی یک تسک برای تست.</li>
+      <li><code>php artisan schedule:work</code>: در محیط <strong>local</strong> بدون cron، در foreground هر دقیقه scheduler را اجرا می‌کند.</li>
+      <li>Laravel تسک‌های کمتر از یک دقیقه را هم پشتیبانی می‌کند (مثلاً <code>everyTenSeconds()</code>)؛ در این حالت <code>schedule:run</code> تا پایان دقیقه فعال می‌ماند.</li>
+    </ul>
+    <div class="callout exam"><p>چرا scheduler لاراول بهتر از چند خط cron است؟ زمان‌بندی در کد و git (review، تاریخچه، یکسان در همه‌ی محیط‌ها)، امکانات داخلی مثل <code>withoutOverlapping</code>، <code>onOneServer</code>، hookهای <code>onFailure</code>/<code>onSuccess</code>، منطقه‌ی زمانی و شرط‌ها (<code>-&gt;when()</code>، <code>-&gt;environments('production')</code>)، و فقط یک ورودی cron برای مدیریت روی سرور.</p></div>
+  </section>
+
+  <section class="lesson" id="robust-scripts" data-title="نوشتن اسکریپت‌های مقاوم">
+    <h2>نوشتن اسکریپت‌های مقاوم</h2>
+    <h3>آرگومان‌ها با getopts</h3>
+    <pre><code class="language-bash">usage() {
+    cat &lt;&lt;EOF
+Usage: $(basename "$0") [-e env] [-n] [-h] &lt;target&gt;
+  -e ENV   environment (default: staging)
+  -n       dry-run: only print commands
+  -h       show help
+EOF
+}
+
+ENV="staging"
+DRY_RUN=0
+while getopts ":e:nh" opt; do       # : اول = مدیریت خطا توسط خودمان؛ e: = نیاز به مقدار
+    case "$opt" in
+        e)  ENV="$OPTARG" ;;
+        n)  DRY_RUN=1 ;;
+        h)  usage; exit 0 ;;
+        :)  echo "option -$OPTARG requires a value" &gt;&amp;2; usage; exit 2 ;;
+        \?) echo "unknown option -$OPTARG" &gt;&amp;2; usage; exit 2 ;;
+    esac
+done
+shift $(( OPTIND - 1 ))              # حذف گزینه‌ها؛ حالا $1 اولین آرگومان موقعیتی است
+TARGET="${1:?target is required}"</code></pre>
+    <p><code>getopts</code> داخلی bash است و فقط گزینه‌های کوتاه (<code>-e</code>) را پشتیبانی می‌کند؛ برای گزینه‌های بلند (<code>--env</code>) باید حلقه‌ی دستی با <code>case</code> و <code>shift</code> نوشت.</p>
+
+    <h3>اصول طراحی</h3>
+    <dl class="terms">
+      <dt>Fail fast</dt><dd><code>set -euo pipefail</code>، بررسی پیش‌نیازها (دستورات، فایل‌ها، کاربر) در ابتدای اسکریپت.</dd>
+      <dt>Logging</dt><dd>تابع log با timestamp و سطح، نوشتن روی stderr یا فایل؛ در cron خروجی را redirect کنید. <code>logger -t backup "msg"</code> به syslog/journald می‌نویسد.</dd>
+      <dt>Idempotency</dt><dd>اجرای چندباره همان نتیجه را بدهد و خراب نکند: <code>mkdir -p</code>، <code>ln -sfn</code>، بررسی وجود قبل از ایجاد، <code>grep -q || echo &gt;&gt;</code> برای افزودن خط یک‌باره.</dd>
+      <dt>Dry-run</dt><dd>حالتی که فقط نشان دهد چه کاری انجام می‌شود؛ برای عملیات مخرب (حذف، deploy) ضروری است.</dd>
+      <dt>Locking</dt><dd>جلوگیری از اجرای هم‌زمان دو نمونه با <code>flock</code>.</dd>
+      <dt>Cleanup</dt><dd><code>trap … EXIT</code> برای حذف فایل‌های موقت و آزاد کردن منابع.</dd>
+      <dt>Exit code معنادار</dt><dd>تا cron، CI یا مانیتورینگ بفهمد شکست رخ داده.</dd>
+      <dt>بدون secret در کد</dt><dd>رمزها در فایل با دسترسی 600 یا متغیر محیطی؛ نه در آرگومان خط فرمان (در <code>ps</code> دیده می‌شود).</dd>
+    </dl>
+
+    <pre><code class="language-bash">run() {
+    # اجرای دستور یا فقط چاپ آن در حالت dry-run
+    if (( DRY_RUN )); then
+        printf '[dry-run] %q ' "$@"; echo
+    else
+        "$@"
+    fi
+}
+run rm -rf "${RELEASES_DIR:?}/old-release"
+
+# idempotent: افزودن خط فقط اگر وجود ندارد
+grep -qxF 'vm.swappiness=10' /etc/sysctl.conf || echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf</code></pre>
+
+    <h3>Locking با flock</h3>
+    <pre><code class="language-bash">LOCK_FILE=/var/lock/db-backup.lock
+exec 200&gt;"$LOCK_FILE"                 # باز کردن FD شماره 200 روی فایل قفل
+if ! flock -n 200; then               # -n: اگر قفل گرفته شده، منتظر نمان
+    echo "another instance is running" &gt;&amp;2
+    exit 1
+fi
+# ... بقیه‌ی اسکریپت؛ قفل با پایان فرایند خودکار آزاد می‌شود
+
+# یا از بیرون، در crontab:
+# */5 * * * * flock -n /tmp/sync.lock /usr/local/bin/sync.sh</code></pre>
+    <div class="callout tip"><p>مزیت <code>flock</code> نسبت به «ساختن یک فایل pid و پاک کردنش در پایان»: اگر اسکریپت کرش کند یا kill -9 شود، قفل کرنل با بسته شدن FD خودکار آزاد می‌شود و فایل قفل کهنه (stale lock) باقی نمی‌ماند.</p></div>
+  </section>
+
+  <section class="lesson" id="example-scripts" data-title="اسکریپت‌های نمونه‌ی کامل">
+    <h2>اسکریپت‌های نمونه‌ی کامل</h2>
+    <h3>۱. بکاپ دیتابیس با چرخش (Rotation)</h3>
+    <pre><code class="language-bash">#!/usr/bin/env bash
+# /usr/local/bin/db-backup.sh — بکاپ روزانه‌ی MySQL با نگهداری N روز
+set -euo pipefail
+
+DB_NAME="${DB_NAME:-app}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/mysql}"
+RETENTION_DAYS="${RETENTION_DAYS:-7}"
+MYSQL_CNF="${MYSQL_CNF:-/root/.my.cnf}"     # [client] user=... password=... (chmod 600)
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+FILE="${BACKUP_DIR}/${DB_NAME}-${TIMESTAMP}.sql.gz"
+
+log() { printf '%s [%s] %s\n' "$(date '+%F %T')" "$1" "$2"; }
+
+exec 9&gt;/var/lock/db-backup.lock
+flock -n 9 || { log ERROR "backup already running"; exit 1; }
+
+cleanup() { [[ -f "${FILE}.part" ]] &amp;&amp; rm -f "${FILE}.part"; }
+trap cleanup EXIT
+
+mkdir -p "$BACKUP_DIR"
+log INFO "starting backup of ${DB_NAME}"
+
+# --single-transaction: snapshot سازگار InnoDB بدون قفل جدول؛ pipefail شکست mysqldump را می‌گیرد
+mysqldump --defaults-extra-file="$MYSQL_CNF" \
+    --single-transaction --quick --routines --triggers \
+    "$DB_NAME" | gzip -c &gt; "${FILE}.part"
+
+gzip -t "${FILE}.part"                 # بررسی سلامت آرشیو
+mv "${FILE}.part" "$FILE"              # فقط فایل کامل نام نهایی می‌گیرد
+log INFO "backup written: $FILE ($(du -h "$FILE" | cut -f1))"
+
+# چرخش: حذف بکاپ‌های قدیمی‌تر از RETENTION_DAYS
+find "$BACKUP_DIR" -name "${DB_NAME}-*.sql.gz" -type f -mtime +"$RETENTION_DAYS" -print -delete
+
+# کپی خارج از سرور (قاعده‌ی 3-2-1)؛ مثلاً با rclone یا aws cli
+# rclone copy "$FILE" remote:backups/mysql/
+log INFO "done"</code></pre>
+    <ul>
+      <li>رمز دیتابیس در فایل <code>.my.cnf</code> با دسترسی 600 است، نه در آرگومان <code>-p</code> که در <code>ps</code> دیده می‌شود.</li>
+      <li>نوشتن در <code>.part</code> و سپس <code>mv</code> اتمیک تضمین می‌کند فایل ناقص هرگز به عنوان بکاپ سالم شناخته نشود.</li>
+      <li>بکاپی که restore آن تست نشده، قابل اتکا نیست؛ تست restore دوره‌ای جزو فرایند است.</li>
+    </ul>
+
+    <h3>۲. اسکریپت deploy ساده با کمترین downtime برای Laravel</h3>
+    <pre><code class="language-bash">#!/usr/bin/env bash
+# deploy.sh — ساختار: releases/&lt;ts&gt;، shared/{.env,storage}، current -&gt; releases/&lt;ts&gt;
+set -euo pipefail
+
+APP_DIR=/var/www/app
+REPO=git@github.com:acme/app.git
+BRANCH="${1:-main}"
+KEEP=5
+RELEASE="$APP_DIR/releases/$(date +%Y%m%d%H%M%S)"
+PHP_FPM=php8.3-fpm
+
+log() { echo "==&gt; $*"; }
+trap 'echo "deploy FAILED at line $LINENO; current release untouched" &gt;&amp;2' ERR
+
+exec 9&gt;"$APP_DIR/.deploy.lock"
+flock -n 9 || { echo "another deploy is running" &gt;&amp;2; exit 1; }
+
+log "cloning $BRANCH"
+git clone --depth 1 --branch "$BRANCH" "$REPO" "$RELEASE"
+
+log "linking shared files"
+rm -rf "$RELEASE/storage"
+ln -s "$APP_DIR/shared/storage" "$RELEASE/storage"
+ln -s "$APP_DIR/shared/.env" "$RELEASE/.env"
+
+cd "$RELEASE"
+log "installing dependencies"
+composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+npm ci --no-audit --no-fund
+npm run build
+
+log "migrating"
+php artisan migrate --force
+
+log "caching framework files"
+php artisan optimize
+
+log "switching symlink (atomic)"
+ln -sfn "$RELEASE" "$APP_DIR/current.tmp"
+mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"
+
+log "reloading services"
+sudo systemctl reload "$PHP_FPM"        # پاک شدن OPcache
+php artisan queue:restart
+
+log "smoke test"
+curl -fsS --max-time 10 -o /dev/null https://example.com/up
+
+log "cleaning old releases"
+ls -1dt "$APP_DIR"/releases/*/ | tail -n +$(( KEEP + 1 )) | xargs -r rm -rf
+
+log "deployed $RELEASE"</code></pre>
+    <ul>
+      <li>همه‌ی مراحل سنگین قبل از سوییچ انجام می‌شوند؛ اگر هر کدام شکست بخورد (<code>set -e</code>)، <code>current</code> دست نخورده می‌ماند.</li>
+      <li><code>ln -sfn</code> به یک نام موقت و سپس <code>mv -T</code> جایگزینی را اتمیک می‌کند (rename در یک فایل‌سیستم اتمیک است).</li>
+      <li>Nginx باید با <code>$realpath_root</code> پیکربندی شده باشد.</li>
+      <li>Migrationها باید با نسخه‌ی قبلی کد سازگار باشند (expand/contract)، چون بین migrate و سوییچ، کد قدیمی هنوز سرویس می‌دهد.</li>
+      <li>Rollback: اشاره دادن <code>current</code> به release قبلی و reload FPM.</li>
+      <li>در اینجا parse کردن <code>ls</code> فقط برای نام‌های کنترل‌شده‌ی timestamp (بدون فاصله) قابل قبول است.</li>
+    </ul>
+
+    <h3>۳. Health check</h3>
+    <pre><code class="language-bash">#!/usr/bin/env bash
+# healthcheck.sh — بررسی HTTP، سرویس‌ها، دیسک و صف؛ کد خروج غیرصفر در صورت مشکل
+set -uo pipefail          # بدون -e: می‌خواهیم همه‌ی بررسی‌ها اجرا شوند
+
+URL="${URL:-https://example.com/up}"
+DISK_LIMIT="${DISK_LIMIT:-85}"
+SERVICES=(nginx php8.3-fpm mysql redis-server supervisor)
+failures=0
+
+fail() { echo "CRITICAL: $*" &gt;&amp;2; failures=$(( failures + 1 )); }
+ok()   { echo "OK: $*"; }
+
+# 1) HTTP
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$URL" || echo "000")
+[[ "$code" == "200" ]] &amp;&amp; ok "http $code" || fail "http status $code for $URL"
+
+# 2) سرویس‌ها
+for svc in "${SERVICES[@]}"; do
+    if systemctl is-active --quiet "$svc"; then ok "$svc active"; else fail "$svc is not active"; fi
+done
+
+# 3) دیسک
+usage=$(df -P / | awk 'NR==2 {gsub("%", "", $5); print $5}')
+if (( usage &gt;= DISK_LIMIT )); then fail "disk usage ${usage}%"; else ok "disk ${usage}%"; fi
+
+# 4) طول صف (Redis، صف default در لاراول)
+pending=$(redis-cli LLEN queues:default 2&gt;/dev/null || echo -1)
+if (( pending &lt; 0 )); then fail "redis unreachable"
+elif (( pending &gt; 1000 )); then fail "queue backlog: $pending"
+else ok "queue $pending"; fi
+
+if (( failures &gt; 0 )); then
+    # ارسال هشدار، مثلاً به webhook
+    # curl -fsS -X POST -H 'Content-Type: application/json' \
+    #   -d "{\"text\":\"$(hostname): $failures health checks failed\"}" "$ALERT_WEBHOOK"
+    exit 1
+fi
+exit 0</code></pre>
+    <div class="callout note"><p>در این اسکریپت <code>set -e</code> عمداً استفاده نشده، چون هدف اجرای همه‌ی بررسی‌ها و گزارش مجموع خطاهاست. این یک تصمیم آگاهانه است؛ strict mode قانون کورکورانه نیست. نام کلید صف Redis به تنظیمات (مثلاً prefix دیتابیس Redis) بستگی دارد.</p></div>
+  </section>
+
+  <section class="lesson" id="php-artisan" data-title="اسکریپت PHP و دستورات Artisan">
+    <h2>اسکریپت‌های PHP CLI و دستورات سفارشی Artisan</h2>
+    <h3>PHP CLI خالص</h3>
+    <pre><code class="language-php">#!/usr/bin/env php
+&lt;?php
+declare(strict_types=1);
+
+if (PHP_SAPI !== 'cli') {
+    exit("CLI only\n");
+}
+
+$options = getopt('f:v', ['file:', 'verbose']);   // -f value  /  --file=value
+$file = $options['f'] ?? $options['file'] ?? null;
+if ($file === null) {
+    fwrite(STDERR, "Usage: {$argv[0]} --file=path [-v]\n");
+    exit(2);
+}
+
+$handle = fopen($file, 'r') ?: exit(1);
+$count = 0;
+while (($line = fgets($handle)) !== false) {
+    if (str_contains($line, 'ERROR')) {
+        $count++;
+    }
+}
+fclose($handle);
+
+fwrite(STDOUT, "errors: {$count}\n");
+exit($count &gt; 0 ? 1 : 0);</code></pre>
+    <ul>
+      <li>در CLI مقدار پیش‌فرض <code>max_execution_time</code> صفر (بی‌نهایت) است، اما <code>memory_limit</code> همچنان اعمال می‌شود؛ معمولاً CLI فایل <code>php.ini</code> جدا دارد (<code>php --ini</code>).</li>
+      <li><code>$argv</code> و <code>$argc</code> آرگومان‌ها را می‌دهند؛ <code>STDIN</code>، <code>STDOUT</code> و <code>STDERR</code> ثابت‌های آماده‌اند.</li>
+      <li><code>exit(int)</code> کد خروج را تعیین می‌کند؛ برای cron و CI مهم است.</li>
+    </ul>
+
+    <h3>دستور سفارشی Artisan</h3>
+    <p>در پروژه‌ی Laravel تقریباً همیشه Artisan command بهتر از اسکریپت PHP خالص است: به container، Eloquent، config، لاگ و صف دسترسی دارد، parse آرگومان‌ها و خروجی رنگی و progress bar آماده است و با scheduler یکپارچه می‌شود.</p>
+    <pre><code class="language-bash">php artisan make:command PruneInactiveUsers</code></pre>
+    <pre><code class="language-php">&lt;?php
+
+namespace App\Console\Commands;
+
+use App\Models\User;
+use Illuminate\Console\Command;
+
+class PruneInactiveUsers extends Command
+{
+    // {days=365}: آرگومان با پیش‌فرض؛ {--dry-run}: سوییچ؛ {--chunk=500}: گزینه با مقدار
+    protected $signature = 'users:prune-inactive
+                            {days=365 : Inactivity threshold in days}
+                            {--dry-run : Only report, do not delete}
+                            {--chunk=500 : Batch size}';
+
+    protected $description = 'Soft-delete users who have not logged in for a given number of days';
+
+    public function handle(): int
+    {
+        $days = (int) $this-&gt;argument('days');
+        if ($days &lt; 30) {
+            $this-&gt;error('Threshold must be at least 30 days.');
+            return self::INVALID;
+        }
+
+        $query = User::where('last_login_at', '&lt;', now()-&gt;subDays($days));
+        $total = $query-&gt;count();
+
+        if ($total === 0) {
+            $this-&gt;info('Nothing to prune.');
+            return self::SUCCESS;
+        }
+
+        if ($this-&gt;option('dry-run')) {
+            $this-&gt;warn("[dry-run] {$total} users would be pruned.");
+            return self::SUCCESS;
+        }
+
+        if ($this-&gt;input-&gt;isInteractive() &amp;&amp; ! $this-&gt;confirm("Prune {$total} users?")) {
+            return self::FAILURE;
+        }
+
+        $bar = $this-&gt;output-&gt;createProgressBar($total);
+        $query-&gt;chunkById((int) $this-&gt;option('chunk'), function ($users) use ($bar) {
+            foreach ($users as $user) {
+                $user-&gt;delete();
+                $bar-&gt;advance();
+            }
+        });
+        $bar-&gt;finish();
+        $this-&gt;newLine();
+
+        $this-&gt;table(['Pruned', 'Threshold (days)'], [[$total, $days]]);
+        return self::SUCCESS;
+    }
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Signature</th><th>معنا</th><th>خواندن</th></tr></thead>
+      <tbody>
+        <tr><td><code>{user}</code></td><td>آرگومان اجباری</td><td><code>$this-&gt;argument('user')</code></td></tr>
+        <tr><td><code>{user?}</code></td><td>آرگومان اختیاری</td><td>null در صورت نبود</td></tr>
+        <tr><td><code>{user=foo}</code></td><td>آرگومان با پیش‌فرض</td><td></td></tr>
+        <tr><td><code>{user*}</code></td><td>آرگومان آرایه‌ای (چند مقدار)</td><td>آرایه</td></tr>
+        <tr><td><code>{--force}</code></td><td>سوییچ بولی</td><td><code>$this-&gt;option('force')</code></td></tr>
+        <tr><td><code>{--queue=}</code> / <code>{--queue=default}</code></td><td>گزینه با مقدار / با پیش‌فرض</td><td></td></tr>
+        <tr><td><code>{--Q|queue=}</code></td><td>میان‌بر کوتاه</td><td><code>-Q high</code></td></tr>
+        <tr><td><code>{--id=*}</code></td><td>گزینه‌ی چندمقداری</td><td><code>--id=1 --id=2</code></td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>خروجی: <code>info</code>، <code>warn</code>، <code>error</code>، <code>line</code>، <code>table</code>، <code>newLine</code>؛ ورودی: <code>ask</code>، <code>secret</code>، <code>confirm</code>، <code>choice</code>.</li>
+      <li>progress bar کوتاه: <code>$this-&gt;withProgressBar($users, fn ($u) =&gt; $u-&gt;notify(...))</code>.</li>
+      <li>کد خروج: <code>self::SUCCESS</code> (0)، <code>self::FAILURE</code> (1)، <code>self::INVALID</code> (2).</li>
+      <li>از Laravel 11 دستورات داخل <code>app/Console/Commands</code> خودکار ثبت می‌شوند؛ دستورات ساده را هم می‌توان به‌صورت closure در <code>routes/console.php</code> با <code>Artisan::command()</code> تعریف کرد.</li>
+      <li>پیاده‌سازی <code>Illuminate\Contracts\Console\Isolatable</code> گزینه‌ی <code>--isolated</code> را اضافه می‌کند تا فقط یک نمونه از دستور هم‌زمان اجرا شود (با cache lock).</li>
+      <li>زمان‌بندی: <code>Schedule::command('users:prune-inactive 365')-&gt;weekly()-&gt;withoutOverlapping();</code></li>
+      <li>تست: <code>$this-&gt;artisan('users:prune-inactive', ['--dry-run' =&gt; true])-&gt;expectsOutputToContain('would be pruned')-&gt;assertExitCode(0);</code></li>
+    </ul>
+    <div class="callout tip"><p>منطق اصلی را در یک کلاس Service/Action بگذارید و Command فقط لایه‌ی ورودی/خروجی باشد؛ همان منطق از controller یا job هم قابل استفاده و تست است.</p></div>
+  </section>
+
+  <section class="lesson" id="python-make" data-title="Python و Makefile">
+    <h2>مقایسه با Python و آشنایی با Makefile</h2>
+    <h3>Bash یا Python؟</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Bash مناسب است وقتی…</h4><ul><li>کار اصلی اجرای دستورات دیگر و چسباندن آن‌ها با pipe است (glue code).</li><li>اسکریپت کوتاه است (چند ده خط).</li><li>روی هر سرور لینوکسی بدون نصب چیزی باید اجرا شود.</li><li>کار با فایل، فرایند، سرویس و پکیج‌های سیستم.</li></ul></div>
+      <div class="card"><h4>Python بهتر است وقتی…</h4><ul><li>ساختار داده‌ی پیچیده (دیکشنری تو در تو، کلاس) لازم است.</li><li>کار با JSON، API و HTTP، CSV یا Excel، دیتابیس.</li><li>مدیریت خطای دقیق (exception)، تست واحد و نگهداری بلندمدت مهم است.</li><li>اسکریپت از حدود ۱۰۰ خط بیشتر می‌شود یا منطق شرطی زیادی دارد.</li><li>قابلیت اجرا روی ویندوز و لینوکس لازم است.</li></ul></div>
+    </div>
+    <pre><code class="language-python">#!/usr/bin/env python3
+"""Check a list of URLs and report the ones that fail."""
+import argparse
+import subprocess
+import sys
+import urllib.request
+
+def check(url: str, timeout: int) -&gt; bool:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.status == 200
+    except Exception as exc:  # noqa: BLE001
+        print(f"{url}: {exc}", file=sys.stderr)
+        return False
+
+def main() -&gt; int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("urls", nargs="+")
+    parser.add_argument("--timeout", type=int, default=5)
+    args = parser.parse_args()
+
+    failed = [u for u in args.urls if not check(u, args.timeout)]
+    # اجرای دستور سیستمی به صورت امن: لیست آرگومان، بدون shell
+    subprocess.run(["logger", "-t", "urlcheck", f"{len(failed)} failed"], check=False)
+    return 1 if failed else 0
+
+if __name__ == "__main__":
+    sys.exit(main())</code></pre>
+    <p>در یک تیم PHP، گزینه‌ی سوم معمولاً <strong>Artisan command</strong> یا اسکریپت PHP CLI است: همان زبان تیم، دسترسی به کد و مدل‌های پروژه، و بدون نیاز به مهارت جدید.</p>
+
+    <h3>Makefile</h3>
+    <p><strong>make</strong> ابزار build است که بر اساس وابستگی بین «هدف‌ها» (target) کار می‌کند؛ در پروژه‌های وب بیشتر به عنوان <strong>task runner</strong> برای یکسان کردن دستورات تیم استفاده می‌شود (<code>make test</code>، <code>make up</code>).</p>
+    <pre><code class="language-plaintext"># Makefile — دستورات هر recipe باید با TAB شروع شوند، نه space
+.PHONY: install test lint up down fresh deploy
+
+PHP ?= php
+ARTISAN = $(PHP) artisan
+
+install:
+	composer install
+	npm ci
+	cp -n .env.example .env || true
+	$(ARTISAN) key:generate
+
+test: lint
+	$(ARTISAN) test --parallel
+
+lint:
+	vendor/bin/pint --test
+	vendor/bin/phpstan analyse
+
+up:
+	docker compose up -d
+
+down:
+	docker compose down
+
+fresh:
+	$(ARTISAN) migrate:fresh --seed
+
+deploy:
+	@echo "Deploying $$(git rev-parse --short HEAD)"
+	./scripts/deploy.sh main</code></pre>
+    <ul>
+      <li><code>.PHONY</code> می‌گوید این هدف‌ها نام فایل نیستند؛ وگرنه اگر فایلی به نام <code>test</code> وجود داشت make فکر می‌کرد «به‌روز است» و کاری نمی‌کرد.</li>
+      <li><code>test: lint</code> یعنی هدف test به lint وابسته است و اول lint اجرا می‌شود.</li>
+      <li>هر خط recipe در یک shell <strong>جداگانه</strong> اجرا می‌شود؛ <code>cd dir</code> در یک خط روی خط بعد اثر ندارد (یا در یک خط با <code>&amp;&amp;</code> بنویسید).</li>
+      <li>متغیر make با <code>$(VAR)</code> و متغیر shell با <code>$$VAR</code> نوشته می‌شود؛ <code>?=</code> یعنی «اگر از بیرون تعریف نشده» (<code>make test PHP=php8.4</code>).</li>
+      <li>پیشوند <code>@</code> چاپ خود دستور را پنهان می‌کند؛ اگر هر دستوری شکست بخورد make متوقف می‌شود.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="pitfalls" data-title="ShellCheck و اشتباهات رایج">
+    <h2>ShellCheck و اشتباهات رایج</h2>
+    <p><strong>ShellCheck</strong> یک static analyzer برای اسکریپت‌های shell است که خطاهای رایج (quote نکردن، syntax اشتباه، تله‌های set -e، دستورات غیرقابل‌حمل) را با کد و توضیح گزارش می‌دهد. باید در ویرایشگر و CI اجرا شود.</p>
+    <pre><code class="language-bash">shellcheck deploy.sh
+shellcheck -x scripts/*.sh       # -x: دنبال کردن فایل‌های source شده</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>اشتباه</th><th>مشکل</th><th>درست</th></tr></thead>
+      <tbody>
+        <tr><td><code>rm $file</code></td><td>word splitting و globbing؛ نام دارای فاصله یا <code>*</code> فاجعه می‌سازد (SC2086)</td><td><code>rm -- "$file"</code></td></tr>
+        <tr><td><code>for f in $(ls *.log)</code></td><td>parse کردن خروجی ls؛ نام‌های دارای فاصله یا newline می‌شکنند (SC2045)</td><td><code>for f in *.log</code> یا <code>find … -print0 | xargs -0</code></td></tr>
+        <tr><td><code>cd /app; rm -rf *</code></td><td>اگر cd شکست بخورد، rm در پوشه‌ی جاری اجرا می‌شود (SC2164)</td><td><code>cd /app || exit 1</code></td></tr>
+        <tr><td><code>rm -rf "$DIR/"</code></td><td>با DIR خالی یعنی <code>rm -rf /</code></td><td><code>rm -rf "${DIR:?}/"</code> + <code>set -u</code></td></tr>
+        <tr><td><code>[ $a == $b ]</code></td><td>با متغیر خالی خطای syntax؛ <code>==</code> در POSIX test استاندارد نیست</td><td><code>[ "$a" = "$b" ]</code> یا <code>[[ $a == "$b" ]]</code></td></tr>
+        <tr><td><code>"$*"</code> برای پاس دادن آرگومان</td><td>همه را یک رشته می‌کند</td><td><code>"$@"</code></td></tr>
+        <tr><td><code>local x=$(cmd)</code></td><td>کد خروج cmd پنهان می‌شود (SC2155)</td><td><code>local x; x=$(cmd)</code></td></tr>
+        <tr><td><code>cat f | while read l</code></td><td>متغیرهای داخل حلقه در subshell گم می‌شوند؛ <code>read</code> بدون <code>-r</code> backslash را می‌خورد</td><td><code>while IFS= read -r l; do …; done &lt; f</code></td></tr>
+        <tr><td><code>echo "$var"</code> با داده‌ی دلخواه</td><td>اگر مقدار با <code>-n</code> یا <code>-e</code> شروع شود رفتار متفاوت</td><td><code>printf '%s\n' "$var"</code></td></tr>
+        <tr><td><code>"~/backups"</code></td><td>tilde داخل quote expand نمی‌شود</td><td><code>"$HOME/backups"</code></td></tr>
+        <tr><td><code>mysql -pSecret</code></td><td>رمز در <code>ps</code> و history دیده می‌شود</td><td>فایل <code>--defaults-extra-file</code> با chmod 600</td></tr>
+        <tr><td>بدون <code>pipefail</code></td><td>شکست دستورات وسط pipeline دیده نمی‌شود</td><td><code>set -o pipefail</code></td></tr>
+        <tr><td>اجرای <code>sh script.sh</code></td><td>امکانات bash در dash کار نمی‌کند</td><td><code>./script.sh</code> با shebang bash</td></tr>
+        <tr><td>فایل با CRLF</td><td><code>bad interpreter</code>، <code>$'\r': command not found</code></td><td><code>dos2unix</code>، <code>.gitattributes</code></td></tr>
+        <tr><td><code>eval "$input"</code></td><td>اجرای کد دلخواه (command injection)</td><td>آرایه‌ی آرگومان و <code>"${args[@]}"</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>اگر سوال «این اسکریپت چه مشکلی دارد؟» آمد، این چک‌لیست را مرور کنید: shebang و strict mode، quote متغیرها، <code>cd</code> بدون <code>|| exit</code>، متغیر خالی در <code>rm -rf</code>، parse کردن <code>ls</code>، رمز در خط فرمان، مسیرهای نسبی در cron، نبود lock برای اجرای هم‌زمان، و نبود cleanup و بررسی خطا.</p></div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-scripting-1">
+      <summary>Shebang چیست و چرا معمولاً #!/usr/bin/env bash را به #!/bin/bash ترجیح می‌دهند؟ تفاوت اجرای ./script.sh، bash script.sh و sh script.sh را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> shebang خط اول فایل است که با <code>#!</code> شروع می‌شود و به کرنل می‌گوید هنگام اجرای مستقیم فایل، آن را به کدام interpreter بدهد. کرنل در <code>execve</code> این خط را می‌خواند و مثلاً <code>/usr/bin/env bash ./script.sh</code> را اجرا می‌کند.</p>
+        <p><strong>env در برابر مسیر ثابت:</strong> <code>/usr/bin/env bash</code> اولین bash موجود در <code>PATH</code> را پیدا می‌کند؛ روی سیستم‌هایی که bash در مسیر دیگری است (مثلاً macOS با bash جدیدتر از Homebrew، یا BSD در <code>/usr/local/bin</code>) هم کار می‌کند. عیب: وابستگی به PATH؛ در اسکریپت‌های حساس امنیتی که با دسترسی بالا اجرا می‌شوند، مسیر مطلق ممکن است ترجیح داده شود.</p>
+        <p><strong>شیوه‌های اجرا:</strong></p>
+        <ul>
+          <li><code>./script.sh</code>: نیاز به بیت اجرا (<code>chmod +x</code>)؛ interpreter از shebang تعیین می‌شود. <code>./</code> لازم است چون پوشه‌ی جاری در PATH نیست.</li>
+          <li><code>bash script.sh</code>: بیت اجرا لازم نیست؛ shebang نادیده گرفته می‌شود و حتماً bash اجرا می‌کند.</li>
+          <li><code>sh script.sh</code>: با <code>/bin/sh</code> اجرا می‌شود که در اوبونتو <code>dash</code> است؛ امکانات bash مثل <code>[[ ]]</code>، آرایه‌ها، <code>{1..5}</code> و <code>$'...'</code> کار نمی‌کنند و خطاهای گیج‌کننده می‌دهد.</li>
+          <li><code>source script.sh</code> (یا <code>. script.sh</code>): در همان شل جاری اجرا می‌شود؛ متغیرها و <code>cd</code> روی شل فعلی اثر می‌گذارند (برای بارگذاری env).</li>
+        </ul>
+        <p><strong>نکته:</strong> اگر اسکریپت روی ویندوز ویرایش شده باشد، CRLF در shebang باعث خطای <code>bad interpreter</code> می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-2">
+      <summary>قواعد quoting در Bash را توضیح دهید. چرا باید متغیرها را در double quote قرار داد؟ تفاوت "$@" و "$*" چیست؟</summary>
+      <div class="answer">
+        <p><strong>سه حالت:</strong></p>
+        <ul>
+          <li><strong>بدون quote:</strong> پس از expansion، شل نتیجه را بر اساس <code>IFS</code> (فاصله، tab، newline) به چند کلمه می‌شکند (<strong>word splitting</strong>) و الگوهای <code>*</code>، <code>?</code> و <code>[ ]</code> را با فایل‌ها جایگزین می‌کند (<strong>globbing</strong>).</li>
+          <li><strong>Double quote:</strong> متغیر، <code>$( )</code> و <code>$(( ))</code> expand می‌شوند اما نتیجه یک کلمه‌ی واحد می‌ماند و glob نمی‌شود.</li>
+          <li><strong>Single quote:</strong> هیچ چیز expand نمی‌شود؛ متن لفظی.</li>
+        </ul>
+        <p><strong>چرا double quote:</strong></p>
+        <pre><code class="language-bash">file="monthly report.pdf"
+rm $file        # تلاش برای حذف "monthly" و "report.pdf"
+rm "$file"      # درست
+
+pattern="*"
+echo $pattern   # لیست همه‌ی فایل‌های پوشه!
+echo "$pattern" # *</code></pre>
+        <p>بدون quote، داده‌ی کاربر یا نام فایل می‌تواند منطق اسکریپت را تغییر دهد؛ متغیر خالی هم ممکن است کلاً حذف شود و آرگومان‌ها جابه‌جا شوند (مثلاً <code>[ $a = x ]</code> با a خالی خطای syntax می‌دهد). ShellCheck این را SC2086 می‌نامد.</p>
+        <p><strong>"$@" در برابر "$*":</strong></p>
+        <ul>
+          <li><code>"$@"</code> هر آرگومان را یک کلمه‌ی جدا و دست‌نخورده نگه می‌دارد: <code>"$1" "$2" …</code>. برای پاس دادن آرگومان‌ها به دستور دیگر (wrapper) همیشه این درست است.</li>
+          <li><code>"$*"</code> همه را با اولین کاراکتر IFS به هم می‌چسباند و یک رشته می‌سازد: <code>"$1 $2 …"</code>. برای ساخت پیام لاگ مناسب است.</li>
+          <li>بدون quote هر دو یکسان و هر دو در معرض word splitting هستند.</li>
+        </ul>
+        <pre><code class="language-bash">wrapper() { php artisan "$@"; }
+wrapper migrate --path="database/migrations/2026 batch"   # آرگومان دارای فاصله سالم می‌رسد</code></pre>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-3">
+      <summary>عبارت set -euo pipefail را تشریح کنید. هر گزینه چه می‌کند و چه محدودیت‌ها یا تله‌هایی دارد؟</summary>
+      <div class="answer">
+        <p>این خط «strict mode» غیررسمی Bash است و رفتار پیش‌فرض «ادامه بده حتی اگر خطا رخ داد» را به «fail fast» تبدیل می‌کند.</p>
+        <ul>
+          <li><strong><code>-e</code> (errexit):</strong> اگر دستوری کد خروج غیرصفر داشت، اسکریپت خارج می‌شود. بدون آن، شکست <code>composer install</code> نادیده گرفته می‌شود و deploy با کد ناقص ادامه می‌یابد.</li>
+          <li><strong><code>-u</code> (nounset):</strong> ارجاع به متغیر تعریف‌نشده خطاست؛ از اشتباه تایپی و فاجعه‌ی <code>rm -rf "$BUILD_DIR/"</code> با متغیر خالی جلوگیری می‌کند. متغیر اختیاری: <code>${VAR:-}</code>.</li>
+          <li><strong><code>-o pipefail</code>:</strong> کد خروج pipeline برابر کد آخرین دستور ناموفق است. بدون آن، در <code>mysqldump db | gzip &gt; b.gz</code> شکست mysqldump پنهان می‌ماند چون gzip موفق است و یک بکاپ خالی به عنوان موفق ثبت می‌شود.</li>
+        </ul>
+        <p><strong>محدودیت‌ها و تله‌های <code>-e</code>:</strong></p>
+        <ul>
+          <li>در شرط <code>if</code>/<code>while</code>/<code>until</code>، دستورات قبل از آخرین عضو <code>&amp;&amp;</code>/<code>||</code> و دستورات منفی‌شده با <code>!</code> فعال نیست.</li>
+          <li><code>local v=$(cmd)</code> شکست را پنهان می‌کند (کد خروج <code>local</code> صفر است).</li>
+          <li><code>(( i++ ))</code> وقتی i صفر است کد ۱ برمی‌گرداند و اسکریپت بی‌صدا خارج می‌شود.</li>
+          <li>دستوراتی که «شکست» آن‌ها طبیعی است (<code>grep</code> بدون نتیجه کد ۱ می‌دهد) باید صریحاً مدیریت شوند: <code>grep -q x f || true</code>.</li>
+          <li>در توابعی که در زمینه‌ی شرطی صدا زده می‌شوند، <code>-e</code> درون تابع هم غیرفعال است.</li>
+        </ul>
+        <p><strong>تکمیل:</strong> همراه آن <code>trap 'echo "failed at line $LINENO" &gt;&amp;2' ERR</code> برای پیام خطای واضح و <code>trap cleanup EXIT</code> برای تمیزکاری. strict mode جایگزین بررسی صریح خطا در نقاط حساس نیست.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-4">
+      <summary>تفاوت [ ] و [[ ]] و (( )) در Bash چیست؟ هر کدام را در چه شرایطی استفاده می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong><code>[ ]</code>:</strong> همان دستور <code>test</code> است (یک builtin معمولی، و فایل <code>/usr/bin/[</code>). چون دستور است، آرگومان‌هایش word splitting و globbing می‌شوند؛ پس quote اجباری است و فاصله‌ها لازم‌اند. در همه‌ی شل‌های POSIX کار می‌کند. <code>&lt;</code> و <code>&gt;</code> را شل به عنوان redirection تفسیر می‌کند؛ برای AND از <code>[ a ] &amp;&amp; [ b ]</code> استفاده می‌شود.</p>
+        <p><strong><code>[[ ]]</code>:</strong> کلمه‌ی کلیدی bash (و zsh/ksh) است که شل آن را خودش parse می‌کند:</p>
+        <ul>
+          <li>بدون word splitting و globbing روی متغیرها؛ امن‌تر.</li>
+          <li><code>&amp;&amp;</code>، <code>||</code> و پرانتز درون آن مجاز است.</li>
+          <li>تطبیق الگوی glob: <code>[[ $file == *.sql.gz ]]</code> (سمت راست بدون quote الگوست).</li>
+          <li>regex: <code>[[ $ver =~ ^([0-9]+)\.([0-9]+) ]]</code> و نتیجه در <code>BASH_REMATCH</code>.</li>
+          <li>قابل‌حمل به sh/dash نیست.</li>
+        </ul>
+        <p><strong><code>(( ))</code>:</strong> ارزیابی حسابی؛ اگر نتیجه غیرصفر باشد کد خروج ۰ (true) است. متغیرها بدون <code>$</code> و عملگرهای آشنای <code>&lt; &gt; == &amp;&amp;</code>.</p>
+        <pre><code class="language-bash">if [ -f "$cfg" ] &amp;&amp; [ "$env" = "prod" ]; then …; fi     # POSIX
+if [[ -f $cfg &amp;&amp; $env == prod* ]]; then …; fi           # bash
+if (( disk_usage &gt; 90 &amp;&amp; retries &lt; 3 )); then …; fi     # عددی</code></pre>
+        <p><strong>انتخاب:</strong> اسکریپت bash ← <code>[[ ]]</code> برای رشته و فایل، <code>(( ))</code> برای عدد. اسکریپتی که باید با <code>/bin/sh</code> (مثلاً در Docker image مبتنی بر Alpine بدون bash) اجرا شود ← <code>[ ]</code> با quote کامل.</p>
+        <p><strong>تله:</strong> در <code>[ ]</code>، عبارت <code>[ 10 &gt; 9 ]</code> مقایسه نیست؛ خروجی را به فایلی به نام 9 redirect می‌کند. برای عدد از <code>-gt</code> یا <code>(( ))</code> استفاده کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-5">
+      <summary>stdin، stdout و stderr را توضیح دهید. تفاوت cmd &gt; file 2&gt;&amp;1 و cmd 2&gt;&amp;1 &gt; file چیست؟ چرا sudo echo text &gt; /etc/file کار نمی‌کند؟</summary>
+      <div class="answer">
+        <p><strong>جریان‌های استاندارد:</strong> هر فرایند با سه file descriptor شروع می‌شود: <strong>0 = stdin</strong> (ورودی)، <strong>1 = stdout</strong> (خروجی عادی/داده)، <strong>2 = stderr</strong> (خطا و پیام‌های تشخیصی). جدا بودن stderr باعث می‌شود در <code>cmd | next</code> فقط داده به دستور بعد برود و خطاها روی ترمینال یا لاگ دیده شوند.</p>
+        <p><strong>ترتیب redirection:</strong> شل redirectionها را از <strong>چپ به راست</strong> اعمال می‌کند و <code>2&gt;&amp;1</code> یعنی «FD 2 را کپی مقصد فعلی FD 1 کن».</p>
+        <ul>
+          <li><code>cmd &gt; file 2&gt;&amp;1</code>: ابتدا FD1 → file؛ سپس FD2 → همان file. هر دو خروجی در فایل. ✓</li>
+          <li><code>cmd 2&gt;&amp;1 &gt; file</code>: ابتدا FD2 → مقصد فعلی FD1 (ترمینال)؛ سپس فقط FD1 → file. خطاها همچنان روی ترمینال‌اند.</li>
+          <li>استثنای pipe: در <code>cmd 2&gt;&amp;1 | less</code>، چون pipe قبل از redirectionها برقرار می‌شود، stderr هم وارد pipe می‌شود.</li>
+        </ul>
+        <p><strong>sudo و redirection:</strong> در <code>sudo echo text &gt; /etc/file</code>، عمل <code>&gt;</code> توسط <strong>شل کاربر فعلی</strong> و قبل از اجرای sudo انجام می‌شود؛ فقط <code>echo</code> با دسترسی root اجرا می‌شود و کاربر عادی اجازه‌ی نوشتن در <code>/etc</code> را ندارد (Permission denied).</p>
+        <pre><code class="language-bash">echo "text" | sudo tee /etc/file &gt; /dev/null        # بازنویسی
+echo "text" | sudo tee -a /etc/file &gt; /dev/null     # افزودن
+sudo sh -c 'echo text &gt; /etc/file'                  # جایگزین</code></pre>
+        <p>در cron الگوی استاندارد <code>&gt;&gt; /var/log/job.log 2&gt;&amp;1</code> است تا هم خروجی و هم خطاها ثبت شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-6">
+      <summary>یک دستور (one-liner) بنویسید که ۱۰ آدرس IP با بیشترین درخواست را از فایل access.log در Nginx استخراج کند. هر بخش آن را توضیح دهید و بگویید چگونه فقط درخواست‌های با خطای 5xx را بشمارید.</summary>
+      <div class="answer">
+        <pre><code class="language-bash">awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -10</code></pre>
+        <ul>
+          <li><code>awk '{print $1}'</code>: در فرمت combined، ستون اول (جداکننده فاصله) IP کلاینت است؛ فقط آن چاپ می‌شود.</li>
+          <li><code>sort</code>: IPهای یکسان کنار هم قرار می‌گیرند؛ لازم است چون <code>uniq</code> فقط تکرارهای <strong>مجاور</strong> را ادغام می‌کند.</li>
+          <li><code>uniq -c</code>: هر IP یکتا با تعداد تکرارش (<code>  523 203.0.113.7</code>).</li>
+          <li><code>sort -rn</code>: مرتب‌سازی عددی نزولی بر اساس شمارش.</li>
+          <li><code>head -10</code>: ده مورد اول.</li>
+        </ul>
+        <p><strong>شمارش 5xx:</strong> ستون نهم status code است.</p>
+        <pre><code class="language-bash">awk '$9 ~ /^5/' access.log | wc -l                          # تعداد کل
+awk '$9 ~ /^5/ {print $7}' access.log | sort | uniq -c | sort -rn | head   # URLهای مسئول
+awk '$9 ~ /^5/ {c[$9]++} END {for (s in c) print s, c[s]}' access.log    # به تفکیک کد</code></pre>
+        <p><strong>نکات تکمیلی:</strong></p>
+        <ul>
+          <li>برای لاگ‌های چرخیده‌ی فشرده: <code>zcat access.log.*.gz | awk …</code>.</li>
+          <li>پشت load balancer یا CDN، ستون اول IP پروکسی است؛ باید <code>real_ip</code> در Nginx تنظیم شده باشد یا از ستون <code>X-Forwarded-For</code> در log_format سفارشی استفاده کرد.</li>
+          <li>اگر log_format سفارشی است، شماره‌ی ستون‌ها را بررسی کنید؛ برای لاگ JSON از <code>jq</code> استفاده می‌شود.</li>
+          <li>روی فایل‌های خیلی بزرگ، یک awk واحد با آرایه‌ی شمارش (<code>{c[$1]++} END {...}</code>) از نظر حافظه و سرعت بهتر از sort کل داده است.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-7">
+      <summary>Syntax یک خط crontab را توضیح دهید. Scheduler لاراول چگونه با cron کار می‌کند و چه مزیتی نسبت به تعریف مستقیم کارها در crontab دارد؟</summary>
+      <div class="answer">
+        <p><strong>Syntax:</strong> پنج فیلد زمانی و سپس دستور: <strong>دقیقه (0–59)، ساعت (0–23)، روز ماه (1–31)، ماه (1–12)، روز هفته (0–7، یکشنبه 0 یا 7)</strong>. <code>*</code> یعنی هر مقدار، <code>*/5</code> هر ۵ واحد، <code>1-5</code> بازه، <code>1,15</code> لیست.</p>
+        <pre><code class="language-plaintext">0 2 * * *     /usr/local/bin/db-backup.sh &gt;&gt; /var/log/backup.log 2&gt;&amp;1   # هر روز 02:00
+*/10 * * * *  /usr/local/bin/healthcheck.sh                               # هر 10 دقیقه
+30 4 * * 1    /usr/local/bin/weekly-report.sh                             # دوشنبه‌ها 04:30</code></pre>
+        <p><strong>تله‌های cron:</strong> PATH و محیط حداقلی (استفاده از مسیر مطلق)، <code>%</code> باید escape شود، پوشه‌ی جاری home است، خروجی باید لاگ شود، و اجرای هم‌پوشان (راه‌حل: <code>flock</code>).</p>
+        <p><strong>Scheduler لاراول:</strong> فقط یک ورودی cron لازم است:</p>
+        <pre><code class="language-plaintext">* * * * * cd /var/www/app/current &amp;&amp; php artisan schedule:run &gt;&gt; /dev/null 2&gt;&amp;1</code></pre>
+        <p>هر دقیقه <code>schedule:run</code> اجرا می‌شود، تعریف‌ها در <code>routes/console.php</code> را بررسی و تسک‌هایی که موعدشان رسیده را اجرا می‌کند. در محیط local به جای cron از <code>schedule:work</code> استفاده می‌شود.</p>
+        <p><strong>مزایا:</strong></p>
+        <ul>
+          <li>زمان‌بندی در کد و git: قابل review، تاریخچه‌دار و یکسان بین سرورها؛ با deploy به‌روز می‌شود.</li>
+          <li><code>withoutOverlapping()</code> برای جلوگیری از اجرای هم‌زمان، <code>onOneServer()</code> برای محیط چندسروری.</li>
+          <li><code>runInBackground()</code>، hookهای <code>onSuccess</code>/<code>onFailure</code>، ارسال خروجی، <code>timezone()</code>، <code>environments()</code> و <code>when()</code>.</li>
+          <li>دسترسی به کل اپلیکیشن (command، job، closure) و دستور <code>schedule:list</code> برای مشاهده.</li>
+        </ul>
+        <p><strong>نکته:</strong> اگر cron اصلی روی سرور تنظیم نشود، هیچ تسکی اجرا نمی‌شود؛ این مورد باید در چک‌لیست deploy باشد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-8">
+      <summary>اسکریپت زیر برای پاک کردن فایل‌های قدیمی نوشته شده است. چه مشکلاتی دارد و نسخه‌ی اصلاح‌شده را بنویسید.
+        <code>cd $LOG_DIR; for f in $(ls *.log); do rm $f; done</code></summary>
+      <div class="answer">
+        <p><strong>مشکلات:</strong></p>
+        <ol>
+          <li><strong><code>cd</code> بدون بررسی:</strong> اگر <code>LOG_DIR</code> خالی یا نادرست باشد، <code>cd</code> شکست می‌خورد (یا با متغیر خالی به home می‌رود) و حلقه در پوشه‌ی اشتباه فایل‌ها را حذف می‌کند.</li>
+          <li><strong>متغیر بدون quote:</strong> <code>$LOG_DIR</code> و <code>$f</code> در معرض word splitting و globbing؛ مسیر یا نام دارای فاصله شکسته می‌شود.</li>
+          <li><strong>parse کردن <code>ls</code>:</strong> نام فایل‌های دارای فاصله یا کاراکتر خاص خراب می‌شوند؛ اگر فایلی نباشد، خطا یا رفتار غیرمنتظره.</li>
+          <li><strong>شرط سن وجود ندارد:</strong> هدف «فایل‌های قدیمی» بوده اما همه را حذف می‌کند.</li>
+          <li>نبود <code>set -euo pipefail</code>، لاگ، و حالت dry-run برای عملیات مخرب.</li>
+          <li>نام فایلی که با <code>-</code> شروع شود به عنوان گزینه‌ی <code>rm</code> تفسیر می‌شود.</li>
+        </ol>
+        <p><strong>نسخه‌ی اصلاح‌شده:</strong></p>
+        <pre><code class="language-bash">#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_DIR="${LOG_DIR:?LOG_DIR is required}"
+DAYS="${DAYS:-14}"
+DRY_RUN="${DRY_RUN:-0}"
+
+[[ -d "$LOG_DIR" ]] || { echo "not a directory: $LOG_DIR" &gt;&amp;2; exit 1; }
+
+if (( DRY_RUN )); then
+    find "$LOG_DIR" -maxdepth 1 -type f -name '*.log' -mtime +"$DAYS" -print
+else
+    find "$LOG_DIR" -maxdepth 1 -type f -name '*.log' -mtime +"$DAYS" -print -delete
+fi</code></pre>
+        <p><strong>چرا بهتر است:</strong> <code>find</code> بدون <code>cd</code> و بدون parse کردن خروجی کار می‌کند، نام‌های خاص را درست مدیریت می‌کند، شرط سن (<code>-mtime</code>) و نوع (<code>-type f</code>) دارد؛ <code>${LOG_DIR:?}</code> جلوی متغیر خالی را می‌گیرد؛ <code>-print</code> لاگ حذف‌ها را می‌دهد و dry-run امکان بررسی قبل از اجرا را فراهم می‌کند. برای لاگ‌ها در عمل <code>logrotate</code> یا channel <code>daily</code> لاراول با <code>days</code> راه‌حل استانداردتری است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-9">
+      <summary>یک اسکریپت بکاپ روزانه‌ی دیتابیس MySQL با نگهداری ۷ روز طراحی کنید. چه نکاتی را برای قابل اتکا بودن آن رعایت می‌کنید؟</summary>
+      <div class="answer">
+        <pre><code class="language-bash">#!/usr/bin/env bash
+set -euo pipefail
+DB=app; DIR=/var/backups/mysql; KEEP=7
+FILE="$DIR/$DB-$(date +%Y%m%d-%H%M%S).sql.gz"
+
+exec 9&gt;/var/lock/db-backup.lock
+flock -n 9 || { echo "already running" &gt;&amp;2; exit 1; }
+trap 'rm -f "$FILE.part"' EXIT
+
+mkdir -p "$DIR"
+mysqldump --defaults-extra-file=/root/.my.cnf --single-transaction --quick \
+    --routines --triggers "$DB" | gzip &gt; "$FILE.part"
+gzip -t "$FILE.part" &amp;&amp; mv "$FILE.part" "$FILE"
+find "$DIR" -name "$DB-*.sql.gz" -mtime +"$KEEP" -delete
+# rclone copy "$FILE" offsite:mysql/</code></pre>
+        <p>و در crontab: <code>0 2 * * * /usr/local/bin/db-backup.sh &gt;&gt; /var/log/db-backup.log 2&gt;&amp;1</code></p>
+        <p><strong>نکات قابل اتکا بودن:</strong></p>
+        <ul>
+          <li><strong><code>pipefail</code>:</strong> بدون آن شکست mysqldump پشت موفقیت gzip پنهان می‌ماند.</li>
+          <li><strong><code>--single-transaction</code>:</strong> snapshot سازگار برای InnoDB بدون قفل کردن جدول‌ها؛ <code>--quick</code> برای خواندن ردیف‌به‌ردیف و حافظه‌ی کم.</li>
+          <li><strong>بدون رمز در خط فرمان:</strong> فایل <code>.my.cnf</code> با chmod 600؛ رمز در <code>ps</code> دیده نمی‌شود.</li>
+          <li><strong>فایل موقت + <code>mv</code> اتمیک</strong> و <code>gzip -t</code>: فایل ناقص هرگز بکاپ معتبر شناخته نمی‌شود.</li>
+          <li><strong><code>flock</code>:</strong> جلوگیری از اجرای هم‌زمان در صورت طولانی شدن.</li>
+          <li><strong>Rotation</strong> با <code>find -mtime</code>؛ مراقب الگوی نام تا فایل دیگری حذف نشود.</li>
+          <li><strong>Off-site</strong> (قاعده‌ی 3-2-1) و رمزنگاری بکاپ.</li>
+          <li><strong>مانیتورینگ:</strong> exit code، لاگ و هشدار در صورت شکست یا کوچک بودن غیرعادی فایل.</li>
+          <li><strong>تست restore دوره‌ای</strong> روی محیط جدا؛ بکاپ تست‌نشده قابل اتکا نیست.</li>
+          <li>برای دیتابیس‌های بزرگ: بکاپ فیزیکی (XtraBackup) یا snapshot، و binary log برای point-in-time recovery.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-10">
+      <summary>Idempotency در اسکریپت‌ها به چه معناست و چرا مهم است؟ با مثال توضیح دهید که یک اسکریپت آماده‌سازی سرور را چگونه idempotent می‌کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> اسکریپت idempotent اسکریپتی است که اجرای چندباره‌ی آن همان وضعیت نهایی اجرای یک‌باره را ایجاد کند، بدون خطا یا اثر جانبی تکراری.</p>
+        <p><strong>اهمیت:</strong></p>
+        <ul>
+          <li>اگر اسکریپت وسط کار شکست بخورد، می‌توان با خیال راحت دوباره اجرایش کرد.</li>
+          <li>اجرای مجدد روی سرورهایی که بخشی از آن‌ها از قبل آماده است (drift) امن است.</li>
+          <li>پایه‌ی ابزارهایی مثل Ansible و Terraform و retry در jobها همین مفهوم است.</li>
+        </ul>
+        <p><strong>تکنیک‌ها:</strong></p>
+        <pre><code class="language-bash"># ساخت پوشه: خطا نمی‌دهد اگر وجود داشته باشد
+mkdir -p /var/www/app/shared/storage
+
+# ایجاد کاربر فقط اگر وجود ندارد
+id deploy &amp;&gt;/dev/null || sudo adduser --disabled-password --gecos "" deploy
+
+# افزودن خط فقط یک‌بار
+grep -qxF 'fs.inotify.max_user_watches=524288' /etc/sysctl.conf \
+  || echo 'fs.inotify.max_user_watches=524288' | sudo tee -a /etc/sysctl.conf
+
+# symlink: جایگزینی به جای خطا
+ln -sfn /var/www/app/releases/20261107 /var/www/app/current
+
+# نصب پکیج: apt خودش idempotent است
+sudo apt-get install -y nginx
+
+# نوشتن کامل فایل config (نه append) با heredoc
+sudo tee /etc/supervisor/conf.d/worker.conf &gt;/dev/null &lt;&lt;'EOF'
+[program:worker]
+command=php /var/www/app/current/artisan queue:work
+EOF</code></pre>
+        <p><strong>ضد الگوها:</strong> <code>echo … &gt;&gt; file</code> بدون بررسی (خط تکراری در هر اجرا)، <code>mkdir</code> بدون <code>-p</code>، <code>ln -s</code> روی لینک موجود، migration دستی SQL بدون بررسی وجود ستون، و ارسال ایمیل یا شارژ مالی بدون کلید یکتا.</p>
+        <p>وقتی چنین اسکریپت‌هایی بزرگ می‌شوند، استفاده از Ansible که ماژول‌های idempotent دارد بهتر است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-11">
+      <summary>چگونه از اجرای هم‌زمان دو نمونه از یک اسکریپت (مثلاً یک cron که ممکن است طولانی شود) جلوگیری می‌کنید؟ مزیت flock نسبت به فایل pid دستی چیست؟ معادل آن در Laravel کدام است؟</summary>
+      <div class="answer">
+        <p><strong>مشکل:</strong> cron به اجرای قبلی کاری ندارد؛ اگر job هر ۵ دقیقه اجرا شود و یک‌بار ۸ دقیقه طول بکشد، دو نمونه هم‌زمان روی همان داده کار می‌کنند: پردازش تکراری، race condition، بار مضاعف.</p>
+        <p><strong>راه‌حل با flock:</strong></p>
+        <pre><code class="language-bash"># داخل اسکریپت
+exec 200&gt;/var/lock/sync.lock
+flock -n 200 || { echo "already running, skip" &gt;&amp;2; exit 0; }
+
+# یا از بیرون در crontab
+*/5 * * * * flock -n /var/lock/sync.lock /usr/local/bin/sync.sh</code></pre>
+        <p><code>-n</code> یعنی اگر قفل گرفته شده منتظر نماند؛ <code>-w 30</code> تا ۳۰ ثانیه صبر می‌کند.</p>
+        <p><strong>مزیت flock بر pid file:</strong></p>
+        <ul>
+          <li>قفل در <strong>کرنل</strong> و وابسته به file descriptor باز است؛ وقتی فرایند به هر دلیلی (حتی kill -9 یا کرش) تمام شود، قفل خودکار آزاد می‌شود. pid file دستی در این حالت باقی می‌ماند (stale lock) و اجرای بعدی را برای همیشه مسدود می‌کند، مگر منطق پیچیده‌ی بررسی زنده بودن PID بنویسید.</li>
+          <li>بررسی و گرفتن قفل <strong>اتمیک</strong> است؛ در روش «اگر فایل نیست، بساز» بین بررسی و ساخت race condition وجود دارد.</li>
+        </ul>
+        <p><strong>محدودیت:</strong> flock فقط روی یک ماشین کار می‌کند؛ برای چند سرور قفل توزیع‌شده لازم است.</p>
+        <p><strong>معادل‌های Laravel:</strong></p>
+        <ul>
+          <li><code>Schedule::command(...)-&gt;withoutOverlapping()</code>: قفل مبتنی بر cache (با زمان انقضا) برای جلوگیری از هم‌پوشانی.</li>
+          <li><code>-&gt;onOneServer()</code>: در محیط چندسروری فقط یک سرور اجرا کند (نیاز به cache مشترک مثل Redis).</li>
+          <li>دستور Artisan با <code>Isolatable</code> و گزینه‌ی <code>--isolated</code>.</li>
+          <li><code>Cache::lock('name', $seconds)-&gt;get(fn () =&gt; …)</code> برای قفل دلخواه در کد، و middleware <code>WithoutOverlapping</code> برای jobها.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-12">
+      <summary>یک دستور سفارشی Artisan برای یک کار دوره‌ای طراحی کنید. signature، آرگومان‌ها و گزینه‌ها، خروجی، کد خروج و زمان‌بندی آن را توضیح دهید. چرا Artisan command را به اسکریپت PHP یا Bash مستقل ترجیح می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>ساخت:</strong> <code>php artisan make:command SendWeeklyDigest</code> که کلاسی در <code>app/Console/Commands</code> می‌سازد (در Laravel 11 خودکار ثبت می‌شود).</p>
+        <pre><code class="language-php">&lt;?php
+protected $signature = 'digest:send
+    {segment=all : Which users to target}
+    {--dry-run : Do not send, only count}
+    {--limit= : Max number of users}';
+
+public function handle(DigestService $digest): int
+{
+    $users = User::query()-&gt;subscribedTo($this-&gt;argument('segment'))
+        -&gt;when($this-&gt;option('limit'), fn ($q, $l) =&gt; $q-&gt;limit((int) $l));
+
+    if ($this-&gt;option('dry-run')) {
+        $this-&gt;info($users-&gt;count() . ' users would receive the digest.');
+        return self::SUCCESS;
+    }
+
+    $this-&gt;withProgressBar($users-&gt;lazyById(), fn ($u) =&gt; $digest-&gt;queueFor($u));
+    $this-&gt;newLine();
+    return self::SUCCESS;
+}</code></pre>
+        <ul>
+          <li><strong>Signature:</strong> <code>{arg}</code> اجباری، <code>{arg?}</code> اختیاری، <code>{arg=default}</code>، <code>{--flag}</code> بولی، <code>{--opt=}</code> با مقدار؛ توضیح با <code>:</code>. خواندن با <code>argument()</code> و <code>option()</code>.</li>
+          <li><strong>خروجی:</strong> <code>info</code>، <code>warn</code>، <code>error</code>، <code>table</code>، progress bar؛ ورودی تعاملی با <code>confirm</code>/<code>ask</code> (در cron غیرتعاملی است).</li>
+          <li><strong>کد خروج:</strong> <code>self::SUCCESS</code>/<code>FAILURE</code>/<code>INVALID</code> تا scheduler، CI و مانیتورینگ شکست را تشخیص دهند.</li>
+          <li><strong>Dependency injection</strong> در متد <code>handle</code>.</li>
+        </ul>
+        <p><strong>زمان‌بندی:</strong></p>
+        <pre><code class="language-php">&lt;?php
+Schedule::command('digest:send')-&gt;weeklyOn(1, '08:00')-&gt;withoutOverlapping()-&gt;onOneServer();</code></pre>
+        <p><strong>چرا Artisan:</strong> دسترسی به container، Eloquent، config، cache، queue و logging پروژه؛ parse آرگومان و help خودکار (<code>php artisan help digest:send</code>)؛ یکپارچگی با scheduler و قفل‌ها؛ قابل تست با <code>$this-&gt;artisan(...)-&gt;assertExitCode(0)</code>؛ همان زبان و استانداردهای کد تیم. Bash برای کارهای سطح سیستم (بکاپ فایل، deploy، مدیریت سرویس) مناسب‌تر است. بهتر است منطق در یک Service باشد و Command فقط لایه‌ی رابط.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-13">
+      <summary>در چه شرایطی برای خودکارسازی به جای Bash از Python (یا PHP) استفاده می‌کنید؟ معیارهای تصمیم‌گیری خود را بنویسید.</summary>
+      <div class="answer">
+        <p><strong>Bash در اصل یک «زبان چسب» است:</strong> عالی برای اجرای دستورات، اتصال آن‌ها با pipe، کار با فایل و فرایند و سرویس، و همه‌جا (روی هر سرور لینوکس) موجود است. اما ساختار داده، مدیریت خطا و تست در آن ضعیف است.</p>
+        <p><strong>معیارهای انتخاب Python/PHP:</strong></p>
+        <ul>
+          <li><strong>اندازه و پیچیدگی:</strong> اگر اسکریپت از حدود ۱۰۰ خط بیشتر شد یا شرط‌ها و حلقه‌های تو در تو دارد.</li>
+          <li><strong>ساختار داده:</strong> نیاز به دیکشنری تو در تو، لیست اشیاء، مرتب‌سازی پیچیده؛ آرایه‌های Bash محدودند.</li>
+          <li><strong>فرمت‌های داده:</strong> JSON، YAML، CSV، XML، تاریخ و منطقه‌ی زمانی؛ در Bash به jq و ابزارهای خارجی وابسته‌اید.</li>
+          <li><strong>شبکه و API:</strong> فراخوانی REST با احراز هویت، صفحه‌بندی و retry.</li>
+          <li><strong>مدیریت خطا:</strong> exception و try/except/finally به جای تکیه بر exit code و تله‌های <code>set -e</code>.</li>
+          <li><strong>تست و نگهداری:</strong> unit test، type hint، linting و قابلیت خواندن برای تیم.</li>
+          <li><strong>قابلیت‌حمل:</strong> اجرا روی ویندوز/macOS/لینوکس.</li>
+          <li><strong>محاسبات اعشاری</strong> و منطق کسب‌وکار.</li>
+        </ul>
+        <p><strong>معیارهای ماندن در Bash:</strong> اسکریپت کوتاه، عمدتاً فراخوانی دستورات سیستم، محیط حداقلی (مثلاً entrypoint کانتینر)، نیاز به اجرای بدون وابستگی.</p>
+        <p><strong>PHP در تیم Laravel:</strong> اگر کار به داده و منطق پروژه مربوط است (گزارش، import، پاک‌سازی رکوردها)، Artisan command بهترین گزینه است: زبان تیم، دسترسی به مدل‌ها و config، scheduler و تست آماده.</p>
+        <p><strong>ترکیب:</strong> رایج است که Bash نقش orchestrator سطح بالا را داشته باشد (deploy.sh) و کارهای منطقی را به <code>php artisan</code> یا یک اسکریپت Python بسپارد. در Python هم دستورات سیستم را با <code>subprocess.run([...], check=True)</code> و لیست آرگومان (نه <code>shell=True</code>) اجرا کنید تا از command injection جلوگیری شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-14">
+      <summary>یک اسکریپت deploy ساده برای Laravel با حداقل downtime طراحی کنید. مراحل آن و نقش هر مرحله را توضیح دهید و بگویید rollback چگونه انجام می‌شود.</summary>
+      <div class="answer">
+        <p><strong>ایده:</strong> ساختار <strong>releases + symlink</strong>: هر deploy در یک پوشه‌ی جدید (<code>releases/&lt;timestamp&gt;</code>) کامل آماده می‌شود و در انتها symlink <code>current</code> به‌صورت اتمیک به آن اشاره می‌کند. فایل‌های مشترک (<code>.env</code> و <code>storage</code>) در <code>shared/</code> هستند.</p>
+        <p><strong>مراحل:</strong></p>
+        <ol>
+          <li><strong>Strict mode و lock:</strong> <code>set -euo pipefail</code> و <code>flock</code> تا دو deploy هم‌زمان اجرا نشوند؛ <code>trap ERR</code> برای پیام شکست.</li>
+          <li><strong>دریافت کد:</strong> <code>git clone --depth 1 --branch main</code> در پوشه‌ی release جدید.</li>
+          <li><strong>لینک shared:</strong> <code>ln -s shared/.env</code> و جایگزینی <code>storage</code> با لینک به <code>shared/storage</code>.</li>
+          <li><strong>وابستگی‌ها:</strong> <code>composer install --no-dev --optimize-autoloader --no-interaction</code> و <code>npm ci &amp;&amp; npm run build</code> (یا artifact آماده از CI).</li>
+          <li><strong>Migration:</strong> <code>php artisan migrate --force</code>؛ باید با کد قدیمی سازگار باشد (الگوی expand/contract) چون تا سوییچ، کد قبلی سرویس می‌دهد.</li>
+          <li><strong>کش‌ها:</strong> <code>php artisan optimize</code>.</li>
+          <li><strong>سوییچ اتمیک:</strong> <code>ln -sfn $RELEASE current.tmp &amp;&amp; mv -T current.tmp current</code>.</li>
+          <li><strong>Reload:</strong> <code>systemctl reload php8.3-fpm</code> (پاک شدن OPcache بدون قطع درخواست‌های جاری) و <code>php artisan queue:restart</code>.</li>
+          <li><strong>Smoke test:</strong> <code>curl -fsS https://example.com/up</code>؛ در صورت شکست، rollback خودکار.</li>
+          <li><strong>پاک‌سازی:</strong> نگه داشتن ۵ release آخر.</li>
+        </ol>
+        <p><strong>چرا downtime کم است:</strong> همه‌ی کارهای کند قبل از سوییچ انجام می‌شود و اگر هر مرحله شکست بخورد، <code>current</code> دست‌نخورده می‌ماند. سوییچ یک rename اتمیک است. Nginx باید از <code>$realpath_root</code> استفاده کند.</p>
+        <p><strong>Rollback:</strong> اشاره‌ی <code>current</code> به release قبلی (<code>ls -1dt releases/*/ | sed -n 2p</code>)، reload FPM و queue:restart. migrationها خودکار برنمی‌گردند؛ به همین دلیل migrationهای مخرب (حذف ستون) در deploy بعدی و جدا انجام می‌شوند.</p>
+        <p><strong>در عمل:</strong> ابزارهایی مثل Deployer یا Envoyer همین الگو را پیاده‌سازی می‌کنند؛ برای چند سرور، deploy پشت load balancer به‌صورت rolling.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scripting-15">
+      <summary>ابزارهای grep، sed، awk، cut و jq را مقایسه کنید. هر کدام برای چه نوع کاری مناسب‌اند؟ برای هر یک مثالی کاربردی از کار روزمره‌ی یک توسعه‌دهنده‌ی بک‌اند بزنید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>grep — پیدا کردن خطوط:</strong> فیلتر خطوط بر اساس الگو (regex). سریع‌ترین انتخاب برای «کدام خطوط شامل X هستند».
+            مثال: <code>grep -rn "env(" app/ --include="*.php"</code> برای پیدا کردن استفاده‌ی نادرست از env خارج از config؛ <code>grep -c "production.ERROR" laravel.log</code>.</li>
+          <li><strong>sed — ویرایش جریانی:</strong> جایگزینی، حذف یا چاپ بخشی از خطوط؛ مناسب تغییرات مکانیکی در فایل‌های config.
+            مثال: <code>sed -i 's/^APP_DEBUG=.*/APP_DEBUG=false/' .env</code>؛ <code>sed -n '/2026-11-07 10:00/,/2026-11-07 10:05/p' laravel.log</code> برای برش بازه‌ی زمانی لاگ.</li>
+          <li><strong>awk — پردازش ستونی و محاسبه:</strong> یک زبان کوچک با متغیر، شرط، آرایه‌ی انجمنی و BEGIN/END؛ مناسب گزارش‌گیری از داده‌ی جدولی.
+            مثال: <code>awk '$9 &gt;= 500 {c[$7]++} END {for (u in c) print c[u], u}' access.log | sort -rn | head</code> برای پرخطاترین URLها.</li>
+          <li><strong>cut — برش ساده‌ی ستون:</strong> وقتی جداکننده ثابت و یک‌کاراکتری است؛ ساده‌تر و سریع‌تر از awk اما بدون منطق.
+            مثال: <code>cut -d: -f1 /etc/passwd</code>؛ <code>cut -d, -f2 export.csv</code>. محدودیت: فاصله‌های متوالی را یک جداکننده نمی‌داند (آنجا awk بهتر است).</li>
+          <li><strong>jq — JSON:</strong> parse، فیلتر و تبدیل JSON به‌صورت ساختاریافته؛ grep/sed روی JSON شکننده است.
+            مثال: <code>curl -s api/health | jq -r '.checks[] | select(.ok == false) | .name'</code>؛ <code>jq -r '.require | keys[]' composer.json</code>.</li>
+        </ul>
+        <p><strong>قاعده‌ی انتخاب:</strong> پیدا کردن ← grep؛ تغییر متن ← sed؛ ستون + شرط + شمارش/جمع ← awk؛ ستون ساده ← cut؛ JSON ← jq. با pipe ترکیب می‌شوند و در کنار <code>sort | uniq -c | sort -rn | head</code> بیشتر نیازهای تحلیل لاگ را پوشش می‌دهند. وقتی منطق پیچیده شد، به Python یا PHP منتقل شوید.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>پایه</h4>
+      <ul>
+        <li><code>#!/usr/bin/env bash</code> + <code>chmod +x</code> + <code>./script.sh</code>.</li>
+        <li><code>sh</code> در اوبونتو = dash (بدون <code>[[ ]]</code> و آرایه).</li>
+        <li>CRLF → <code>bad interpreter</code> → <code>dos2unix</code>.</li>
+        <li><code>set -euo pipefail</code> + <code>trap cleanup EXIT</code>.</li>
+      </ul>
+      <h4>متغیر و quoting</h4>
+      <ul>
+        <li><code>a=1</code> بدون فاصله؛ <code>"$a"</code> همیشه.</li>
+        <li>double: expand بدون split؛ single: لفظی.</li>
+        <li><code>${v:-d}</code> پیش‌فرض؛ <code>${v:=d}</code> اختصاص؛ <code>${v:?}</code> خطا.</li>
+        <li><code>${f##*/}</code> basename؛ <code>${f%/*}</code> dirname؛ <code>${f%.*}</code> بدون پسوند.</li>
+        <li><code>"$@"</code> آرگومان‌ها جدا؛ <code>"$*"</code> یک رشته؛ <code>$#</code> تعداد؛ <code>$?</code> کد خروج.</li>
+      </ul>
+      <h4>کنترل</h4>
+      <ul>
+        <li><code>[[ ]]</code> امن، regex <code>=~</code>، glob <code>==</code>؛ <code>[ ]</code> POSIX با quote.</li>
+        <li><code>(( ))</code> عددی؛ <code>-eq -lt -gt</code> در test.</li>
+        <li><code>-f -d -e -z -n -s -x</code>.</li>
+        <li><code>while IFS= read -r line; do …; done &lt; file</code>.</li>
+        <li>pipe به while = subshell.</li>
+        <li><code>local</code> در توابع؛ return فقط کد؛ داده با echo.</li>
+        <li>0 موفق؛ 127 not found؛ 128+N سیگنال.</li>
+      </ul>
+      <h4>تله‌های set -e</h4>
+      <ul>
+        <li>داخل if، زنجیره‌ی &amp;&amp;/|| غیرفعال.</li>
+        <li><code>local x=$(cmd)</code> خطا را می‌پوشاند.</li>
+        <li><code>((i++))</code> با i=0 → خروج.</li>
+        <li>grep بدون نتیجه = 1 → <code>|| true</code>.</li>
+      </ul>
+      <h4>I/O</h4>
+      <ul>
+        <li>0 stdin، 1 stdout، 2 stderr.</li>
+        <li><code>&gt; file 2&gt;&amp;1</code> (ترتیب مهم)؛ <code>&amp;&gt;</code>؛ <code>&gt;/dev/null</code>.</li>
+        <li><code>| sudo tee file</code> به جای <code>sudo echo &gt;</code>.</li>
+        <li><code>&lt;&lt;EOF</code> با expansion؛ <code>&lt;&lt;'EOF'</code> بدون؛ <code>&lt;&lt;&lt;</code> here-string.</li>
+      </ul>
+      <h4>متن</h4>
+      <ul>
+        <li>grep <code>-i -v -c -n -r -o -E -F -l</code>.</li>
+        <li>sed <code>s///g</code>، <code>-n 'Np'</code>، <code>/re/d</code>، <code>-i</code>.</li>
+        <li>awk <code>$1 NF NR -F END</code>؛ <code>{s+=$10} END{print s}</code>.</li>
+        <li><code>sort | uniq -c | sort -rn | head</code>.</li>
+        <li>find <code>-mtime +7 -delete</code>، <code>-exec … {} +</code>، <code>-print0 | xargs -0</code>.</li>
+        <li>jq <code>-r '.data[] | select(.x=="y") | .id'</code>.</li>
+        <li>Nginx: $1 IP، $7 path، $9 status، $10 bytes.</li>
+      </ul>
+      <h4>cron و scheduler</h4>
+      <ul>
+        <li>دقیقه ساعت روز ماه روزهفته.</li>
+        <li>PATH حداقلی، <code>\%</code>، مسیر مطلق، لاگ، flock.</li>
+        <li><code>* * * * * cd app &amp;&amp; php artisan schedule:run</code>.</li>
+        <li><code>schedule:work</code> (local)، <code>schedule:list</code>.</li>
+        <li><code>withoutOverlapping</code>، <code>onOneServer</code>، <code>runInBackground</code>.</li>
+      </ul>
+      <h4>اسکریپت مقاوم</h4>
+      <ul>
+        <li>getopts <code>":e:nh"</code> + <code>shift $((OPTIND-1))</code>.</li>
+        <li>log به stderr، idempotent (<code>mkdir -p</code>، <code>ln -sfn</code>، <code>grep -q ||</code>).</li>
+        <li>dry-run برای عملیات مخرب.</li>
+        <li><code>flock -n</code>؛ قفل با مرگ فرایند آزاد می‌شود.</li>
+        <li>رمز در فایل 600 نه آرگومان.</li>
+        <li>نوشتن <code>.part</code> + <code>mv</code> اتمیک.</li>
+      </ul>
+      <h4>Artisan و دیگر ابزارها</h4>
+      <ul>
+        <li><code>make:command</code>؛ <code>{arg} {arg?} {arg=d} {--flag} {--opt=}</code>.</li>
+        <li><code>argument()</code>، <code>option()</code>، <code>info/warn/error/table</code>، progress bar.</li>
+        <li><code>self::SUCCESS / FAILURE / INVALID</code>.</li>
+        <li><code>Isolatable</code> → <code>--isolated</code>.</li>
+        <li>Python: داده‌ی پیچیده، API، تست، بیش از ~۱۰۰ خط.</li>
+        <li>Makefile: TAB، <code>.PHONY</code>، هر خط shell جدا، <code>$$</code>.</li>
+        <li>ShellCheck: SC2086 quote، SC2164 cd، SC2155 local، SC2045 ls.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

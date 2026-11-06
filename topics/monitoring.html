@@ -1,0 +1,1235 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monitoring — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="monitoring">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Monitoring</h1>
+    <p class="lead">Monitoring و Observability: لاگ ساختاریافته، متریک و Trace، Prometheus و Grafana، روش‌های RED/USE و چهار سیگنال طلایی، Percentileها، SLI/SLO/SLA و Error Budget، Alerting اصولی، Health Check، OpenTelemetry و Sentry، ابزارهای Laravel (Telescope، Pulse، Horizon) و مدیریت Incident.</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="observability-pillars" data-title="Monitoring، Observability و سه ستون">
+    <h2>Monitoring، Observability و سه ستون</h2>
+
+    <h3>Monitoring در برابر Observability</h3>
+    <p><strong>Monitoring</strong> یعنی جمع‌آوری، تجمیع و نمایش داده‌های <strong>از پیش تعریف‌شده</strong> درباره‌ی سیستم و هشدار دادن وقتی این داده‌ها از آستانه‌ی مشخصی عبور می‌کنند. Monitoring به سوال‌هایی پاسخ می‌دهد که <strong>از قبل می‌دانستیم باید بپرسیم</strong> («آیا نرخ خطا بالای ۱٪ است؟»، «آیا دیسک پر شده؟»). این همان «known unknowns» است.</p>
+    <p><strong>Observability</strong> (مشاهده‌پذیری) ویژگی خود سیستم است: میزان توانایی ما برای <strong>فهمیدن وضعیت درونی سیستم از روی خروجی‌هایش</strong>، از جمله برای سوال‌هایی که <strong>از قبل پیش‌بینی نکرده بودیم</strong> («چرا فقط کاربران اندرویدی در ایران که سبد خرید بالای ۱۰ قلم دارند کندی دارند؟»). این همان «unknown unknowns» است و به داده‌ی غنی، با جزئیات و با cardinality بالا (شناسه‌ی کاربر، نسخه، endpoint) و امکان پرس‌وجوی آزاد نیاز دارد.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>Monitoring</h4><ul>
+        <li>«آیا سیستم سالم است؟»</li>
+        <li>داشبورد و هشدار روی متریک‌های از پیش انتخاب‌شده</li>
+        <li>مناسب خرابی‌های شناخته‌شده</li>
+        <li>یک فعالیت / ابزار</li>
+      </ul></div>
+      <div class="card"><h4>Observability</h4><ul>
+        <li>«<em>چرا</em> سیستم این رفتار را دارد؟»</li>
+        <li>کاوش آزاد در داده‌ی غنی و مرتبط (log + metric + trace)</li>
+        <li>مناسب سیستم‌های توزیع‌شده و خرابی‌های جدید</li>
+        <li>یک ویژگی سیستم (باید instrument شده باشد)</li>
+      </ul></div>
+    </div>
+    <div class="callout exam"><p>جمله‌ی کلیدی: «Monitoring به شما می‌گوید <strong>چه چیزی</strong> خراب است؛ Observability کمک می‌کند بفهمید <strong>چرا</strong>.» Monitoring زیرمجموعه‌ای از Observability است، نه رقیب آن.</p></div>
+
+    <h3>سه ستون: Logs، Metrics، Traces</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ستون</th><th>چیست</th><th>قوت</th><th>ضعف</th><th>پاسخ به</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Logs</strong></td><td>رکوردهای زمان‌دار از رویدادهای گسسته، با جزئیات و context</td><td>جزئیات کامل یک رویداد خاص؛ دیباگ</td><td>حجم و هزینه‌ی بالا؛ تجمیع و روندیابی سخت</td><td>«دقیقاً چه اتفاقی برای درخواست X افتاد؟»</td></tr>
+        <tr><td><strong>Metrics</strong></td><td>مقادیر عددی تجمیع‌شده در طول زمان (time series) با برچسب</td><td>ارزان، فشرده، مناسب داشبورد، روند و هشدار</td><td>جزئیات تک‌رویداد ندارد؛ محدودیت cardinality</td><td>«نرخ خطا در ۵ دقیقه‌ی اخیر چقدر است؟»</td></tr>
+        <tr><td><strong>Traces</strong></td><td>مسیر کامل یک درخواست در میان سرویس‌ها و اجزا، به‌صورت درختی از spanها</td><td>نمایش latency هر بخش و وابستگی‌ها در سیستم توزیع‌شده</td><td>نیاز به instrumentation و propagation؛ معمولاً sampling</td><td>«این درخواست ۲ ثانیه‌ای وقتش را کجا گذراند؟»</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>Events</strong> را هم اغلب به‌عنوان ستون چهارم یا مکمل در نظر می‌گیرند: رخدادهای معنادار و تغییرات سیستم مثل <strong>deploy</strong>، تغییر پیکربندی، scale شدن یا روشن شدن یک feature flag. نمایش deployها به‌صورت annotation روی نمودارها، سریع‌ترین راه برای پاسخ به «چه چیزی تغییر کرد؟» است.</p>
+
+    <pre class="diagram">  Alert (metric: error rate ↑)  ──►  Dashboard: کدام endpoint؟ از کی؟ (metric + deploy event)
+          │
+          ▼
+  Trace نمونه‌ی کند/خطادار: کدام span؟  ──►  Logs با همان trace_id: پیام خطا و context
+          │
+          ▼
+  Error tracker (Sentry): stack trace، release، کاربران متأثر</pre>
+
+    <div class="callout tip"><p>قدرت واقعی وقتی است که این سه به هم <strong>مرتبط</strong> باشند: لاگ‌ها <code>trace_id</code> داشته باشند، از نمودار متریک بتوان به traceهای نمونه (exemplar) رفت و از trace به لاگ‌های همان درخواست.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="structured-logging" data-title="لاگ ساختاریافته">
+    <h2>لاگ ساختاریافته</h2>
+    <p><strong>Structured logging</strong> یعنی هر رکورد لاگ به‌جای یک رشته‌ی آزاد، یک <strong>شیء با فیلدهای مشخص</strong> (معمولاً JSON) باشد. این کار جست‌وجو، فیلتر، تجمیع و تحلیل ماشینی را ممکن می‌کند.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>متن آزاد</h4>
+<pre><code class="language-plaintext">[2026-11-07 10:21:03] production.ERROR: Payment failed for order 1234 user 88 amount 250000</code></pre>
+        <p>برای پیدا کردن «همه‌ی پرداخت‌های ناموفق بالای ۱۰۰ هزار تومان» باید regex نوشت و با تغییر متن پیام، کوئری‌ها می‌شکنند.</p>
+      </div>
+      <div class="card"><h4>ساختاریافته</h4>
+<pre><code class="language-json">{
+  "timestamp": "2026-11-07T10:21:03.412+03:30",
+  "level": "error",
+  "message": "Payment failed",
+  "service": "shop-api",
+  "env": "production",
+  "request_id": "6f1c2e9a-...",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "user_id": 88,
+  "order_id": 1234,
+  "amount": 250000,
+  "gateway": "zarinpal",
+  "error_code": "INSUFFICIENT_FUNDS"
+}</code></pre>
+      </div>
+    </div>
+
+    <h3>Correlation ID / Request ID</h3>
+    <p>یک شناسه‌ی یکتا که در ابتدای هر درخواست تولید (یا از header ورودی مثل <code>X-Request-Id</code> خوانده) می‌شود، به <strong>همه‌ی لاگ‌های آن درخواست</strong> اضافه می‌شود، در header پاسخ برگردانده می‌شود و به سرویس‌های پایین‌دستی و jobهای صف منتقل می‌شود. با یک جست‌وجو می‌توان کل داستان یک درخواست را در چند سرویس دید. در سیستم‌های دارای tracing، <code>trace_id</code> همین نقش را دارد.</p>
+
+    <h3>سطوح لاگ (RFC 5424 — همان سطوح Monolog/Laravel)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>سطح</th><th>کاربرد</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td><code>emergency</code></td><td>سیستم غیرقابل استفاده</td><td>کل سرویس از کار افتاده</td></tr>
+        <tr><td><code>alert</code></td><td>نیاز به اقدام فوری</td><td>دیتابیس اصلی در دسترس نیست</td></tr>
+        <tr><td><code>critical</code></td><td>شرایط بحرانی</td><td>خطای غیرمنتظره در یک جزء حیاتی</td></tr>
+        <tr><td><code>error</code></td><td>خطای زمان اجرا که نیاز به بررسی دارد اما فوری نیست</td><td>پرداخت ناموفق به‌دلیل خطای درگاه</td></tr>
+        <tr><td><code>warning</code></td><td>رخداد غیرعادی که خطا نیست</td><td>استفاده از API منسوخ، retry موفق</td></tr>
+        <tr><td><code>notice</code></td><td>رویداد عادی ولی مهم</td><td>تغییر تنظیمات</td></tr>
+        <tr><td><code>info</code></td><td>رویدادهای معنادار کسب‌وکاری</td><td>ثبت سفارش، ورود کاربر</td></tr>
+        <tr><td><code>debug</code></td><td>جزئیات برای توسعه؛ در production معمولاً خاموش</td><td>مقدار متغیرها، کوئری‌ها</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>چه چیزهایی را <em>نباید</em> لاگ کرد</h3>
+    <ul>
+      <li><strong>Secretها:</strong> رمز عبور، توکن‌های دسترسی، API key، header <code>Authorization</code>، کوکی session، <code>APP_KEY</code>.</li>
+      <li><strong>اطلاعات پرداخت:</strong> شماره‌ی کامل کارت، CVV2 (الزامات PCI DSS).</li>
+      <li><strong>PII</strong> (اطلاعات شناسایی شخصی) بیش از حد لازم: کد ملی، شماره‌ی تلفن، آدرس، ایمیل کامل؛ در صورت نیاز ماسک یا hash شود.</li>
+      <li><strong>بدنه‌ی کامل درخواست/پاسخ</strong> به‌صورت پیش‌فرض.</li>
+      <li>داده‌ی پزشکی و حساس قانونی.</li>
+    </ul>
+    <div class="callout warn"><p>لاگ‌ها معمولاً دسترسی گسترده‌تر و نگهداری طولانی‌تری از دیتابیس دارند و در چند سیستم کپی می‌شوند؛ هر داده‌ی حساس در لاگ، سطح نشت را چند برابر می‌کند. «Log injection» هم وجود دارد: ورودی کاربر با کاراکتر newline می‌تواند رکورد جعلی بسازد؛ لاگ ساختاریافته (JSON) این خطر را کاهش می‌دهد.</p></div>
+
+    <h3>بهترین روش‌ها</h3>
+    <ul>
+      <li>فیلدهای استاندارد ثابت: <code>timestamp</code> (ISO 8601 با timezone/UTC)، <code>level</code>، <code>message</code>، <code>service</code>، <code>env</code>، <code>version</code>، <code>request_id</code>/<code>trace_id</code>.</li>
+      <li><strong>پیام ثابت + داده در context:</strong> <code>"Payment failed"</code> با <code>order_id</code> در فیلد جدا، نه <code>"Payment failed for order 1234"</code>؛ تا بتوان بر اساس پیام گروه‌بندی کرد.</li>
+      <li>سطح مناسب: خطاهای قابل‌انتظار کاربر (validation) را <code>error</code> لاگ نکنید؛ نویز ایجاد می‌کند.</li>
+      <li>در container، لاگ به <strong>stdout/stderr</strong>؛ روی سرور، rotation (مثلاً کانال daily یا logrotate).</li>
+      <li>سیاست <strong>retention</strong> و <strong>sampling</strong> برای لاگ‌های پرحجم (مثلاً debug یا health check).</li>
+    </ul>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="laravel-logging" data-title="Logging در Laravel">
+    <h2>Logging در Laravel</h2>
+    <p>سیستم لاگ Laravel روی کتابخانه‌ی <strong>Monolog</strong> ساخته شده و در <code>config/logging.php</code> با مفهوم <strong>channel</strong> پیکربندی می‌شود. هر channel یک driver (مقصد و نحوه‌ی نوشتن) دارد. کانال پیش‌فرض با <code>LOG_CHANNEL</code> تعیین می‌شود.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>Driver / Channel</th><th>رفتار</th></tr></thead>
+      <tbody>
+        <tr><td><code>single</code></td><td>یک فایل (<code>storage/logs/laravel.log</code>)</td></tr>
+        <tr><td><code>daily</code></td><td>یک فایل برای هر روز با حذف خودکار فایل‌های قدیمی‌تر از <code>days</code> (در Laravel 11+ با <code>LOG_DAILY_DAYS</code>)</td></tr>
+        <tr><td><code>stack</code></td><td>ارسال هم‌زمان به چند channel (مثلاً daily + slack)</td></tr>
+        <tr><td><code>stderr</code></td><td>نوشتن در stderr؛ مناسب container</td></tr>
+        <tr><td><code>syslog</code> / <code>errorlog</code></td><td>syslog سیستم / تابع <code>error_log</code> PHP</td></tr>
+        <tr><td><code>slack</code></td><td>ارسال به Slack از طریق webhook (معمولاً با <code>level</code> بالا)</td></tr>
+        <tr><td><code>monolog</code></td><td>استفاده از هر handler دلخواه Monolog</td></tr>
+        <tr><td><code>custom</code></td><td>ساخت logger با یک factory class</td></tr>
+      </tbody>
+    </table></div>
+
+    <pre><code class="language-php">&lt;?php
+// config/logging.php (خلاصه)
+'default' =&gt; env('LOG_CHANNEL', 'stack'),
+
+'channels' =&gt; [
+    'stack' =&gt; [
+        'driver' =&gt; 'stack',
+        'channels' =&gt; ['daily', 'slack'],
+        'ignore_exceptions' =&gt; false,
+    ],
+    'daily' =&gt; [
+        'driver' =&gt; 'daily',
+        'path' =&gt; storage_path('logs/laravel.log'),
+        'level' =&gt; env('LOG_LEVEL', 'debug'),
+        'days' =&gt; env('LOG_DAILY_DAYS', 14),
+    ],
+    'slack' =&gt; [
+        'driver' =&gt; 'slack',
+        'url' =&gt; env('LOG_SLACK_WEBHOOK_URL'),
+        'level' =&gt; 'critical',          // فقط critical و بالاتر به Slack
+    ],
+    'stderr' =&gt; [
+        'driver' =&gt; 'monolog',
+        'handler' =&gt; Monolog\Handler\StreamHandler::class,
+        'formatter' =&gt; env('LOG_STDERR_FORMATTER'),   // مثلاً Monolog\Formatter\JsonFormatter
+        'with' =&gt; ['stream' =&gt; 'php://stderr'],
+    ],
+],</code></pre>
+    <p>گزینه‌ی <code>level</code> در هر channel <strong>حداقل سطح</strong> است: کانالی با <code>level =&gt; 'critical'</code> فقط <code>critical</code>، <code>alert</code> و <code>emergency</code> را دریافت می‌کند.</p>
+
+    <h3>استفاده</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\Log;
+
+Log::info('Order placed', ['order_id' =&gt; $order-&gt;id, 'total' =&gt; $order-&gt;total]);
+Log::warning('Payment retry', ['order_id' =&gt; $order-&gt;id, 'attempt' =&gt; $attempt]);
+Log::error('Payment failed', ['order_id' =&gt; $order-&gt;id, 'exception' =&gt; $e]);
+
+Log::channel('slack')-&gt;critical('Payment gateway down');
+Log::stack(['daily', 'slack'])-&gt;alert('Queue backlog above threshold');
+
+// context برای بقیه‌ی لاگ‌های همین درخواست روی کانال جاری
+Log::withContext(['request_id' =&gt; $requestId]);
+
+// context مشترک برای همه‌ی کانال‌ها
+Log::shareContext(['service' =&gt; 'shop-api']);</code></pre>
+
+    <h3>Context facade (Laravel 11+) و Request ID</h3>
+    <p>در Laravel 11، <strong><code>Illuminate\Support\Facades\Context</code></strong> اضافه شد: داده‌ای که در Context قرار می‌گیرد به‌صورت <strong>metadata به همه‌ی لاگ‌ها</strong> اضافه می‌شود و مهم‌تر از آن، <strong>به jobهای صف که در همان درخواست dispatch می‌شوند منتقل</strong> می‌شود؛ پس request ID در لاگ‌های worker هم دیده می‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
+
+class AssignRequestId
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        $requestId = $request-&gt;header('X-Request-Id') ?: (string) Str::uuid();
+
+        Context::add('request_id', $requestId);
+        Context::add('url', $request-&gt;path());
+
+        $response = $next($request);
+        $response-&gt;headers-&gt;set('X-Request-Id', $requestId);
+
+        return $response;
+    }
+}
+
+// bootstrap/app.php
+-&gt;withMiddleware(function (Middleware $middleware) {
+    $middleware-&gt;append(\App\Http\Middleware\AssignRequestId::class);
+})</code></pre>
+
+    <h3>گزارش Exceptionها</h3>
+    <p>در Laravel 11+ پیکربندی exceptionها در <code>bootstrap/app.php</code> و متد <code>withExceptions</code> انجام می‌شود: می‌توان گزارش برخی exceptionها را متوقف (<code>dontReport</code>)، context سراسری اضافه کرد (<code>context</code>) یا گزارش را به سرویس بیرونی فرستاد. فراخوانی <code>report($e)</code> یک exception را بدون قطع جریان برنامه گزارش می‌کند.</p>
+    <pre><code class="language-php">&lt;?php
+-&gt;withExceptions(function (Exceptions $exceptions) {
+    $exceptions-&gt;dontReport([
+        \App\Exceptions\CartEmptyException::class,
+    ]);
+    $exceptions-&gt;context(fn () =&gt; [
+        'app_version' =&gt; config('app.version'),
+    ]);
+})</code></pre>
+
+    <div class="callout exam"><p>تفاوت‌ها: <code>Log::withContext()</code> context را به channel جاری در طول همین درخواست اضافه می‌کند؛ <code>Log::shareContext()</code> روی همه‌ی channelها؛ <strong><code>Context::add()</code></strong> علاوه بر لاگ‌ها، به jobهای صف هم منتقل می‌شود. پاسخ استاندارد برای «پیاده‌سازی correlation ID در Laravel»: middleware + Context + header پاسخ + انتقال header به درخواست‌های HTTP خروجی.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="centralized-logs" data-title="تجمیع مرکزی لاگ‌ها: ELK، EFK و Loki">
+    <h2>تجمیع مرکزی لاگ‌ها: ELK، EFK و Loki</h2>
+    <p>وقتی چند سرور یا ده‌ها container داریم، <code>ssh</code> و <code>tail -f</code> روی تک‌تک آن‌ها عملی نیست؛ containerها هم موقت‌اند و لاگشان با حذف از بین می‌رود. <strong>Centralized logging</strong> لاگ همه‌ی منابع را در یک جا جمع، index و قابل جست‌وجو می‌کند.</p>
+
+    <pre class="diagram">  app/nginx/mysql ──► stdout / files
+           │
+   collector/shipper (Filebeat, Fluent Bit, Fluentd, Promtail/Alloy, Vector)
+           │  parse, enrich (host, pod, env), filter, buffer
+           ▼
+   storage + index (Elasticsearch / OpenSearch  |  Loki)
+           │
+           ▼
+   UI و جست‌وجو (Kibana  |  Grafana)  ──► alert روی الگوهای لاگ</pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>ELK / EFK</th><th>Grafana Loki</th></tr></thead>
+      <tbody>
+        <tr><td>اجزا</td><td>Elasticsearch + Logstash (یا Fluentd/Fluent Bit در EFK) + Kibana؛ معمولاً Beats برای ارسال</td><td>Loki + agent (Promtail / Grafana Alloy) + Grafana</td></tr>
+        <tr><td>Index</td><td><strong>Full-text index</strong> روی محتوای لاگ</td><td>فقط <strong>labelها</strong> index می‌شوند؛ محتوا فشرده در chunkها</td></tr>
+        <tr><td>جست‌وجو</td><td>بسیار قوی و سریع روی هر فیلد</td><td>انتخاب stream با label، سپس فیلتر/parse محتوا (LogQL)</td></tr>
+        <tr><td>هزینه و منابع</td><td>سنگین (RAM و دیسک زیاد)</td><td>سبک‌تر و ارزان‌تر، مناسب object storage</td></tr>
+        <tr><td>مناسب</td><td>تحلیل پیچیده، جست‌وجوی آزاد، امنیت (SIEM)</td><td>تیم‌هایی که Prometheus/Grafana دارند، حجم بالا با بودجه‌ی محدود</td></tr>
+      </tbody>
+    </table></div>
+
+    <pre><code class="language-plaintext"># LogQL (Loki)
+{app="shop-api", env="production"} |= "Payment failed"
+{app="shop-api"} | json | level="error" | order_id="1234"
+sum by (level) (count_over_time({app="shop-api"} | json [5m]))</code></pre>
+
+    <div class="callout warn"><p><strong>Cardinality labelها</strong> در Loki (و Prometheus) حیاتی است: label باید مقادیر محدود داشته باشد (<code>app</code>، <code>env</code>، <code>level</code>). گذاشتن <code>user_id</code> یا <code>request_id</code> به‌عنوان label، میلیون‌ها stream می‌سازد و سیستم را از کار می‌اندازد. این داده‌ها در <em>محتوای</em> لاگ (JSON) بمانند.</p></div>
+    <div class="callout tip"><p>Collector باید <strong>buffer</strong> و retry داشته باشد تا قطعی موقت backend لاگ‌ها را از بین نبرد، و برنامه هرگز نباید منتظر ارسال لاگ به شبکه بماند (ارسال sync لاگ به سرویس بیرونی، latency هر درخواست را بالا می‌برد).</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="metrics-percentiles" data-title="انواع متریک و Percentileها">
+    <h2>انواع متریک و Percentileها</h2>
+    <p>یک <strong>metric</strong> مقدار عددی است که در طول زمان نمونه‌برداری می‌شود (time series) و با <strong>نام + labelها</strong> شناخته می‌شود؛ مثلاً <code>http_requests_total{method="POST", route="/orders", status="500"}</code>. هر ترکیب یکتای labelها یک time series جداگانه است.</p>
+
+    <h3>چهار نوع متریک (مدل Prometheus)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>رفتار</th><th>مثال</th><th>نحوه‌ی استفاده</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Counter</strong></td><td>فقط <strong>افزایش</strong> می‌یابد (یا با restart صفر می‌شود)</td><td>تعداد کل درخواست‌ها، خطاها، jobهای پردازش‌شده</td><td>هیچ‌وقت مقدار خام؛ همیشه <code>rate()</code> یا <code>increase()</code></td></tr>
+        <tr><td><strong>Gauge</strong></td><td>مقدار لحظه‌ای که بالا و پایین می‌رود</td><td>مصرف حافظه، طول صف، اتصالات فعال، دما</td><td>مقدار فعلی، <code>avg_over_time</code>، <code>max</code></td></tr>
+        <tr><td><strong>Histogram</strong></td><td>شمارش مشاهدات در <strong>bucketهای</strong> از پیش تعریف‌شده + مجموع و تعداد</td><td>مدت پاسخ درخواست، اندازه‌ی payload</td><td>محاسبه‌ی percentile در سرور با <code>histogram_quantile()</code>؛ <strong>قابل تجمیع</strong> بین instanceها</td></tr>
+        <tr><td><strong>Summary</strong></td><td>محاسبه‌ی quantileها <strong>در خود کلاینت</strong> + مجموع و تعداد</td><td>latency با quantileهای ثابت</td><td>quantileها <strong>قابل تجمیع بین instanceها نیستند</strong>؛ bucket لازم ندارد</td></tr>
+      </tbody>
+    </table></div>
+    <p>یک histogram به نام <code>http_request_duration_seconds</code> در عمل چند series تولید می‌کند: <code>..._bucket{le="0.1"}</code>، <code>..._bucket{le="0.5"}</code>، … ، <code>..._bucket{le="+Inf"}</code>، <code>..._sum</code> و <code>..._count</code>. bucketها <strong>تجمعی</strong>اند: <code>le="0.5"</code> یعنی تعداد درخواست‌های کمتر یا مساوی ۰٫۵ ثانیه.</p>
+
+    <div class="callout exam"><p>«Counter یا Gauge؟» سوال کنید: «آیا کاهش آن معنا دارد؟» تعداد درخواست‌ها کم نمی‌شود ← Counter. تعداد کاربران آنلاین کم می‌شود ← Gauge. و «Histogram یا Summary؟» اگر باید percentile را <strong>روی چند instance تجمیع</strong> کنید (تقریباً همیشه در سیستم مقیاس‌پذیر) ← Histogram.</p></div>
+
+    <h3>چرا Percentile و نه میانگین؟</h3>
+    <p><strong>Percentile</strong> (صدک) pN مقداری است که N درصد مشاهدات کمتر یا مساوی آن هستند. <strong>p50</strong> (میانه) تجربه‌ی «کاربر معمولی»، <strong>p95</strong> و <strong>p99</strong> تجربه‌ی «دم توزیع» (tail latency) را نشان می‌دهند.</p>
+    <p><strong>مثال عددی:</strong> ۱۰۰ درخواست؛ ۹۵ تا در ۵۰ میلی‌ثانیه و ۵ تا در ۳۰۰۰ میلی‌ثانیه پاسخ داده شده‌اند.</p>
+    <ul>
+      <li><strong>میانگین</strong> = (۹۵×۵۰ + ۵×۳۰۰۰) ÷ ۱۰۰ = (۴۷۵۰ + ۱۵۰۰۰) ÷ ۱۰۰ = <strong>۱۹۷٫۵ ms</strong> — عددی که <em>هیچ کاربری</em> تجربه نکرده است.</li>
+      <li><strong>p50</strong> = ۵۰ ms و <strong>p95</strong> = ۵۰ ms (مرز)، اما <strong>p99 = ۳۰۰۰ ms</strong>: ۵٪ کاربران ۳ ثانیه منتظر مانده‌اند.</li>
+    </ul>
+    <ul>
+      <li>میانگین با چند مقدار بسیار بزرگ یا بسیار کوچک منحرف می‌شود و <strong>توزیع را پنهان می‌کند</strong>.</li>
+      <li>tail latency مهم است: در یک صفحه که ۱۰ درخواست backend می‌زند، احتمال اینکه دست‌کم یکی از p99 کندتر باشد حدود ۱ − ۰٫۹۹ به توان ۱۰ ≈ ۱۰٪ است؛ پس p99 سرویس به تجربه‌ی معمول کاربر تبدیل می‌شود.</li>
+      <li>کاربران پرمصرف (با داده‌ی بیشتر، سبد بزرگ‌تر) اغلب همان‌هایی هستند که در دم توزیع قرار می‌گیرند.</li>
+    </ul>
+    <div class="callout warn"><p><strong>میانگین گرفتن از percentileها غلط است</strong>: میانگین p99 سه سرور، p99 کل سیستم نیست. باید bucketهای histogram را جمع کرد و سپس percentile را از مجموع محاسبه کرد. همچنین percentile درخواست‌های ناموفق سریع (مثلاً 500 فوری) می‌تواند latency را به‌طور کاذب خوب نشان دهد؛ latency موفق و ناموفق را جدا ببینید.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="prometheus-grafana" data-title="Prometheus، PromQL و Grafana">
+    <h2>Prometheus، PromQL و Grafana</h2>
+    <p><strong>Prometheus</strong> یک سیستم Monitoring و پایگاه‌داده‌ی time series متن‌باز است که با مدل <strong>pull</strong> کار می‌کند: در فواصل منظم (scrape interval، مثلاً ۱۵ ثانیه) به endpoint <code>/metrics</code> هر target درخواست HTTP می‌زند و متریک‌ها را در قالب متنی می‌خواند.</p>
+
+    <pre class="diagram">  ┌─────────────┐  scrape /metrics   ┌──────────────┐  PromQL   ┌─────────┐
+  │ app exporter │◄──────────────────│              │◄──────────│ Grafana │
+  │ node_exporter│◄──────────────────│  Prometheus  │           └─────────┘
+  │ mysqld_exp.  │◄──────────────────│   (TSDB)     │ alert rules
+  └─────────────┘                    │              │──────────► Alertmanager ──► Slack / SMS / PagerDuty
+  short-lived job ─push─► Pushgateway ◄─ scrape ────┘              (group, dedupe, silence, route)</pre>
+
+    <pre><code class="language-plaintext"># خروجی /metrics (قالب متنی Prometheus)
+# HELP http_requests_total Total HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{method="GET",route="/products",status="200"} 10432
+http_requests_total{method="POST",route="/orders",status="500"} 17
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{route="/orders",le="0.1"} 812
+http_request_duration_seconds_bucket{route="/orders",le="0.5"} 1290
+http_request_duration_seconds_bucket{route="/orders",le="+Inf"} 1311
+http_request_duration_seconds_sum{route="/orders"} 214.7
+http_request_duration_seconds_count{route="/orders"} 1311</code></pre>
+
+    <h3>Pull در برابر Push</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Pull (Prometheus)</h4><ul>
+        <li>Prometheus تعیین می‌کند چه چیزی و کی خوانده شود؛ کنترل مرکزی بار.</li>
+        <li>متریک خودکار <code>up</code>: اگر scrape شکست بخورد، می‌فهمیم target در دسترس نیست.</li>
+        <li>service discovery (Kubernetes، Consul، فایل).</li>
+        <li>چالش: targetهای پشت NAT/فایروال و jobهای کوتاه‌عمر.</li>
+      </ul></div>
+      <div class="card"><h4>Push (StatsD، OTLP، InfluxDB)</h4><ul>
+        <li>برنامه متریک را به collector می‌فرستد.</li>
+        <li>مناسب jobهای کوتاه‌عمر، serverless و شبکه‌های محدود.</li>
+        <li>تشخیص «مرده» سخت‌تر است (نبود داده ≠ خطا).</li>
+        <li>Prometheus برای batch jobها <strong>Pushgateway</strong> دارد.</li>
+      </ul></div>
+    </div>
+
+    <div class="callout note"><p><strong>چالش PHP:</strong> مدل اجرای PHP-FPM «share-nothing» است؛ هر درخواست حافظه‌ی مستقل دارد و فرایندها با هم حافظه‌ی مشترکی ندارند. پس یک counter در حافظه‌ی PHP بعد از درخواست از بین می‌رود. کتابخانه‌های Prometheus برای PHP (مثل <code>promphp/prometheus_client_php</code>) شمارنده‌ها را در یک storage مشترک مثل <strong>Redis</strong> یا <strong>APCu</strong> نگه می‌دارند و یک route <code>/metrics</code> آن‌ها را render می‌کند. برای متریک‌های زیرساختی از <strong>exporter</strong>ها استفاده می‌شود: <code>php-fpm_exporter</code> (از status page FPM)، <code>nginx-prometheus-exporter</code>، <code>mysqld_exporter</code>، <code>redis_exporter</code>، <code>node_exporter</code>.</p></div>
+
+    <h3>PromQL — پایه</h3>
+    <pre><code class="language-plaintext"># نرخ درخواست در ثانیه (میانگین ۵ دقیقه‌ی اخیر)، به تفکیک route
+sum by (route) (rate(http_requests_total[5m]))
+
+# نسبت خطا (درصد درخواست‌های 5xx)
+sum(rate(http_requests_total{status=~"5.."}[5m]))
+  /
+sum(rate(http_requests_total[5m]))
+
+# p95 latency از روی histogram (تجمیع روی همه‌ی instanceها)
+histogram_quantile(0.95,
+  sum by (le) (rate(http_request_duration_seconds_bucket[5m])))
+
+# targetهایی که scrape نمی‌شوند
+up == 0
+
+# درصد مصرف CPU هر سرور (node_exporter)
+100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+
+# فضای آزاد دیسک کمتر از ۱۰٪
+node_filesystem_avail_bytes / node_filesystem_size_bytes &lt; 0.10
+
+# پیش‌بینی: آیا دیسک تا ۴ ساعت دیگر پر می‌شود؟
+predict_linear(node_filesystem_avail_bytes[6h], 4 * 3600) &lt; 0
+
+# تعداد jobهای پردازش‌شده در یک ساعت گذشته
+increase(queue_jobs_processed_total[1h])</code></pre>
+    <ul>
+      <li><code>rate()</code>: نرخ افزایش در ثانیه برای counter در یک بازه؛ ریست شدن counter (restart) را خودکار مدیریت می‌کند.</li>
+      <li><code>increase()</code>: مقدار افزایش در کل بازه.</li>
+      <li><code>sum by (label)</code>: تجمیع با حفظ label مشخص؛ <code>without</code> برعکس آن.</li>
+      <li>انتخاب‌گر: <code>=</code>، <code>!=</code>، <code>=~</code> (regex)، <code>!~</code>.</li>
+    </ul>
+
+    <h3>Grafana</h3>
+    <p><strong>Grafana</strong> ابزار مصورسازی و داشبورد است که به منابع داده‌ی مختلف (Prometheus، Loki، Tempo، Elasticsearch، MySQL و…) وصل می‌شود. اصول یک داشبورد خوب:</p>
+    <ul>
+      <li><strong>از بالا به پایین:</strong> ابتدا سلامت کلی سرویس از دید کاربر (RED/Golden Signals و وضعیت SLO)، سپس جزئیات اجزا و زیرساخت.</li>
+      <li><strong>متغیرهای داشبورد</strong> (env، instance، route) به‌جای ساختن داشبورد تکراری.</li>
+      <li><strong>Annotation deployها</strong> روی نمودارها.</li>
+      <li>نمایش percentileها، نه فقط میانگین؛ واحد و محور درست.</li>
+      <li>داشبورد به‌صورت کد (JSON در Git، provisioning) نگهداری شود.</li>
+    </ul>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="methods" data-title="RED، USE و چهار سیگنال طلایی">
+    <h2>RED، USE و چهار سیگنال طلایی</h2>
+    <p>این سه چارچوب پاسخ می‌دهند به: «<strong>چه چیزی</strong> را مانیتور کنیم؟» تا در انبوه متریک‌ها گم نشویم.</p>
+
+    <h3>Four Golden Signals (Google SRE)</h3>
+    <ol>
+      <li><strong>Latency:</strong> زمان پاسخ؛ با تفکیک درخواست‌های موفق و ناموفق.</li>
+      <li><strong>Traffic:</strong> میزان تقاضا (درخواست در ثانیه، تراکنش، session).</li>
+      <li><strong>Errors:</strong> نرخ درخواست‌های ناموفق؛ صریح (5xx)، ضمنی (200 با محتوای غلط) یا بر اساس سیاست (کندتر از ۱ ثانیه = خطا).</li>
+      <li><strong>Saturation:</strong> میزان «پر بودن» سرویس؛ منبعی که اول تمام می‌شود (حافظه، CPU، طول صف، workerهای آزاد FPM، اتصالات دیتابیس). اغلب پیش‌بینی‌کننده‌ی مشکل آینده است.</li>
+    </ol>
+
+    <h3>RED (برای سرویس‌ها — Tom Wilkie)</h3>
+    <ul>
+      <li><strong>Rate:</strong> تعداد درخواست در ثانیه.</li>
+      <li><strong>Errors:</strong> تعداد/نرخ درخواست‌های ناموفق.</li>
+      <li><strong>Duration:</strong> توزیع زمان پاسخ (percentileها).</li>
+    </ul>
+    <p>RED دید <strong>مصرف‌کننده‌ی سرویس</strong> را می‌دهد و برای هر سرویس درخواست‌محور (API، وب، microservice) یکسان است؛ پس داشبوردهای استاندارد و قابل مقایسه می‌سازد.</p>
+
+    <h3>USE (برای منابع — Brendan Gregg)</h3>
+    <ul>
+      <li><strong>Utilization:</strong> درصد زمانی که منبع مشغول است (مثلاً CPU ۸۰٪).</li>
+      <li><strong>Saturation:</strong> کار اضافه‌ای که منبع نمی‌تواند فوراً انجام دهد و در صف می‌ماند (run queue/load، swap، صف I/O).</li>
+      <li><strong>Errors:</strong> خطاهای منبع (خطای دیسک، packet drop، خطای ECC).</li>
+    </ul>
+    <p>USE برای <strong>منابع سخت‌افزاری و زیرساختی</strong> (CPU، حافظه، دیسک، شبکه، و حتی منابع نرم‌افزاری مثل connection pool) است و برای یافتن گلوگاه عملکرد به‌کار می‌رود.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Golden Signals</th><th>RED</th><th>USE</th></tr></thead>
+      <tbody>
+        <tr><td>هدف</td><td>سلامت سرویس کاربرمحور</td><td>سرویس‌های درخواست‌محور</td><td>منابع زیرساخت</td></tr>
+        <tr><td>اجزا</td><td>Latency، Traffic، Errors، Saturation</td><td>Rate، Errors، Duration</td><td>Utilization، Saturation، Errors</td></tr>
+        <tr><td>دیدگاه</td><td>کاربر + ظرفیت</td><td>کاربر (بیرونی)</td><td>سیستم (درونی)</td></tr>
+        <tr><td>مثال Laravel</td><td>p95 API، RPS، 5xx، workerهای آزاد FPM</td><td>RPS هر route، نرخ 5xx، p99</td><td>CPU سرور، RAM، I/O دیسک دیتابیس، صف Redis</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>رابطه: <strong>RED ≈ Golden Signals منهای Saturation</strong>. معمولاً RED را برای هر سرویس و USE را برای هر منبع به کار می‌بریم؛ این دو مکمل‌اند: RED می‌گوید «کاربر مشکل دارد»، USE کمک می‌کند بفهمیم «کدام منبع گلوگاه است».</p></div>
+
+    <h3>نمونه برای یک اپلیکیشن Laravel</h3>
+    <ul>
+      <li><strong>وب/API:</strong> RPS، نرخ 5xx و 4xx، p50/p95/p99 به تفکیک route.</li>
+      <li><strong>PHP-FPM:</strong> <code>active processes</code> در برابر <code>pm.max_children</code>، <code>listen queue</code> (saturation)، تعداد دفعات رسیدن به max children.</li>
+      <li><strong>صف:</strong> طول صف (backlog)، <strong>wait time</strong> (زمان انتظار job قبل از شروع)، throughput، نرخ jobهای failed، runtime هر job.</li>
+      <li><strong>دیتابیس:</strong> QPS، کوئری‌های کند، اتصالات فعال در برابر <code>max_connections</code>، replication lag، deadlockها.</li>
+      <li><strong>Cache/Redis:</strong> hit ratio، حافظه، evictionها.</li>
+      <li><strong>کسب‌وکار:</strong> سفارش در دقیقه، نرخ موفقیت پرداخت؛ گاهی اولین نشانه‌ی خرابی همین‌هاست.</li>
+    </ul>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="slo" data-title="SLI، SLO، SLA و Error Budget">
+    <h2>SLI، SLO، SLA و Error Budget</h2>
+    <dl class="terms">
+      <dt>SLI</dt><dd><strong>Service Level Indicator</strong>: یک <strong>معیار کمّی</strong> از کیفیت سرویس از دید کاربر، معمولاً به شکل نسبت «رویدادهای خوب ÷ کل رویدادها». مثال: درصد درخواست‌های موفق (غیر 5xx)، درصد درخواست‌هایی که زیر ۳۰۰ms پاسخ داده شده‌اند.</dd>
+      <dt>SLO</dt><dd><strong>Service Level Objective</strong>: <strong>هدف داخلی</strong> برای یک SLI در یک بازه‌ی زمانی. مثال: «۹۹٫۹٪ درخواست‌های API در هر بازه‌ی ۳۰ روزه موفق باشند» یا «۹۵٪ درخواست‌ها زیر ۳۰۰ms».</dd>
+      <dt>SLA</dt><dd><strong>Service Level Agreement</strong>: <strong>قرارداد</strong> با مشتری که شامل تعهد سطح سرویس و <strong>پیامد</strong> نقض آن (جریمه، اعتبار، بازپرداخت) است. معمولاً از SLO داخلی ضعیف‌تر است تا حاشیه‌ی امن وجود داشته باشد.</dd>
+      <dt>Error Budget</dt><dd>مقدار «خرابی مجاز» = <strong>۱ − SLO</strong>. بودجه‌ای که تیم می‌تواند صرف ریسک (deploy، آزمایش، نگهداری) کند.</dd>
+    </dl>
+
+    <pre class="diagram">  SLI (اندازه‌گیری)  ──►  SLO (هدف داخلی: 99.9%)  ──►  SLA (قرارداد با مشتری: 99.5% + جریمه)
+                                │
+                                └─► Error Budget = 0.1%  ──►  سیاست: اگر تمام شد، تمرکز روی پایداری</pre>
+
+    <h3>مثال عددی</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>SLO دسترس‌پذیری</th><th>Downtime مجاز در ۳۰ روز</th><th>در سال (۳۶۵ روز)</th></tr></thead>
+      <tbody>
+        <tr><td>۹۹٪</td><td>۷٫۲ ساعت</td><td>حدود ۳٫۶۵ روز</td></tr>
+        <tr><td>۹۹٫۵٪</td><td>۳٫۶ ساعت</td><td>حدود ۴۳٫۸ ساعت</td></tr>
+        <tr><td>۹۹٫۹٪ (سه نُه)</td><td><strong>۴۳٫۲ دقیقه</strong></td><td>حدود ۸٫۷۶ ساعت</td></tr>
+        <tr><td>۹۹٫۹۵٪</td><td>۲۱٫۶ دقیقه</td><td>حدود ۴٫۳۸ ساعت</td></tr>
+        <tr><td>۹۹٫۹۹٪ (چهار نُه)</td><td>۴٫۳۲ دقیقه</td><td>حدود ۵۲٫۶ دقیقه</td></tr>
+      </tbody>
+    </table></div>
+    <p>محاسبه: ۳۰ روز = ۴۳٬۲۰۰ دقیقه؛ ۰٫۱٪ آن = <strong>۴۳٫۲ دقیقه</strong>.</p>
+    <p><strong>نسخه‌ی مبتنی بر درخواست:</strong> اگر سرویس ماهانه ۱۰ میلیون درخواست دارد و SLO برابر ۹۹٫۹٪ است، error budget = ۱۰٬۰۰۰٬۰۰۰ × ۰٫۰۰۱ = <strong>۱۰٬۰۰۰ درخواست ناموفق</strong> در ماه. اگر یک deploy معیوب در ۲۰ دقیقه ۶٬۰۰۰ درخواست را خراب کند، ۶۰٪ بودجه‌ی ماه مصرف شده است.</p>
+
+    <h3>Error Budget Policy</h3>
+    <ul>
+      <li><strong>بودجه باقی است:</strong> تیم آزاد است سریع deploy کند، آزمایش کند و ریسک بپذیرد.</li>
+      <li><strong>بودجه تمام شده:</strong> توقف یا کند کردن انتشار قابلیت‌های جدید (به‌جز اصلاحات)، تمرکز بر پایداری، تست و رفع بدهی فنی تا بودجه بازیابی شود.</li>
+      <li>این سیاست تنش همیشگی بین «سرعت توسعه» و «پایداری» را با یک <strong>عدد مورد توافق</strong> حل می‌کند.</li>
+    </ul>
+
+    <h3>Burn rate</h3>
+    <p><strong>Burn rate</strong> سرعت مصرف بودجه نسبت به حالت یکنواخت است. burn rate = ۱ یعنی بودجه دقیقاً در پایان بازه‌ی SLO تمام می‌شود. با SLO ۹۹٫۹٪، اگر نرخ خطا ۱٫۴۴٪ باشد، burn rate = ۱۴٫۴ است؛ در این سرعت در یک ساعت ۲٪ بودجه‌ی ۳۰ روزه (۱۴٫۴ × ۱ ÷ ۷۲۰) مصرف می‌شود و کل بودجه در حدود ۵۰ ساعت تمام می‌شود. هشدارهای مبتنی بر burn rate (مثلاً «burn rate بالای ۱۴٫۴ در ۱ ساعت و ۵ دقیقه‌ی اخیر» ⇒ page) از هشدار ساده روی نرخ خطا دقیق‌ترند.</p>
+
+    <div class="callout exam"><p>چرا SLO هیچ‌وقت ۱۰۰٪ نیست؟ (۱) ۱۰۰٪ دست‌یافتنی نیست و هزینه‌ی هر «نُه» اضافه تقریباً تصاعدی است؛ (۲) کاربر بین ۹۹٫۹۹٪ و ۱۰۰٪ تفاوتی حس نمی‌کند، چون شبکه‌ی موبایل و ISP خودش کمتر قابل‌اعتماد است؛ (۳) SLO صددرصد یعنی error budget صفر، یعنی هیچ deploy و تغییری مجاز نیست.</p></div>
+    <div class="callout tip"><p>SLI خوب از دید <strong>کاربر</strong> اندازه‌گیری می‌شود (در Load Balancer یا نزدیک کاربر)، نه از دید سرور («CPU زیر ۸۰٪» SLI نیست). تعداد SLOها کم و معنادار باشد: معمولاً دسترس‌پذیری و latency برای مسیرهای حیاتی کاربر (login، checkout).</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="alerting" data-title="Alerting اصولی و On-call">
+    <h2>Alerting اصولی و On-call</h2>
+    <p>هدف alert این است که <strong>یک انسان را در زمان مناسب برای اقدامی که فقط انسان می‌تواند انجام دهد</strong> مطلع کند. هر alert که نیاز به اقدام ندارد، هزینه است.</p>
+
+    <h3>اصول</h3>
+    <ul>
+      <li><strong>Symptom-based، نه cause-based:</strong> روی چیزی که کاربر حس می‌کند هشدار دهید (نرخ خطا، latency، مصرف error budget)، نه روی هر علت احتمالی (CPU ۹۰٪). CPU بالا با پاسخ‌دهی سالم مشکل نیست؛ و خرابی ممکن است علتی داشته باشد که هرگز برایش alert تعریف نکرده‌اید. علت‌ها برای <em>دیباگ</em> در داشبوردند.</li>
+      <li><strong>Actionable:</strong> هر alert باید پاسخ روشنی برای «حالا چه کنم؟» داشته باشد و به یک <strong>runbook</strong> لینک شود.</li>
+      <li><strong>Severity:</strong> فقط مشکلات فوری و اثرگذار بر کاربر ⇒ <strong>page</strong> (بیدار کردن on-call)؛ مشکلات غیرفوری (دیسک تا ۳ روز دیگر پر می‌شود، گواهی TLS دو هفته‌ی دیگر منقضی می‌شود) ⇒ <strong>ticket</strong> یا پیام کاری.</li>
+      <li><strong>مدت پایداری (<code>for</code>):</strong> برای جلوگیری از flapping و هشدار روی spikeهای لحظه‌ای.</li>
+      <li><strong>Grouping و deduplication:</strong> قطعی دیتابیس نباید ۲۰۰ alert جدا برای هر سرویس بسازد (Alertmanager: grouping، inhibition، silence).</li>
+      <li><strong>بازبینی منظم:</strong> alertهایی که بدون اقدام بسته می‌شوند را حذف یا اصلاح کنید.</li>
+      <li><strong>Alert روی نبود داده</strong> هم لازم است (<code>up == 0</code>، <code>absent()</code>)؛ سکوت Monitoring نشانه‌ی سلامت نیست.</li>
+    </ul>
+
+    <pre><code class="language-yaml"># Prometheus alerting rules
+groups:
+  - name: shop-api
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{job="shop-api",status=~"5.."}[5m]))
+            /
+          sum(rate(http_requests_total{job="shop-api"}[5m])) &gt; 0.02
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "نرخ خطای 5xx بالای ۲٪ در ۵ دقیقه‌ی اخیر"
+          runbook_url: "https://wiki.example.com/runbooks/shop-api-5xx"
+
+      - alert: QueueBacklogGrowing
+        expr: queue_size{queue="default"} &gt; 5000
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "صف default بیش از ۱۵ دقیقه بالای ۵۰۰۰ job"
+
+      - alert: DiskWillFillIn4h
+        expr: predict_linear(node_filesystem_avail_bytes{mountpoint="/"}[6h], 4 * 3600) &lt; 0
+        for: 30m
+        labels:
+          severity: page</code></pre>
+
+    <h3>Alert fatigue</h3>
+    <p>وقتی alertها زیاد، پرنویز یا غیرقابل اقدام باشند، تیم به آن‌ها <strong>عادت</strong> می‌کند، mute می‌کند یا دیر پاسخ می‌دهد و در نهایت alert واقعی هم نادیده گرفته می‌شود. نشانه‌ها: alertهایی که خودبه‌خود resolve می‌شوند، alertهای تکراری برای یک رخداد، page در نیمه‌شب برای چیزی که می‌توانست تا صبح صبر کند.</p>
+
+    <h3>On-call و Runbook</h3>
+    <ul>
+      <li><strong>On-call rotation</strong> با برنامه‌ی منصفانه، <strong>escalation policy</strong> (اگر نفر اول در X دقیقه ack نکرد ⇒ نفر دوم) و ابزارهایی مثل PagerDuty/Opsgenie/Grafana OnCall.</li>
+      <li><strong>Runbook:</strong> سند کوتاه برای هر alert: معنی alert، اثر روی کاربر، داشبوردها و کوئری‌های لازم، قدم‌های تشخیص و mitigation، و چه زمانی escalate کنیم.</li>
+      <li>کارهای تکراری runbook کاندید خودکارسازی‌اند.</li>
+    </ul>
+    <div class="callout exam"><p>سه سوال برای ارزیابی هر alert: (۱) آیا <strong>کاربر</strong> اثر را حس می‌کند یا به‌زودی حس خواهد کرد؟ (۲) آیا <strong>اقدام فوری</strong> انسانی لازم است؟ (۳) آیا دستورالعمل اقدام (runbook) وجود دارد؟ اگر پاسخ هر کدام «نه» است، آن alert نباید page باشد.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="health-checks" data-title="Health Check، Uptime و Synthetic Monitoring">
+    <h2>Health Check، Uptime و Synthetic Monitoring</h2>
+
+    <h3>Health check endpoint</h3>
+    <p>endpointی که وضعیت سلامت نمونه‌ی برنامه را برای Load Balancer، orchestrator یا سیستم Monitoring گزارش می‌دهد. در Laravel 11+ به‌طور پیش‌فرض در <code>bootstrap/app.php</code> مسیر <code>/up</code> تعریف شده است:</p>
+    <pre><code class="language-php">&lt;?php
+// bootstrap/app.php
+return Application::configure(basePath: dirname(__DIR__))
+    -&gt;withRouting(
+        web: __DIR__.'/../routes/web.php',
+        commands: __DIR__.'/../routes/console.php',
+        health: '/up',
+    )
+    // ...</code></pre>
+    <p>این route اگر برنامه بدون exception boot شود پاسخ 200 و در غیر این صورت 500 برمی‌گرداند. هنگام درخواست به آن، رویداد <code>Illuminate\Foundation\Events\DiagnosingHealth</code> dispatch می‌شود؛ با listener روی این رویداد می‌توان بررسی‌های بیشتری (مثل اتصال دیتابیس یا cache) اضافه کرد که اگر exception بدهند، health check شکست می‌خورد.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Foundation\Events\DiagnosingHealth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+
+// AppServiceProvider::boot()
+Event::listen(DiagnosingHealth::class, function () {
+    DB::connection()-&gt;getPdo();      // در صورت قطعی دیتابیس exception ⇒ 500
+});</code></pre>
+
+    <h3>Liveness در برابر Readiness</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Liveness — «زنده‌ام؟»</h4><ul>
+        <li>آیا فرایند گیر کرده (deadlock، hang) و باید restart شود؟</li>
+        <li><strong>سطحی</strong>؛ فقط وضعیت خود برنامه.</li>
+        <li>نباید وابستگی‌های بیرونی را چک کند: اگر DB قطع شود و liveness شکست بخورد، همه‌ی podها هم‌زمان restart می‌شوند و مشکل بدتر می‌شود.</li>
+      </ul></div>
+      <div class="card"><h4>Readiness — «آماده‌ی ترافیکم؟»</h4><ul>
+        <li>آیا این نمونه می‌تواند درخواست را درست پاسخ دهد؟</li>
+        <li>می‌تواند وابستگی‌های حیاتی را بررسی کند.</li>
+        <li>شکست ⇒ فقط از Load Balancer/Service خارج می‌شود، restart نمی‌شود.</li>
+        <li>در زمان startup و shutdown مهم است (zero-downtime deploy).</li>
+      </ul></div>
+    </div>
+    <div class="callout warn"><p>Health check «عمیق» که برای هر درخواست چند کوئری سنگین یا فراخوانی سرویس بیرونی انجام دهد، خودش بار ایجاد می‌کند و می‌تواند باعث <strong>cascading failure</strong> شود. بررسی‌ها سبک، با timeout کوتاه و در صورت نیاز با cache چندثانیه‌ای باشند. endpointهای health نباید اطلاعات حساس (نسخه‌ها، رشته‌ی اتصال) را افشا کنند.</p></div>
+
+    <h3>Uptime و Synthetic Monitoring</h3>
+    <ul>
+      <li><strong>Uptime check (black-box):</strong> سرویسی بیرونی از چند منطقه‌ی جغرافیایی هر دقیقه آدرس عمومی (مثلاً <code>/up</code>) را درخواست می‌کند و کد وضعیت، زمان پاسخ و اعتبار گواهی TLS را بررسی می‌کند. مشکلاتی را می‌گیرد که Monitoring داخلی نمی‌بیند: DNS، CDN، فایروال، گواهی منقضی، قطعی کل دیتاسنتر.</li>
+      <li><strong>Synthetic monitoring:</strong> اجرای خودکار <strong>سناریوهای واقعی کاربر</strong> (login، جست‌وجو، افزودن به سبد، شروع پرداخت) به‌صورت دوره‌ای با اسکریپت یا مرورگر headless. حتی وقتی ترافیک واقعی کم است (نیمه‌شب) مشکل را کشف می‌کند.</li>
+      <li><strong>RUM (Real User Monitoring):</strong> مکمل synthetic؛ اندازه‌گیری تجربه‌ی واقعی کاربران در مرورگر (Core Web Vitals، خطاهای JS).</li>
+      <li><strong>Heartbeat / dead man's switch:</strong> برای cron و scheduler: job در پایان موفق یک URL را ping می‌کند؛ اگر ping نرسد، alert. Laravel برای taskهای زمان‌بندی‌شده متدهای <code>pingBefore</code>/<code>thenPing</code> و <code>pingOnSuccess</code> دارد.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+// routes/console.php
+Schedule::command('reports:daily')
+    -&gt;dailyAt('02:00')
+    -&gt;onOneServer()
+    -&gt;pingOnSuccess(config('services.heartbeat.daily_report'));</code></pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="tracing-errors" data-title="APM، Distributed Tracing و Error Tracking">
+    <h2>APM، Distributed Tracing و Error Tracking</h2>
+
+    <h3>APM</h3>
+    <p><strong>Application Performance Monitoring</strong> ابزارهایی هستند که با instrumentation خودکار در سطح برنامه، زمان هر درخواست را به اجزایش (کوئری‌های دیتابیس، فراخوانی HTTP بیرونی، cache، رندر view) می‌شکنند، تراکنش‌های کند را نشان می‌دهند و مشکلاتی مثل <strong>N+1 query</strong> را آشکار می‌کنند. نمونه‌ها: New Relic، Datadog APM، Elastic APM، Sentry Performance، و راه‌حل‌های متن‌باز مبتنی بر OpenTelemetry.</p>
+
+    <h3>Distributed Tracing</h3>
+    <dl class="terms">
+      <dt>Trace</dt><dd>کل مسیر یک درخواست در سیستم؛ درختی از spanها با یک <code>trace_id</code> مشترک.</dd>
+      <dt>Span</dt><dd>یک واحد کار با نام، زمان شروع و پایان، <code>span_id</code>، <code>parent_span_id</code>، attributeها (مثل <code>http.route</code>، <code>db.statement</code>)، eventها و status.</dd>
+      <dt>Context propagation</dt><dd>انتقال <code>trace_id</code> و <code>span_id</code> والد از یک سرویس به سرویس بعدی (در header HTTP، metadata پیام صف) تا spanها به یک trace متصل شوند.</dd>
+      <dt>Sampling</dt><dd>نگهداری فقط بخشی از traceها برای کنترل هزینه. <strong>Head-based</strong>: تصمیم در ابتدای درخواست (مثلاً ۱۰٪)؛ ساده ولی ممکن است traceهای خطادار را از دست بدهد. <strong>Tail-based</strong>: تصمیم بعد از اتمام trace (مثلاً نگهداری همه‌ی traceهای خطادار یا کند)؛ دقیق‌تر ولی نیازمند buffer در collector.</dd>
+    </dl>
+
+    <pre class="diagram">trace_id = 4bf92f35...
+├─ [API Gateway]  GET /checkout ─────────────────────────────── 1240 ms
+│   ├─ [shop-api]  CheckoutController@store ────────────────── 1180 ms
+│   │   ├─ SELECT carts ...                       12 ms
+│   │   ├─ SELECT products WHERE id IN ...        18 ms
+│   │   ├─ HTTP POST payment-service /charge ─────────────── 1050 ms   ◄── گلوگاه
+│   │   │    └─ [payment-service] gateway call ───────────── 1010 ms
+│   │   └─ Redis SET cart:88                       1 ms
+│   └─ dispatch SendOrderEmail (queue)            3 ms</pre>
+
+    <h3>W3C Trace Context</h3>
+    <p>استاندارد header برای propagation:</p>
+    <pre><code class="language-plaintext">traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+             │  │                                │                └─ flags (01 = sampled)
+             │  │                                └─ parent span id (16 hex)
+             │  └─ trace id (32 hex)
+             └─ version</code></pre>
+
+    <h3>OpenTelemetry</h3>
+    <p><strong>OpenTelemetry (OTel)</strong> یک استاندارد و مجموعه ابزار <strong>vendor-neutral</strong> (پروژه‌ی CNCF) برای تولید و ارسال traces، metrics و logs است. اجزا: <strong>API</strong> و <strong>SDK</strong> برای زبان‌ها (از جمله PHP)، کتابخانه‌های <strong>auto-instrumentation</strong>، پروتکل <strong>OTLP</strong> و <strong>Collector</strong> که داده را دریافت، پردازش (sampling، فیلتر، حذف PII) و به backendهای مختلف (Jaeger، Grafana Tempo، Zipkin، Datadog، …) صادر می‌کند. مزیت اصلی: یک بار instrument می‌کنید و backend را بدون تغییر کد عوض می‌کنید؛ <strong>vendor lock-in</strong> حذف می‌شود.</p>
+    <pre class="diagram">  Laravel (OTel SDK) ─┐
+  Node service ───────┼─OTLP─► OTel Collector ──► Tempo/Jaeger (traces)
+  Go service ─────────┘        (batch, sample,  ──► Prometheus  (metrics)
+                                 redact)        ──► Loki/ELK    (logs)</pre>
+
+    <h3>Error Tracking (Sentry)</h3>
+    <p>ابزارهای error tracking مثل <strong>Sentry</strong> exceptionها را با جزئیات کامل جمع‌آوری می‌کنند و فراتر از لاگ ساده‌اند:</p>
+    <ul>
+      <li><strong>Grouping:</strong> هزاران رخداد یک خطا در یک issue با شمارنده (نه هزاران خط لاگ).</li>
+      <li><strong>Stack trace</strong> کامل با کد اطراف، متغیرها و <strong>breadcrumbs</strong> (رویدادهای قبل از خطا: کوئری‌ها، لاگ‌ها، درخواست‌های HTTP).</li>
+      <li><strong>Context:</strong> کاربر، مرورگر، URL، tagها و محیط.</li>
+      <li><strong>Release tracking:</strong> کدام release خطا را معرفی کرد، «regression» پس از resolve، و اتصال به commit.</li>
+      <li><strong>Alert</strong> روی خطای جدید یا افزایش ناگهانی نرخ یک خطا.</li>
+    </ul>
+    <pre><code class="language-bash">composer require sentry/sentry-laravel
+# .env
+SENTRY_LARAVEL_DSN=https://...@sentry.example.com/12
+SENTRY_TRACES_SAMPLE_RATE=0.1</code></pre>
+    <pre><code class="language-php">&lt;?php
+// bootstrap/app.php
+use Sentry\Laravel\Integration;
+
+-&gt;withExceptions(function (Exceptions $exceptions) {
+    Integration::handles($exceptions);
+})</code></pre>
+    <div class="callout tip"><p>در Sentry یا هر error tracker، <strong>PII scrubbing</strong> را فعال کنید و نسخه‌ی release را با هر deploy ارسال کنید تا خطاهای جدید به deploy مشخص نسبت داده شوند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="laravel-tools" data-title="Telescope، Pulse و Horizon">
+    <h2>Telescope، Pulse و Horizon</h2>
+    <p>اکوسیستم Laravel سه ابزار رسمی با هدف‌های متفاوت دارد که اغلب با هم اشتباه گرفته می‌شوند.</p>
+
+    <h3>Laravel Telescope — دستیار دیباگ</h3>
+    <p>Telescope <strong>جزئیات تک‌تک</strong> رویدادها را ثبت و در یک داشبورد نمایش می‌دهد: درخواست‌ها، exceptionها، لاگ‌ها، کوئری‌های دیتابیس (با زمان و تشخیص کوئری‌های تکراری)، jobهای صف، ایمیل‌ها، notificationها، cache، eventها، Redis، scheduled taskها و درخواست‌های HTTP خروجی. ابزاری عالی برای <strong>توسعه‌ی محلی</strong> و staging است.</p>
+    <ul>
+      <li>به‌دلیل نوشتن حجم زیاد داده در دیتابیس برای هر درخواست، سربار دارد؛ در Production فقط با احتیاط: <strong>فیلتر</strong> (فقط exceptionها و رویدادهای مهم)، <strong>pruning</strong> منظم (<code>telescope:prune</code>) و محدود کردن دسترسی با gate.</li>
+      <li>معمولاً به‌صورت <code>--dev</code> نصب و فقط در محیط local ثبت می‌شود.</li>
+    </ul>
+
+    <h3>Laravel Pulse — نمای کلی Production</h3>
+    <p>Pulse داشبوردی <strong>سبک و طراحی‌شده برای Production</strong> است که داده را <strong>تجمیع‌شده</strong> (نه تک‌رویداد) نشان می‌دهد تا گلوگاه‌ها و روندها دیده شوند:</p>
+    <ul>
+      <li>درخواست‌ها، کوئری‌ها، jobها و درخواست‌های HTTP خروجی <strong>کند</strong> (با آستانه‌ی قابل تنظیم)؛</li>
+      <li>exceptionهای پرتکرار؛</li>
+      <li>کاربران پرمصرف (Application Usage)؛</li>
+      <li>throughput صف‌ها؛ وضعیت cache (hit/miss)؛</li>
+      <li>منابع سرورها (CPU، حافظه، دیسک) با اجرای دستور <code>php artisan pulse:check</code> روی هر سرور.</li>
+    </ul>
+    <p>برای کاهش سربار از <strong>sampling</strong> و در ترافیک بالا از ingest از طریق <strong>Redis</strong> (و دستور <code>pulse:work</code>) پشتیبانی می‌کند؛ داده‌ها در دیتابیس ذخیره می‌شوند و کارت‌های سفارشی قابل اضافه شدن‌اند.</p>
+
+    <h3>Laravel Horizon — داشبورد و مدیریت صف Redis</h3>
+    <p>Horizon برای صف‌های مبتنی بر <strong>Redis</strong> است و دو نقش دارد:</p>
+    <ul>
+      <li><strong>پیکربندی workerها به‌صورت کد</strong> در <code>config/horizon.php</code>: supervisorها، صف‌ها، تعداد فرایند و <strong>balancing</strong> خودکار (<code>auto</code>/<code>simple</code>) بین صف‌ها؛ اجرای همه با یک فرایند <code>php artisan horizon</code>.</li>
+      <li><strong>Monitoring صف:</strong> throughput، runtime، <strong>wait time</strong> هر صف، jobهای در حال اجرا، تکمیل‌شده و failed (با امکان retry)، tagها، و هشدار (notification) وقتی wait time از آستانه‌ی تعیین‌شده (<code>waits</code>) بیشتر شود.</li>
+      <li>برای نمودارهای metrics، دستور <code>horizon:snapshot</code> باید به‌صورت زمان‌بندی‌شده (مثلاً هر ۵ دقیقه) اجرا شود. پس از deploy با <code>horizon:terminate</code> فرایندها با کد جدید راه‌اندازی می‌شوند.</li>
+    </ul>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Telescope</th><th>Pulse</th><th>Horizon</th></tr></thead>
+      <tbody>
+        <tr><td>هدف</td><td>دیباگ جزئیات هر رویداد</td><td>نمای کلی عملکرد و گلوگاه‌ها</td><td>مدیریت و مانیتور صف Redis</td></tr>
+        <tr><td>محیط اصلی</td><td>Local / Staging</td><td>Production</td><td>Production</td></tr>
+        <tr><td>نوع داده</td><td>تک‌رویداد با جزئیات کامل</td><td>تجمیع‌شده، sampling</td><td>متریک‌ها و وضعیت jobها</td></tr>
+        <tr><td>سربار</td><td>بالا</td><td>کم</td><td>کم</td></tr>
+        <tr><td>پاسخ به</td><td>«در این درخواست دقیقاً چه کوئری‌هایی اجرا شد؟»</td><td>«کندترین endpointها و کوئری‌ها کدام‌اند؟»</td><td>«چرا jobها دیر اجرا می‌شوند؟»</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>هیچ‌کدام جایگزین Monitoring زیرساخت، alerting مستقل و error tracking نیستند: داشبوردهای داخل برنامه وقتی خود برنامه یا دیتابیس از کار افتاده باشد در دسترس نیستند. Monitoring باید <strong>بیرون از سیستمی که مانیتور می‌کند</strong> هم وجود داشته باشد.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="infra-db" data-title="Monitoring زیرساخت و پایگاه‌داده">
+    <h2>Monitoring زیرساخت و پایگاه‌داده</h2>
+
+    <h3>زیرساخت (با چارچوب USE)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>منبع</th><th>Utilization</th><th>Saturation</th><th>Errors / نکته</th></tr></thead>
+      <tbody>
+        <tr><td>CPU</td><td>درصد مصرف (user/system/iowait)</td><td>load average نسبت به تعداد هسته، run queue، CPU steal در VM</td><td>iowait بالا یعنی گلوگاه دیسک، نه CPU</td></tr>
+        <tr><td>Memory</td><td>مصرف واقعی (MemAvailable، نه فقط free)</td><td>استفاده از swap، رخداد OOM killer</td><td>Linux حافظه‌ی آزاد را برای cache استفاده می‌کند؛ free کم به‌تنهایی مشکل نیست</td></tr>
+        <tr><td>Disk</td><td>درصد فضای پر، درصد مشغولی I/O</td><td>صف I/O، latency خواندن/نوشتن</td><td>inodeها هم ممکن است تمام شوند؛ خطای I/O</td></tr>
+        <tr><td>Network</td><td>پهنای باند ورودی/خروجی</td><td>packet drop، صف</td><td>خطاهای interface، retransmit TCP</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>node_exporter</strong> exporter استاندارد Prometheus برای متریک‌های سیستم‌عامل Linux است (<code>node_cpu_seconds_total</code>، <code>node_memory_MemAvailable_bytes</code>، <code>node_filesystem_avail_bytes</code>، <code>node_network_receive_bytes_total</code>)؛ برای containerها <strong>cAdvisor</strong> یا متریک‌های kubelet. ابزارهای خط فرمان برای بررسی لحظه‌ای: <code>top</code>/<code>htop</code>، <code>vmstat</code>، <code>iostat</code>، <code>df -h</code>، <code>df -i</code>، <code>free -m</code>، <code>ss -s</code>.</p>
+
+    <h3>پایگاه‌داده</h3>
+    <ul>
+      <li><strong>Slow query log</strong> در MySQL: ثبت کوئری‌هایی که بیشتر از آستانه طول می‌کشند.</li>
+    </ul>
+    <pre><code class="language-ini"># my.cnf
+[mysqld]
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 0.5                 ; ثانیه
+log_queries_not_using_indexes = 1     ; با احتیاط؛ پرحجم است</code></pre>
+    <ul>
+      <li>تحلیل با <code>mysqldumpslow</code> یا <code>pt-query-digest</code> برای یافتن کوئری‌هایی که <strong>مجموع زمان</strong> بیشتری مصرف می‌کنند (یک کوئری ۵۰ms که ۱ میلیون بار اجرا می‌شود از یک کوئری ۵ ثانیه‌ای روزانه مهم‌تر است).</li>
+      <li>سپس <code>EXPLAIN</code> / <code>EXPLAIN ANALYZE</code> برای بررسی استفاده از index.</li>
+      <li><strong>Performance Schema</strong> و <code>sys</code> schema برای آمار تجمیعی کوئری‌ها؛ <code>SHOW PROCESSLIST</code> برای کوئری‌های در حال اجرا و قفل‌ها.</li>
+      <li><strong>متریک‌های کلیدی:</strong> QPS، اتصالات فعال در برابر <code>max_connections</code>، <strong>replication lag</strong>، hit ratio بافر InnoDB، row lock waits و <strong>deadlock</strong>ها، رشد حجم جدول‌ها.</li>
+    </ul>
+
+    <h3>در سطح Laravel</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Database\Connection;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+// AppServiceProvider::boot()
+
+// لاگ هر کوئری کندتر از ۵۰۰ms
+DB::listen(function (QueryExecuted $query) {
+    if ($query-&gt;time &gt; 500) {
+        Log::warning('Slow query', [
+            'sql' =&gt; $query-&gt;sql,
+            'time_ms' =&gt; $query-&gt;time,
+            'connection' =&gt; $query-&gt;connectionName,
+        ]);
+    }
+});
+
+// وقتی مجموع زمان کوئری‌ها در یک درخواست از ۲ ثانیه بیشتر شود
+DB::whenQueryingForLongerThan(2000, function (Connection $connection, QueryExecuted $event) {
+    Log::warning('Request spent too long in database', ['connection' =&gt; $connection-&gt;getName()]);
+});
+
+// تشخیص N+1 در محیط توسعه
+Model::preventLazyLoading(! app()-&gt;isProduction());</code></pre>
+    <div class="callout warn"><p>در <code>DB::listen</code> مقادیر <code>bindings</code> را بدون بررسی لاگ نکنید؛ ممکن است شامل رمز، توکن یا PII باشند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="incidents" data-title="مدیریت Incident، Postmortem و MTTD/MTTR">
+    <h2>مدیریت Incident، Postmortem و MTTD/MTTR</h2>
+    <p><strong>Incident</strong> رخدادی برنامه‌ریزی‌نشده است که سرویس را مختل کرده یا کیفیتش را کاهش داده است (یا تهدید می‌کند که خواهد کرد). مدیریت incident فرایندی ساخت‌یافته برای <strong>بازگرداندن سریع سرویس</strong> و یادگیری از آن است.</p>
+
+    <h3>چرخه‌ی Incident</h3>
+    <pre class="diagram">  رخداد ─► تشخیص (Detect) ─► تأیید/Ack ─► Triage (شدت) ─► Mitigate (توقف خونریزی) ─► Resolve ─► Postmortem ─► Action items
+           └── MTTD ──┘└─ MTTA ─┘                 └──────────── MTTR ────────────┘</pre>
+    <ul>
+      <li><strong>Severity:</strong> سطوحی مثل SEV1 (قطعی کامل یا از دست رفتن داده، همه‌ی کاربران) تا SEV3/SEV4 (اثر جزئی، دور زدنی). شدت تعیین می‌کند چه کسانی و با چه سرعتی درگیر شوند.</li>
+      <li><strong>نقش‌ها:</strong> <strong>Incident Commander</strong> (هماهنگی و تصمیم‌گیری، نه لزوماً رفع فنی)، مسئول ارتباطات (به‌روزرسانی status page و ذی‌نفعان)، و کارشناسان فنی (Operations).</li>
+      <li><strong>اولویت mitigation بر root cause:</strong> ابتدا rollback، خاموش کردن feature flag، failover یا افزایش ظرفیت؛ تحلیل ریشه بعداً.</li>
+      <li><strong>ثبت timeline</strong> در کانال incident در لحظه.</li>
+      <li><strong>ارتباط با کاربران</strong> (status page) به‌موقع و صادقانه.</li>
+    </ul>
+
+    <h3>Blameless Postmortem</h3>
+    <p>سندی که پس از incident نوشته می‌شود تا بفهمیم <strong>سیستم و فرایند</strong> چگونه اجازه‌ی وقوع آن را دادند و چه تغییری از تکرارش جلوگیری می‌کند. «<strong>بدون سرزنش</strong>» یعنی فرض می‌کنیم افراد با اطلاعات و ابزاری که داشتند تصمیم معقولی گرفتند؛ اگر یک انسان توانسته با یک دستور Production را خراب کند، مشکل در نبود محافظ است. سرزنش باعث پنهان‌کاری و از دست رفتن اطلاعات می‌شود.</p>
+    <h4>ساختار</h4>
+    <ol>
+      <li><strong>خلاصه</strong> و <strong>اثر</strong> (مدت، درصد کاربران متأثر، درخواست‌های ناموفق، مصرف error budget، اثر مالی).</li>
+      <li><strong>Timeline</strong> دقیق با زمان: شروع، تشخیص، اقدامات، بازیابی.</li>
+      <li><strong>علت ریشه‌ای و عوامل مشارکت‌کننده</strong> (معمولاً بیش از یک عامل؛ تکنیک «5 Whys»).</li>
+      <li><strong>تشخیص:</strong> چطور فهمیدیم؟ آیا alert زودتر می‌توانست بفهمد؟</li>
+      <li><strong>آنچه خوب پیش رفت</strong> و <strong>آنچه بد پیش رفت</strong>.</li>
+      <li><strong>Action itemها</strong> با <strong>مالک و مهلت</strong> (پیشگیری، تشخیص سریع‌تر، mitigation سریع‌تر) و پیگیری تا اتمام.</li>
+    </ol>
+
+    <h3>متریک‌های زمانی</h3>
+    <dl class="terms">
+      <dt>MTTD</dt><dd><strong>Mean Time To Detect</strong>: میانگین زمان از شروع مشکل تا تشخیص آن. با Monitoring و alerting بهتر کاهش می‌یابد. اگر کاربران زودتر از alert شما متوجه می‌شوند، MTTD مشکل دارد.</dd>
+      <dt>MTTA</dt><dd><strong>Mean Time To Acknowledge</strong>: از alert تا پذیرش توسط on-call.</dd>
+      <dt>MTTR</dt><dd><strong>Mean Time To Recover/Restore</strong> (گاهی Repair یا Resolve): میانگین زمان از شروع (یا تشخیص) خرابی تا بازگشت سرویس. با rollback سریع، feature flag، runbook و اتوماسیون کاهش می‌یابد. تعریف دقیق باید در تیم مشخص شود، چون این مخفف معانی مختلفی دارد.</dd>
+      <dt>MTBF</dt><dd><strong>Mean Time Between Failures</strong>: میانگین فاصله بین خرابی‌ها؛ معیار قابلیت اطمینان.</dd>
+    </dl>
+    <div class="callout exam"><p>در سیستم‌های پیچیده، جلوگیری از <em>همه‌ی</em> خرابی‌ها ممکن نیست؛ پس کاهش <strong>MTTD و MTTR</strong> اغلب بازده بیشتری از تلاش برای بالا بردن MTBF دارد. این همان نگاه DORA است که «Time to Restore» را یکی از چهار متریک کلیدی می‌داند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-monitoring-1">
+      <summary>Monitoring و Observability را تعریف و مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>Monitoring:</strong> جمع‌آوری و نمایش مجموعه‌ای از <strong>متریک‌ها و بررسی‌های از پیش تعریف‌شده</strong> و هشدار در صورت عبور از آستانه‌ها. به سوال‌هایی پاسخ می‌دهد که از قبل می‌دانستیم باید بپرسیم (known unknowns): «نرخ خطا بالای ۱٪ است؟»، «دیسک پر است؟».</p>
+        <p><strong>Observability:</strong> <strong>ویژگی سیستم</strong> است: اینکه چقدر می‌توان از روی خروجی‌های آن (logs، metrics، traces و events) وضعیت درونی‌اش را فهمید، حتی برای سوال‌هایی که پیش‌بینی نکرده بودیم (unknown unknowns). نیازمند داده‌ی غنی با context و cardinality بالا (user_id، نسخه، endpoint)، همبستگی بین سیگنال‌ها (trace_id در لاگ) و امکان کوئری آزاد است.</p>
+        <ul>
+          <li>Monitoring می‌گوید <strong>چه چیزی</strong> خراب است؛ Observability کمک می‌کند بفهمیم <strong>چرا</strong>.</li>
+          <li>Monitoring برای خرابی‌های شناخته‌شده و تکراری کافی است؛ در سیستم‌های توزیع‌شده و microservice که حالت‌های خرابی جدید و ترکیبی دارند، Observability ضروری است.</li>
+          <li>Monitoring یک فعالیت/ابزار است؛ Observability با <strong>instrumentation</strong> در طراحی سیستم ایجاد می‌شود.</li>
+        </ul>
+        <p><strong>رابطه:</strong> رقیب نیستند؛ Monitoring بخشی از Observability است. مثال: alert روی افزایش p99 (monitoring)، سپس بررسی traceهای کند و لاگ‌های مرتبط برای یافتن اینکه فقط درخواست‌های یک مشتری بزرگ با یک کوئری خاص کند شده‌اند (observability).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-2">
+      <summary>سه ستون Observability (Logs، Metrics، Traces) را توضیح دهید. هرکدام برای چه نوع سوالی مناسب است و چگونه با هم استفاده می‌شوند؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Logs:</strong> رکوردهای زمان‌دار و با جزئیات از رویدادهای گسسته. مناسب «دقیقاً چه اتفاقی برای این درخواست/کاربر افتاد؟». قوت: جزئیات و context. ضعف: حجم و هزینه‌ی بالا و دشواری روندیابی.</li>
+          <li><strong>Metrics:</strong> مقادیر عددی تجمیع‌شده در زمان با labelهای محدود. مناسب «روند چیست؟ آیا الان غیرعادی است؟» و پایه‌ی داشبورد و alert. قوت: ارزان، سریع، فشرده. ضعف: جزئیات تک‌رویداد ندارد و cardinality محدود است.</li>
+          <li><strong>Traces:</strong> مسیر end-to-end یک درخواست به‌صورت درختی از spanها در سرویس‌ها و اجزا. مناسب «زمان این درخواست کجا صرف شد؟ کدام وابستگی کند است؟». ضعف: نیاز به instrumentation و context propagation؛ معمولاً sampling.</li>
+          <li><strong>Events</strong> (مکمل): deploy، تغییر config، feature flag؛ برای پاسخ به «چه چیزی تغییر کرد؟».</li>
+        </ul>
+        <p><strong>جریان ترکیبی در عیب‌یابی:</strong></p>
+        <ol>
+          <li>alert روی <strong>metric</strong> (نرخ 5xx بالا رفته) و annotation deploy روی نمودار.</li>
+          <li>تفکیک metric بر اساس route و instance برای محدود کردن دامنه.</li>
+          <li>رفتن به <strong>trace</strong>های نمونه‌ی خطادار/کند برای یافتن span مقصر.</li>
+          <li>جست‌وجوی <strong>log</strong>ها با همان <code>trace_id</code> برای دیدن پیام خطا و context.</li>
+        </ol>
+        <p>کلید این جریان <strong>همبستگی</strong> است: یک شناسه‌ی مشترک (trace_id/request_id) و labelهای یکسان (service، env، version) در هر سه.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-3">
+      <summary>Structured logging چیست و چه مزیتی بر لاگ متنی دارد؟ چه اطلاعاتی را نباید در لاگ نوشت؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> ثبت لاگ به‌صورت رکوردهای با <strong>فیلدهای مشخص و قابل پردازش ماشینی</strong> (معمولاً JSON)، به‌جای رشته‌ی متنی آزاد.</p>
+        <pre><code class="language-json">{"level":"error","message":"Payment failed","order_id":1234,"user_id":88,
+ "gateway":"zarinpal","request_id":"6f1c...","service":"shop-api"}</code></pre>
+        <p><strong>مزایا:</strong></p>
+        <ul>
+          <li>جست‌وجو و فیلتر دقیق روی فیلدها (<code>order_id=1234</code>، <code>gateway=zarinpal AND level=error</code>) بدون regex شکننده.</li>
+          <li>تجمیع و ساخت متریک از لاگ (تعداد خطا به تفکیک gateway).</li>
+          <li>همبستگی با <code>request_id</code>/<code>trace_id</code> بین سرویس‌ها و jobها.</li>
+          <li>پیام ثابت + context متغیر ⇒ گروه‌بندی آسان.</li>
+          <li>مقاوم‌تر در برابر log injection.</li>
+        </ul>
+        <p><strong>نباید لاگ شود:</strong></p>
+        <ul>
+          <li>رمز عبور، توکن، API key، header <code>Authorization</code>، کوکی session، کلیدهای رمزنگاری.</li>
+          <li>شماره‌ی کامل کارت و CVV2.</li>
+          <li>PII غیرضروری (کد ملی، تلفن، آدرس، ایمیل کامل)؛ در صورت نیاز ماسک یا hash.</li>
+          <li>بدنه‌ی کامل درخواست/پاسخ و bindings کوئری‌ها به‌صورت پیش‌فرض.</li>
+        </ul>
+        <p><strong>دلیل:</strong> لاگ‌ها دسترسی گسترده‌تر، کپی‌های متعدد و نگهداری طولانی‌تری از دیتابیس دارند؛ نشت از لاگ یکی از رایج‌ترین مسیرهای افشای داده و نقض الزامات قانونی (مثل GDPR یا PCI DSS) است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-4">
+      <summary>چگونه در یک اپلیکیشن Laravel که jobهای صف و فراخوانی به سرویس‌های دیگر دارد، Correlation ID پیاده‌سازی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>هدف:</strong> همه‌ی لاگ‌های مربوط به یک درخواست کاربر، در وب، jobهای صف و سرویس‌های پایین‌دستی، با یک شناسه‌ی مشترک قابل یافتن باشند.</p>
+        <ol>
+          <li><strong>Middleware سراسری:</strong> شناسه را از header ورودی <code>X-Request-Id</code> (اگر Load Balancer یا سرویس بالادستی فرستاده) بخوان یا UUID جدید بساز.</li>
+          <li><strong>افزودن به Context:</strong> <code>Context::add('request_id', $id)</code> (Laravel 11+). داده‌ی Context به‌صورت metadata به همه‌ی لاگ‌ها اضافه و <strong>به‌طور خودکار به jobهای dispatch‌شده منتقل</strong> می‌شود؛ پس لاگ‌های worker هم همان شناسه را دارند. (در نسخه‌های قدیمی‌تر: <code>Log::withContext</code> و انتقال دستی در payload job.)</li>
+          <li><strong>بازگرداندن در پاسخ:</strong> <code>$response-&gt;headers-&gt;set('X-Request-Id', $id)</code> تا پشتیبانی بتواند از کاربر بگیرد.</li>
+          <li><strong>انتقال به سرویس‌های دیگر:</strong> افزودن header در درخواست‌های خروجی: <code>Http::withHeaders(['X-Request-Id' =&gt; Context::get('request_id')])</code> (یا یک macro/middleware برای HTTP client).</li>
+          <li><strong>لاگ ساختاریافته</strong> (JSON) تا فیلد <code>request_id</code> در سیستم مرکزی قابل فیلتر باشد.</li>
+        </ol>
+        <pre><code class="language-php">&lt;?php
+public function handle(Request $request, Closure $next): Response
+{
+    $id = $request-&gt;header('X-Request-Id') ?: (string) Str::uuid();
+    Context::add('request_id', $id);
+
+    $response = $next($request);
+    $response-&gt;headers-&gt;set('X-Request-Id', $id);
+    return $response;
+}</code></pre>
+        <p><strong>تکامل:</strong> با OpenTelemetry، header استاندارد <code>traceparent</code> (W3C Trace Context) به‌طور خودکار propagate می‌شود و <code>trace_id</code> همین نقش را بازی می‌کند، با این مزیت که spanها و زمان‌بندی هم ثبت می‌شوند. باید به header ورودی از منابع غیرقابل اعتماد با احتیاط نگاه کرد (اعتبارسنجی قالب و طول).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-5">
+      <summary>انواع متریک Counter، Gauge، Histogram و Summary را با مثال توضیح دهید. چرا برای latency معمولاً Histogram را بر Summary ترجیح می‌دهند؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Counter:</strong> فقط افزایشی (با restart صفر می‌شود). مثال: <code>http_requests_total</code>، <code>jobs_failed_total</code>. مقدار خامش معنای کمی دارد؛ با <code>rate()</code> یا <code>increase()</code> استفاده می‌شود.</li>
+          <li><strong>Gauge:</strong> مقدار لحظه‌ای که بالا و پایین می‌رود. مثال: طول صف، حافظه‌ی مصرفی، اتصالات فعال دیتابیس، تعداد workerهای مشغول FPM.</li>
+          <li><strong>Histogram:</strong> شمارش مشاهدات در bucketهای از پیش تعریف‌شده‌ی تجمعی (<code>_bucket{le="0.5"}</code>) به‌علاوه‌ی <code>_sum</code> و <code>_count</code>. percentile در سمت سرور با <code>histogram_quantile()</code> محاسبه می‌شود.</li>
+          <li><strong>Summary:</strong> quantileها (مثلاً 0.5، 0.9، 0.99) را <strong>در خود کلاینت</strong> روی یک پنجره‌ی زمانی محاسبه می‌کند، به‌علاوه‌ی sum و count.</li>
+        </ul>
+        <p><strong>چرا Histogram برای latency:</strong></p>
+        <ul>
+          <li><strong>قابلیت تجمیع:</strong> bucketهای چند instance قابل جمع‌اند و می‌توان p95 کل سرویس را محاسبه کرد؛ quantileهای Summary قابل تجمیع نیستند (میانگین p99 سه سرور، p99 کل نیست).</li>
+          <li><strong>انعطاف در کوئری:</strong> هر percentile و هر بازه را بعداً می‌توان محاسبه کرد؛ در Summary quantileها از قبل ثابت‌اند.</li>
+          <li>محاسبه‌ی <strong>درصد درخواست‌های زیر آستانه</strong> (برای SLI) مستقیماً از bucket ممکن است.</li>
+          <li>سربار کمتر در کلاینت.</li>
+        </ul>
+        <p><strong>هزینه‌ی Histogram:</strong> دقت percentile به انتخاب bucketها بستگی دارد (درون‌یابی خطی داخل bucket) و هر bucket یک series جداگانه است؛ پس bucketها باید متناسب با SLO انتخاب شوند (مثلاً یک مرز دقیقاً روی ۳۰۰ms اگر SLO آن است). Summary وقتی مناسب است که فقط یک instance داریم و quantile دقیق می‌خواهیم.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-6">
+      <summary>چرا برای سنجش latency از percentileها (p50، p95، p99) استفاده می‌کنیم و نه میانگین؟ با یک مثال عددی توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> pN مقداری است که N درصد مشاهدات کمتر یا مساوی آن هستند. p50 (میانه) تجربه‌ی معمول، p95/p99 تجربه‌ی بدترین درصدهای کاربران (tail latency) را نشان می‌دهند.</p>
+        <p><strong>مثال:</strong> از ۱۰۰ درخواست، ۹۵ تا در ۵۰ms و ۵ تا در ۳۰۰۰ms پاسخ گرفته‌اند.</p>
+        <ul>
+          <li>میانگین = (۹۵×۵۰ + ۵×۳۰۰۰)/۱۰۰ = <strong>۱۹۷٫۵ms</strong>؛ نه نماینده‌ی ۹۵٪ کاربران (۵۰ms) و نه آن ۵٪ (۳ ثانیه). عددی است که هیچ‌کس تجربه نکرده.</li>
+          <li>p50 = ۵۰ms، p99 = <strong>۳۰۰۰ms</strong>: به‌وضوح نشان می‌دهد گروهی از کاربران تجربه‌ی بسیار بدی دارند.</li>
+        </ul>
+        <p><strong>چرا tail مهم است:</strong></p>
+        <ul>
+          <li>توزیع latency معمولاً نامتقارن و دُم‌بلند است؛ میانگین آن را پنهان می‌کند و با چند مقدار پرت جابه‌جا می‌شود.</li>
+          <li><strong>Fan-out:</strong> اگر یک صفحه ۱۰ فراخوانی موازی داشته باشد، احتمال اینکه دست‌کم یکی از p99 کندتر باشد حدود ۱ − ۰٫۹۹ به توان ۱۰ ≈ ۱۰٪ است؛ p99 هر جزء به تجربه‌ی رایج کاربر تبدیل می‌شود.</li>
+          <li>کاربران با بیشترین داده و تعامل (اغلب ارزشمندترین مشتریان) معمولاً در دم توزیع‌اند.</li>
+        </ul>
+        <p><strong>نکات عملی:</strong> percentileها را نمی‌توان میانگین گرفت؛ باید از histogram تجمیع‌شده محاسبه شوند. latency درخواست‌های موفق و ناموفق را جدا ببینید (خطاهای سریع، p99 را کاذب خوب نشان می‌دهند). SLO latency را به شکل «۹۵٪ درخواست‌ها زیر ۳۰۰ms» تعریف کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-7">
+      <summary>SLI، SLO و SLA را تعریف کنید. Error budget چیست؟ برای یک سرویس با SLO دسترس‌پذیری ۹۹٫۹٪ در ۳۰ روز، بودجه‌ی خطا را محاسبه و نحوه‌ی استفاده از آن را توضیح دهید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>SLI:</strong> معیار کمّی کیفیت سرویس از دید کاربر؛ معمولاً نسبت رویدادهای خوب به کل. مثال: درصد درخواست‌های غیر 5xx؛ درصد درخواست‌های زیر ۳۰۰ms.</li>
+          <li><strong>SLO:</strong> هدف داخلی برای SLI در یک بازه. مثال: «۹۹٫۹٪ درخواست‌ها در هر ۳۰ روز موفق».</li>
+          <li><strong>SLA:</strong> قرارداد با مشتری با <strong>پیامد مالی/حقوقی</strong> در صورت نقض؛ معمولاً سست‌تر از SLO (مثلاً SLA ۹۹٫۵٪ وقتی SLO ۹۹٫۹٪ است) تا قبل از نقض قرارداد هشدار بگیریم.</li>
+          <li><strong>Error budget:</strong> ۱ − SLO؛ مقدار خرابی مجاز.</li>
+        </ul>
+        <p><strong>محاسبه:</strong> ۳۰ روز × ۲۴ ساعت × ۶۰ دقیقه = ۴۳٬۲۰۰ دقیقه. ۰٫۱٪ از آن = <strong>۴۳٫۲ دقیقه</strong> downtime مجاز در ماه. به‌صورت مبتنی بر درخواست: با ۱۰ میلیون درخواست در ماه، <strong>۱۰٬۰۰۰ درخواست ناموفق</strong> مجاز است.</p>
+        <p><strong>استفاده:</strong></p>
+        <ul>
+          <li><strong>تصمیم‌گیری داده‌محور بین سرعت و پایداری:</strong> تا وقتی بودجه باقی است، تیم می‌تواند سریع deploy کند و ریسک بپذیرد؛ وقتی تمام شد، طبق <strong>error budget policy</strong> انتشار قابلیت جدید متوقف و تمرکز روی پایداری می‌شود.</li>
+          <li><strong>Alerting بر اساس burn rate:</strong> مثلاً اگر در ۱ ساعت بیش از ۲٪ بودجه‌ی ماه مصرف شود (burn rate ۱۴٫۴)، page.</li>
+          <li><strong>اولویت‌بندی کار:</strong> incidentی که ۶۰٪ بودجه را مصرف کرده، action itemهایش اولویت دارند.</li>
+        </ul>
+        <p><strong>چرا ۱۰۰٪ نه؟</strong> دست‌نیافتنی، با هزینه‌ی تصاعدی، فراتر از قابلیت اطمینان شبکه‌ی خود کاربر، و به معنای منع هر تغییر.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-8">
+      <summary>روش‌های RED و USE و چهار سیگنال طلایی را توضیح دهید و تفاوت کاربرد آن‌ها را بنویسید.</summary>
+      <div class="answer">
+        <p><strong>Four Golden Signals (کتاب SRE گوگل):</strong></p>
+        <ul>
+          <li><strong>Latency</strong> (با تفکیک موفق/ناموفق)، <strong>Traffic</strong> (تقاضا)، <strong>Errors</strong> (صریح، ضمنی، سیاستی) و <strong>Saturation</strong> (پر بودن منبع محدودکننده؛ پیش‌بینی‌کننده‌ی مشکل).</li>
+        </ul>
+        <p><strong>RED (برای سرویس‌ها):</strong> <strong>Rate</strong> (درخواست بر ثانیه)، <strong>Errors</strong> (درخواست‌های ناموفق)، <strong>Duration</strong> (توزیع زمان پاسخ). دید مصرف‌کننده‌ی سرویس؛ برای هر API و microservice یکسان، پس داشبورد استاندارد می‌سازد.</p>
+        <p><strong>USE (برای منابع):</strong> برای هر منبع (CPU، حافظه، دیسک، شبکه، connection pool): <strong>Utilization</strong> (درصد مشغولی)، <strong>Saturation</strong> (کار در صف/انتظار) و <strong>Errors</strong>. برای یافتن گلوگاه‌های زیرساختی.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>RED</th><th>USE</th></tr></thead>
+          <tbody>
+            <tr><td>موضوع</td><td>سرویس/endpoint</td><td>منبع سخت‌افزاری/نرم‌افزاری</td></tr>
+            <tr><td>دیدگاه</td><td>بیرونی (کاربر)</td><td>درونی (سیستم)</td></tr>
+            <tr><td>سوال</td><td>«آیا کاربر مشکل دارد؟»</td><td>«کدام منبع گلوگاه است؟»</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>رابطه:</strong> RED تقریباً همان Golden Signals بدون Saturation است. در عمل: <strong>alert</strong> روی RED/Golden Signals (symptom)، <strong>دیباگ</strong> با USE (cause). مثال Laravel: افزایش p99 در RED ← در USE دیده می‌شود FPM به <code>max_children</code> رسیده (saturation) و CPU دیتابیس ۱۰۰٪ است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-9">
+      <summary>تیم on-call شما هر شب ده‌ها alert دریافت می‌کند که بیشترشان نیاز به اقدام ندارند. مشکل چیست و سیستم alerting را چگونه بازطراحی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>مشکل: Alert fatigue.</strong> وقتی alertها پرنویز و غیرقابل اقدام‌اند، افراد به آن‌ها بی‌توجه می‌شوند، mute می‌کنند یا دیر پاسخ می‌دهند و alert واقعی گم می‌شود؛ به‌علاوه‌ی فرسودگی تیم.</p>
+        <p><strong>بازطراحی:</strong></p>
+        <ol>
+          <li><strong>ممیزی:</strong> فهرست alertهای چند هفته‌ی اخیر؛ کدام‌ها منجر به اقدام شدند؟ alertهای بدون اقدام حذف، تجمیع یا به ticket تبدیل شوند.</li>
+          <li><strong>Symptom-based:</strong> page فقط برای اثر روی کاربر: نرخ خطا، latency، <strong>burn rate</strong> error budget. alertهای علت‌محور (CPU ۹۰٪، یک pod restart شد) به داشبورد یا ticket منتقل شوند.</li>
+          <li><strong>Severity و routing:</strong> <code>page</code> فقط برای فوری و اثرگذار؛ <code>ticket</code> برای کارهای قابل انتظار تا ساعت کاری (دیسک ۳ روز دیگر پر می‌شود).</li>
+          <li><strong>کاهش flapping:</strong> بازه‌ی <code>for:</code> مناسب، hysteresis، و بازه‌ی محاسبه‌ی معقول.</li>
+          <li><strong>Grouping/inhibition:</strong> در Alertmanager، alertهای مرتبط با یک رخداد در یک اعلان؛ اگر دیتابیس down است، alertهای وابسته سرکوب شوند.</li>
+          <li><strong>Runbook</strong> برای هر alert باقی‌مانده و لینک آن در annotation.</li>
+          <li><strong>خودکارسازی</strong> واکنش‌های تکراری (restart، پاک‌سازی دیسک، autoscaling) به‌جای page.</li>
+          <li><strong>بازبینی دوره‌ای</strong> و متریک‌هایی مثل تعداد page در هر شیفت.</li>
+        </ol>
+        <p><strong>معیار:</strong> هر page باید فوری، اثرگذار بر کاربر، نیازمند قضاوت انسانی و دارای runbook باشد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-10">
+      <summary>مدل pull در Prometheus را با مدل push مقایسه کنید. جمع‌آوری متریک‌های برنامه‌ای از یک اپلیکیشن PHP-FPM چه چالشی دارد و چگونه حل می‌شود؟</summary>
+      <div class="answer">
+        <p><strong>Pull (Prometheus):</strong> Prometheus در فواصل منظم endpoint <code>/metrics</code> هر target را scrape می‌کند.</p>
+        <ul>
+          <li>مزایا: کنترل مرکزی نرخ و بار؛ متریک <code>up</code> خودکار برای تشخیص target در دسترس نبودن؛ service discovery؛ آسانی دیباگ (باز کردن <code>/metrics</code> در مرورگر)؛ برنامه به سیستم Monitoring وابسته نیست.</li>
+          <li>معایب: targetهای پشت NAT/فایروال؛ jobهای کوتاه‌عمر ممکن است قبل از scrape تمام شوند (راه‌حل: <strong>Pushgateway</strong>).</li>
+        </ul>
+        <p><strong>Push (StatsD، OTLP، InfluxDB):</strong> برنامه داده را به collector می‌فرستد. مناسب serverless و jobهای کوتاه؛ اما تشخیص «سرویس مرده» از «سرویس بدون داده» سخت‌تر و کنترل بار با فرستنده‌هاست.</p>
+        <p><strong>چالش PHP-FPM:</strong> مدل اجرای PHP <strong>share-nothing</strong> است: هر درخواست در یک worker با حافظه‌ی مستقل اجرا می‌شود و پس از پایان درخواست state پاک می‌شود. پس نمی‌توان مثل Go/Java یک counter درون‌حافظه‌ای در طول عمر فرایند نگه داشت و در <code>/metrics</code> نمایش داد.</p>
+        <p><strong>راه‌حل‌ها:</strong></p>
+        <ul>
+          <li>کتابخانه‌ای مثل <code>promphp/prometheus_client_php</code> با storage مشترک (<strong>Redis</strong> یا <strong>APCu</strong>)؛ هر درخواست counter را در Redis افزایش می‌دهد و یک route <code>/metrics</code> (محافظت‌شده) آن‌ها را render می‌کند.</li>
+          <li>ارسال push به <strong>StatsD</strong> یا <strong>OpenTelemetry Collector</strong> (UDP/OTLP) که تجمیع می‌کند و برای Prometheus expose می‌کند.</li>
+          <li><strong>Exporterها</strong> برای متریک‌های زیرساختی: <code>php-fpm_exporter</code> (status page FPM: active/idle processes، listen queue، max children reached)، nginx، mysqld، redis و node_exporter.</li>
+          <li>متریک‌های صف از Horizon یا یک command زمان‌بندی‌شده که gaugeها (طول صف) را به‌روز می‌کند.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-11">
+      <summary>Distributed tracing چیست؟ مفاهیم trace، span و context propagation را توضیح دهید و نقش OpenTelemetry را بیان کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> روشی برای ثبت مسیر کامل یک درخواست در میان سرویس‌ها و اجزای یک سیستم توزیع‌شده، به‌همراه زمان‌بندی هر بخش، تا بتوان فهمید latency و خطا دقیقاً در کجا رخ داده است.</p>
+        <ul>
+          <li><strong>Trace:</strong> کل سفر یک درخواست؛ درختی از spanها با یک <code>trace_id</code> مشترک.</li>
+          <li><strong>Span:</strong> یک واحد کار (درخواست HTTP، کوئری دیتابیس، فراخوانی سرویس دیگر، پردازش job) با نام، زمان شروع/پایان، <code>span_id</code>، <code>parent_span_id</code>، attributeها و status.</li>
+          <li><strong>Context propagation:</strong> انتقال <code>trace_id</code> و span والد از سرویسی به سرویس دیگر، معمولاً با header استاندارد W3C <code>traceparent</code> (<code>00-&lt;trace-id&gt;-&lt;parent-span-id&gt;-&lt;flags&gt;</code>) در HTTP و metadata در پیام‌های صف. بدون propagation، هر سرویس trace جداگانه‌ای دارد و تصویر end-to-end از بین می‌رود.</li>
+          <li><strong>Sampling:</strong> head-based (تصمیم در ابتدا، ساده) یا tail-based (پس از پایان، نگهداری همه‌ی traceهای خطادار/کند).</li>
+        </ul>
+        <p><strong>OpenTelemetry:</strong> استاندارد باز و vendor-neutral (CNCF) شامل API/SDK برای زبان‌ها (از جمله PHP)، auto-instrumentation برای فریم‌ورک‌ها و کتابخانه‌ها، پروتکل OTLP و Collector برای پردازش (batch، sampling، حذف PII) و ارسال به backendهای مختلف (Jaeger، Tempo، Zipkin، سرویس‌های تجاری). مزیت: یک بار instrument، تغییر backend بدون تغییر کد و یکپارچگی traces، metrics و logs.</p>
+        <p><strong>کاربرد:</strong> یافتن سرویس یا کوئری کند در یک زنجیره، کشف N+1 و فراخوانی‌های سریالی که می‌توانستند موازی باشند، درک وابستگی‌ها (service map) و اتصال لاگ‌ها به درخواست با <code>trace_id</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-12">
+      <summary>یک سناریو: بعد از deploy دیروز، کاربران از کندی صفحه‌ی checkout شکایت دارند؛ میانگین latency تغییر چندانی نکرده ولی p99 از ۴۰۰ms به ۳ ثانیه رسیده است. چگونه بررسی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>۱. تأیید و محدود کردن دامنه:</strong> نمودار p99 را با annotation deploy مقایسه کنید؛ آیا شروع افزایش دقیقاً با deploy منطبق است؟ تفکیک بر اساس route، instance، نوع کاربر و موفق/ناموفق. ثابت ماندن میانگین یعنی مشکل در درصد کوچکی از درخواست‌هاست (tail).</p>
+        <p><strong>۲. Mitigation در صورت شدت:</strong> اگر اثر جدی است و همبستگی با deploy قوی است، rollback یا خاموش کردن feature flag مرتبط، سپس تحلیل.</p>
+        <p><strong>۳. Traceها:</strong> traceهای نمونه از درخواست‌های بالای ۲ ثانیه‌ی checkout را باز کنید؛ کدام span زمان را گرفته؟ (کوئری دیتابیس، فراخوانی درگاه پرداخت، lock، cache miss).</p>
+        <p><strong>۴. فرضیه‌های رایج و نحوه‌ی بررسی:</strong></p>
+        <ul>
+          <li><strong>N+1 یا کوئری بدون index</strong> که فقط برای سبدهای بزرگ کند است ⇒ Pulse (slow queries)، slow query log، <code>EXPLAIN</code>.</li>
+          <li><strong>Saturation:</strong> FPM به <code>max_children</code> رسیده و درخواست‌ها در صف می‌مانند ⇒ متریک‌های php-fpm_exporter (listen queue)؛ اتصالات دیتابیس نزدیک <code>max_connections</code>.</li>
+          <li><strong>وابستگی بیرونی</strong> کند یا timeout بلند ⇒ spanهای HTTP خروجی؛ آیا timeout و retry درست تنظیم شده؟</li>
+          <li><strong>Cache:</strong> کلید cache در کد جدید عوض شده (cache stampede) یا cache پاک شده ⇒ hit ratio.</li>
+          <li><strong>Lock contention</strong> در دیتابیس (SELECT … FOR UPDATE جدید) ⇒ lock waits.</li>
+        </ul>
+        <p><strong>۵. لاگ‌ها و خطاها:</strong> با <code>trace_id</code> traceهای کند، لاگ‌ها و Sentry (timeoutها، retryها) را بررسی کنید.</p>
+        <p><strong>۶. رفع و پیشگیری:</strong> اصلاح (index، eager loading، timeout)، تست بار روی سناریو، افزودن SLO/alert روی p99 checkout (نه میانگین) و postmortem. درس کلیدی: <strong>میانگین این مشکل را پنهان کرد</strong>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-13">
+      <summary>Laravel Telescope، Pulse و Horizon را مقایسه کنید. کدام را در Production استفاده می‌کنید و چرا؟</summary>
+      <div class="answer">
+        <p><strong>Telescope:</strong> دستیار دیباگ که <strong>تک‌تک</strong> رویدادها را با جزئیات کامل ثبت می‌کند: درخواست‌ها، کوئری‌ها، exceptionها، لاگ‌ها، jobها، ایمیل‌ها، cache، eventها، HTTP خروجی. عالی برای توسعه و staging. در Production به‌دلیل سربار نوشتن حجم زیاد داده و حساسیت اطلاعات، یا استفاده نمی‌شود یا با فیلتر شدید، pruning و gate دسترسی.</p>
+        <p><strong>Pulse:</strong> داشبورد <strong>سبک و تجمیعی</strong> طراحی‌شده برای Production: کندترین درخواست‌ها، کوئری‌ها، jobها و درخواست‌های خروجی، exceptionهای پرتکرار، کاربران پرمصرف، throughput صف، cache و منابع سرورها (با <code>pulse:check</code>). با sampling و ingest از طریق Redis سربار را کنترل می‌کند.</p>
+        <p><strong>Horizon:</strong> مخصوص صف‌های <strong>Redis</strong>: پیکربندی workerها به‌صورت کد (supervisorها، balancing، تعداد فرایند)، داشبورد throughput، runtime، <strong>wait time</strong>، jobهای failed با retry، tagها و notification وقتی wait time از آستانه بیشتر شود. نیاز به <code>horizon:snapshot</code> زمان‌بندی‌شده برای نمودارها.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Telescope</th><th>Pulse</th><th>Horizon</th></tr></thead>
+          <tbody>
+            <tr><td>داده</td><td>تک‌رویداد</td><td>تجمیعی</td><td>صف</td></tr>
+            <tr><td>محیط</td><td>dev/staging</td><td>prod</td><td>prod</td></tr>
+            <tr><td>سربار</td><td>بالا</td><td>کم</td><td>کم</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>انتخاب برای Production:</strong> Pulse برای نمای کلی عملکرد و Horizon اگر صف Redis داریم؛ Telescope در صورت نیاز فقط محدود. اما هیچ‌کدام جایگزین Monitoring خارجی (Prometheus/Grafana، uptime check)، error tracking (Sentry) و alerting مستقل نیستند؛ چون وقتی برنامه یا دیتابیسش down باشد، داشبورد داخلی هم در دسترس نیست.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-14">
+      <summary>Health check endpoint چیست؟ تفاوت liveness و readiness را توضیح دهید و بگویید route <code>/up</code> در Laravel چگونه کار می‌کند.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> endpointی که orchestrator، Load Balancer یا سیستم Monitoring به‌طور دوره‌ای فراخوانی می‌کند تا بفهمد یک نمونه‌ی برنامه سالم است و می‌تواند ترافیک بگیرد.</p>
+        <ul>
+          <li><strong>Liveness:</strong> «آیا فرایند زنده است و گیر نکرده؟» شکست ⇒ <strong>restart</strong>. باید سطحی باشد و وابستگی‌های بیرونی را چک نکند؛ وگرنه قطعی دیتابیس باعث restart هم‌زمان همه‌ی نمونه‌ها و بدتر شدن وضع می‌شود.</li>
+          <li><strong>Readiness:</strong> «آیا آماده‌ی سرویس‌دهی است؟» شکست ⇒ <strong>خروج از Load Balancer</strong> بدون restart. می‌تواند وابستگی‌های حیاتی را بررسی کند. در startup (warmup) و هنگام shutdown در deploy بدون downtime اهمیت دارد.</li>
+          <li><strong>Startup probe</strong> (Kubernetes): برای برنامه‌هایی با شروع کند تا liveness زودهنگام آن‌ها را نکشد.</li>
+        </ul>
+        <p><strong>Laravel <code>/up</code>:</strong> از Laravel 11 در <code>bootstrap/app.php</code> با <code>withRouting(health: '/up')</code> تعریف می‌شود. اگر برنامه بدون exception boot شود 200 و در غیر این صورت 500 برمی‌گرداند. رویداد <code>DiagnosingHealth</code> را dispatch می‌کند؛ با listener می‌توان بررسی‌هایی مثل اتصال دیتابیس اضافه کرد (exception ⇒ 500).</p>
+        <pre><code class="language-php">Event::listen(DiagnosingHealth::class, fn () =&gt; DB::connection()-&gt;getPdo());</code></pre>
+        <p><strong>بهترین روش‌ها:</strong> سبک و سریع با timeout کوتاه؛ عدم افشای اطلاعات حساس؛ عدم ثبت لاگ برای هر فراخوانی health check (نویز)؛ و استفاده از <strong>uptime check بیرونی</strong> روی همین endpoint برای کشف مشکلات DNS، TLS و شبکه که Monitoring داخلی نمی‌بیند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-15">
+      <summary>Blameless postmortem چیست و چه بخش‌هایی دارد؟ MTTD و MTTR را تعریف کنید و راه‌های کاهش هرکدام را بنویسید.</summary>
+      <div class="answer">
+        <p><strong>Blameless postmortem:</strong> سندی که پس از هر incident مهم نوشته می‌شود تا بفهمیم چه شد، چرا شد و چه تغییری از تکرارش جلوگیری می‌کند، <strong>بدون مقصر دانستن افراد</strong>. فرض این است که افراد با اطلاعات موجود تصمیم معقولی گرفتند و خطای انسانی نشانه‌ی ضعف در سیستم و محافظ‌هاست. سرزنش باعث پنهان‌کاری و از دست رفتن اطلاعات می‌شود.</p>
+        <p><strong>بخش‌ها:</strong></p>
+        <ol>
+          <li>خلاصه و <strong>اثر</strong> (مدت، کاربران متأثر، error budget مصرف‌شده).</li>
+          <li><strong>Timeline</strong> دقیق: شروع، تشخیص، اقدامات، بازیابی.</li>
+          <li><strong>علت ریشه‌ای و عوامل مشارکت‌کننده</strong> (5 Whys).</li>
+          <li>نحوه‌ی <strong>تشخیص</strong> و اینکه آیا می‌توانست زودتر باشد.</li>
+          <li>آنچه خوب و آنچه بد پیش رفت؛ کجا شانس آوردیم.</li>
+          <li><strong>Action itemها</strong> با مالک و مهلت، و پیگیری.</li>
+        </ol>
+        <p><strong>MTTD (Mean Time To Detect):</strong> میانگین زمان از شروع مشکل تا تشخیص آن. کاهش با: alertهای symptom-based و burn-rate، uptime/synthetic check، error tracking با alert روی خطای جدید، annotation deploy.</p>
+        <p><strong>MTTR (Mean Time To Recover/Restore):</strong> میانگین زمان تا بازگشت سرویس. کاهش با: rollback سریع و خودکار، feature flag (kill switch)، runbook، داشبوردها و traceهای آماده، تمرین incident (game day)، نقش‌های مشخص (Incident Commander) و deployهای کوچک که علت را واضح می‌کنند.</p>
+        <p>در سیستم‌های پیچیده جلوگیری از همه‌ی خرابی‌ها ممکن نیست؛ کاهش MTTD و MTTR اغلب بازده بیشتری دارد و MTTR یکی از متریک‌های DORA است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-16">
+      <summary>یک سناریو: CPU سرور MySQL به‌طور مداوم بالای ۹۰٪ است و پاسخ‌دهی برنامه کند شده. چه ابزارها و مراحلی برای یافتن کوئری‌های مشکل‌دار به‌کار می‌برید؟</summary>
+      <div class="answer">
+        <p><strong>۱. تصویر لحظه‌ای:</strong> <code>SHOW FULL PROCESSLIST</code> برای کوئری‌های در حال اجرا، مدت و وضعیت (Sending data، Locked)؛ آیا کوئری خاصی بارها تکرار شده؟</p>
+        <p><strong>۲. Slow query log:</strong> فعال کردن (در صورت نبود) با <code>slow_query_log=1</code> و <code>long_query_time</code> مناسب (مثلاً ۰٫۵ ثانیه، یا موقتاً کمتر)، سپس تحلیل با <code>pt-query-digest</code> یا <code>mysqldumpslow</code> برای رتبه‌بندی بر اساس <strong>مجموع زمان</strong> (نه فقط کندترین تک‌کوئری).</p>
+        <p><strong>۳. Performance Schema / sys schema:</strong> آمار تجمیعی digest کوئری‌ها، کوئری‌هایی با full table scan، تعداد ردیف‌های بررسی‌شده در برابر برگشتی.</p>
+        <p><strong>۴. تحلیل کوئری:</strong> <code>EXPLAIN</code> / <code>EXPLAIN ANALYZE</code>: نوع دسترسی (<code>ALL</code> = full scan)، index استفاده‌شده، <code>rows</code>، <code>Using filesort</code>/<code>Using temporary</code>.</p>
+        <p><strong>۵. ردیابی تا کد Laravel:</strong> Pulse (slow queries با محل فراخوانی)، APM/tracing، <code>DB::listen</code> برای لاگ کوئری‌های کند با request_id، و در dev <code>Model::preventLazyLoading()</code> برای کشف N+1.</p>
+        <p><strong>۶. متریک‌های همبسته:</strong> QPS (آیا ترافیک بالا رفته یا کوئری‌ها گران‌تر شده‌اند؟)، annotation deploy، اتصالات فعال، hit ratio بافر InnoDB، lock waits.</p>
+        <p><strong>۷. اصلاح:</strong> index مناسب (ترکیبی با ترتیب درست)، eager loading، انتخاب ستون‌های لازم، صفحه‌بندی cursor به‌جای OFFSET بزرگ، cache نتایج پرتکرار، انتقال گزارش‌های سنگین به replica خواندنی. سپس alert روی متریک‌های دیتابیس و بررسی منظم slow log.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-monitoring-17">
+      <summary>ELK و Loki را برای تجمیع لاگ مقایسه کنید. مفهوم cardinality چیست و چرا در Prometheus و Loki اهمیت دارد؟</summary>
+      <div class="answer">
+        <p><strong>ELK/EFK:</strong> Elasticsearch (ذخیره و <strong>full-text index</strong>)، Logstash یا Fluentd/Fluent Bit (جمع‌آوری و پردازش)، Kibana (UI). جست‌وجوی آزاد و سریع روی هر فیلد، تحلیل پیچیده و کاربرد امنیتی (SIEM)؛ اما پرمصرف از نظر RAM و دیسک و نگهداری سنگین‌تر.</p>
+        <p><strong>Loki:</strong> فقط <strong>labelها</strong> (مثل <code>app</code>، <code>env</code>، <code>level</code>) را index می‌کند و محتوای لاگ را فشرده در chunkها (اغلب روی object storage) نگه می‌دارد؛ کوئری با LogQL ابتدا streamها را با label انتخاب و سپس محتوا را فیلتر/parse می‌کند. بسیار ارزان‌تر و سبک‌تر، با یکپارچگی طبیعی با Grafana و Prometheus؛ اما جست‌وجوی آزاد روی حجم بزرگ کندتر است.</p>
+        <p><strong>Cardinality:</strong> تعداد ترکیب‌های یکتای مقادیر labelها. در Prometheus هر ترکیب یکتا یک <strong>time series</strong> جداگانه و در Loki یک <strong>stream</strong> جداگانه است. مثال: label <code>status</code> با ۱۰ مقدار × <code>route</code> با ۵۰ مقدار × ۲۰ instance = ۱۰٬۰۰۰ series؛ قابل مدیریت. اما افزودن <code>user_id</code> با یک میلیون مقدار ⇒ میلیاردها series.</p>
+        <p><strong>پیامد cardinality بالا:</strong> مصرف شدید حافظه، کندی کوئری‌ها، هزینه‌ی بالا و حتی از کار افتادن Prometheus/Loki.</p>
+        <p><strong>قاعده:</strong> label فقط برای ابعاد با مقادیر محدود و معنادار برای تجمیع (service، env، route نرمال‌شده مثل <code>/orders/{id}</code> نه URL خام، status class). شناسه‌های یکتا (user_id، order_id، request_id) در <strong>محتوای لاگ</strong> یا attributeهای trace قرار گیرند، نه label متریک.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>مفاهیم پایه</h4>
+      <ul>
+        <li>Monitoring = «چه چیزی» خراب است (known unknowns).</li>
+        <li>Observability = «چرا» (unknown unknowns)؛ ویژگی سیستم.</li>
+        <li>Logs (جزئیات رویداد)، Metrics (عدد تجمیعی، روند، alert)، Traces (مسیر درخواست)، Events (deploy/config).</li>
+        <li>همبستگی با trace_id / request_id.</li>
+      </ul>
+      <h4>Logging</h4>
+      <ul>
+        <li>JSON، پیام ثابت + context، timestamp ISO، service/env/version.</li>
+        <li>سطوح: emergency، alert، critical، error، warning، notice، info، debug.</li>
+        <li>نه: رمز، توکن، Authorization، کارت/CVV، PII اضافی.</li>
+        <li>Laravel: channels (single، daily، stack، stderr، slack)، <code>level</code> = حداقل.</li>
+        <li><code>Log::withContext</code> / <code>shareContext</code> / <code>Context::add</code> (→ jobها).</li>
+        <li>container ⇒ <code>LOG_CHANNEL=stderr</code>.</li>
+        <li>ELK = full-text index، سنگین؛ Loki = فقط label، ارزان.</li>
+      </ul>
+      <h4>Metrics</h4>
+      <ul>
+        <li>Counter (فقط بالا، با rate)، Gauge (بالا/پایین)، Histogram (bucket، قابل تجمیع)، Summary (quantile سمت کلاینت، غیرقابل تجمیع).</li>
+        <li>Cardinality: label با مقادیر محدود؛ user_id label نیست.</li>
+        <li>Percentile &gt; میانگین؛ percentileها را میانگین نگیرید.</li>
+        <li>۹۵×۵۰ + ۵×۳۰۰۰ ⇒ avg ۱۹۷٫۵، p99 ۳۰۰۰.</li>
+      </ul>
+      <h4>Prometheus</h4>
+      <ul>
+        <li>Pull از <code>/metrics</code>؛ <code>up</code>؛ Pushgateway برای batch.</li>
+        <li><code>rate(x_total[5m])</code>، <code>sum by (route)</code>، <code>histogram_quantile(0.95, sum by (le) (rate(..._bucket[5m])))</code>.</li>
+        <li>Alertmanager: group، inhibit، silence، route.</li>
+        <li>PHP-FPM share-nothing ⇒ Redis/APCu storage یا exporter.</li>
+        <li>node_exporter، mysqld_exporter، php-fpm_exporter.</li>
+      </ul>
+      <h4>چارچوب‌ها</h4>
+      <ul>
+        <li>Golden: Latency، Traffic، Errors، Saturation.</li>
+        <li>RED (سرویس): Rate، Errors، Duration.</li>
+        <li>USE (منبع): Utilization، Saturation، Errors.</li>
+      </ul>
+      <h4>SLO</h4>
+      <ul>
+        <li>SLI = اندازه‌گیری؛ SLO = هدف داخلی؛ SLA = قرارداد + جریمه.</li>
+        <li>Error budget = ۱ − SLO.</li>
+        <li>۹۹٫۹٪ / ۳۰ روز = ۴۳٫۲ دقیقه؛ ۹۹٫۹۹٪ = ۴٫۳۲ دقیقه؛ ۹۹٪ = ۷٫۲ ساعت.</li>
+        <li>بودجه تمام ⇒ توقف feature، تمرکز بر پایداری.</li>
+        <li>Burn rate ۱۴٫۴ ⇒ ۲٪ بودجه در ۱ ساعت.</li>
+      </ul>
+      <h4>Alerting</h4>
+      <ul>
+        <li>Symptom-based، actionable، runbook، severity (page/ticket)، <code>for:</code>، grouping.</li>
+        <li>Alert fatigue ⇒ ممیزی و حذف.</li>
+        <li>Alert روی نبود داده (<code>absent</code>، <code>up == 0</code>).</li>
+      </ul>
+      <h4>Health</h4>
+      <ul>
+        <li>Laravel <code>/up</code> (<code>withRouting(health:)</code>)، رویداد <code>DiagnosingHealth</code>.</li>
+        <li>Liveness سطحی ⇒ restart؛ Readiness ⇒ خروج از LB.</li>
+        <li>Uptime بیرونی، Synthetic (سناریو)، RUM، heartbeat برای cron (<code>pingOnSuccess</code>).</li>
+      </ul>
+      <h4>Tracing و خطا</h4>
+      <ul>
+        <li>Trace = درخت span؛ propagation با <code>traceparent</code>.</li>
+        <li>Sampling: head vs tail.</li>
+        <li>OpenTelemetry: SDK + OTLP + Collector؛ vendor-neutral.</li>
+        <li>Sentry: grouping، stack trace، breadcrumbs، release tracking.</li>
+      </ul>
+      <h4>ابزار Laravel</h4>
+      <ul>
+        <li>Telescope: دیباگ، تک‌رویداد، dev.</li>
+        <li>Pulse: prod، تجمیعی، slow queries/requests/jobs، <code>pulse:check</code>.</li>
+        <li>Horizon: صف Redis، wait time، failed jobs، <code>horizon:snapshot</code>.</li>
+      </ul>
+      <h4>زیرساخت و DB</h4>
+      <ul>
+        <li>CPU (iowait، steal، load)، Memory (MemAvailable، swap، OOM)، Disk (فضا، inode، I/O)، Network.</li>
+        <li>slow_query_log + long_query_time ⇒ pt-query-digest ⇒ EXPLAIN.</li>
+        <li><code>DB::listen</code>، <code>DB::whenQueryingForLongerThan</code>، <code>preventLazyLoading</code>.</li>
+      </ul>
+      <h4>Incident</h4>
+      <ul>
+        <li>Detect ← Ack ← Triage ← Mitigate ← Resolve ← Postmortem.</li>
+        <li>Incident Commander؛ mitigation قبل از root cause.</li>
+        <li>Blameless: timeline، impact، root cause، action items با مالک.</li>
+        <li>MTTD، MTTA، MTTR، MTBF.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

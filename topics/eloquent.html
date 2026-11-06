@@ -1,0 +1,1747 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Eloquent — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="eloquent">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Eloquent</h1>
+    <p class="lead">همه‌چیز درباره ORM لاراول: الگوی Active Record، قراردادهای مدل، CRUD و mass assignment، cast و accessor، انواع رابطه‌ها و eager loading و مسئله N+1، scope و soft delete، رویدادها و observerها، کار با داده‌های حجیم، تراکنش و قفل، صفحه‌بندی، API Resource، factory و نکات کارایی.</p>
+  </header>
+
+  <section class="lesson" id="active-record" data-title="Active Record و قراردادهای مدل">
+    <h2>Active Record و قراردادهای مدل</h2>
+    <p><strong>Eloquent</strong> پیاده‌سازی لاراول از الگوی <strong>Active Record</strong> است: هر کلاس مدل نماینده یک جدول است، هر نمونه (instance) نماینده یک سطر، و خود شیء هم داده را نگه می‌دارد و هم متدهای ذخیره و بازیابی (<code>save()</code>، <code>delete()</code>، <code>find()</code>) را دارد. یعنی منطق persistence داخل خود مدل است.</p>
+    <p>در مقابل، الگوی <strong>Data Mapper</strong> (مثل Doctrine در Symfony) موجودیت‌ها را به‌صورت شیء‌های ساده PHP (POPO) نگه می‌دارد و یک لایه جدا (EntityManager / Repository) مسئول نگاشت آن‌ها به دیتابیس است. موجودیت چیزی از دیتابیس نمی‌داند.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Active Record (Eloquent)</th><th>Data Mapper (Doctrine)</th></tr></thead>
+      <tbody>
+        <tr><td>محل منطق ذخیره‌سازی</td><td>داخل خود مدل (<code>$user-&gt;save()</code>)</td><td>در EntityManager (<code>$em-&gt;persist($user); $em-&gt;flush();</code>)</td></tr>
+        <tr><td>سرعت توسعه</td><td>بسیار بالا، کد کم، قرارداد به‌جای پیکربندی</td><td>کندتر، نیاز به mapping (attribute/XML)</td></tr>
+        <tr><td>وابستگی دامنه به زیرساخت</td><td>مدل به دیتابیس گره خورده است</td><td>موجودیت مستقل از دیتابیس؛ مناسب DDD</td></tr>
+        <tr><td>تست‌پذیری واحد</td><td>سخت‌تر؛ معمولاً تست با دیتابیس (SQLite/RefreshDatabase)</td><td>موجودیت‌ها را راحت بدون دیتابیس تست می‌کنید</td></tr>
+        <tr><td>Unit of Work</td><td>ندارد؛ هر <code>save()</code> فوراً کوئری می‌زند</td><td>دارد؛ تغییرات در <code>flush()</code> یکجا اعمال می‌شوند</td></tr>
+        <tr><td>مناسب برای</td><td>CRUD، اپ‌های متوسط تا بزرگ با دامنه ساده‌تر</td><td>دامنه‌های پیچیده با قوانین تجاری سنگین</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p>اگر پرسیدند «Eloquent چه الگویی است و ایرادش چیست؟»: Active Record؛ ایراد اصلی نقض <strong>Single Responsibility</strong> (مدل هم داده/رفتار دامنه است و هم persistence) و گره‌خوردن لایه دامنه به دیتابیس است. راه کاهش اثر: مدل‌های لاغر، منطق تجاری در Service/Action کلاس‌ها، و در صورت نیاز Repository برای جداسازی کوئری‌های پیچیده.</p></div>
+
+    <h3>قراردادهای پیش‌فرض (Convention over Configuration)</h3>
+    <ul>
+      <li><strong>نام جدول:</strong> شکل snake_case و جمع نام کلاس؛ <code>Flight</code> → <code>flights</code>، <code>AirTrafficController</code> → <code>air_traffic_controllers</code>. با <code>protected $table</code> عوض می‌شود.</li>
+      <li><strong>کلید اصلی:</strong> ستون <code>id</code>، عدد صحیح و auto-increment. با <code>$primaryKey</code>، <code>$keyType</code> و <code>$incrementing</code> تغییر می‌کند. Eloquent از <strong>کلید ترکیبی (composite key)</strong> پشتیبانی نمی‌کند (برای جدول pivot مشکلی نیست).</li>
+      <li><strong>Timestamps:</strong> ستون‌های <code>created_at</code> و <code>updated_at</code> خودکار پر می‌شوند؛ با <code>public $timestamps = false</code> غیرفعال، و با ثابت‌های <code>CREATED_AT</code>/<code>UPDATED_AT</code> تغییر نام می‌دهند. <code>$dateFormat</code> قالب ذخیره را مشخص می‌کند.</li>
+      <li><strong>Connection:</strong> پیش‌فرض اتصال تعریف‌شده در <code>config/database.php</code>؛ با <code>protected $connection = 'reporting'</code> عوض می‌شود.</li>
+      <li><strong>مقادیر پیش‌فرض attribute:</strong> با <code>protected $attributes = ['status' =&gt; 'draft']</code>.</li>
+    </ul>
+
+    <pre><code class="language-php">&lt;?php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Flight extends Model
+{
+    protected $table = 'my_flights';
+    protected $primaryKey = 'flight_id';
+    protected $connection = 'mysql_reporting';
+    public $timestamps = true;
+
+    const CREATED_AT = 'creation_date';
+    const UPDATED_AT = 'updated_date';
+
+    protected $attributes = [
+        'delayed' =&gt; false,
+    ];
+}</code></pre>
+
+    <h3>کلیدهای UUID و ULID</h3>
+    <p>برای جلوگیری از قابل‌حدس‌بودن شناسه‌ها (مثلاً در URL) یا تولید شناسه سمت اپلیکیشن پیش از insert، می‌توان از UUID یا ULID استفاده کرد. تریت <code>HasUuids</code> یا <code>HasUlids</code> کلید را هنگام ساخت مدل تولید می‌کند و <code>$incrementing</code> و <code>$keyType</code> را خودش درست تنظیم می‌کند.</p>
+    <pre><code class="language-php">&lt;?php
+// migration
+Schema::create('orders', function (Blueprint $table) {
+    $table-&gt;ulid('id')-&gt;primary();      // یا $table-&gt;uuid('id')-&gt;primary();
+    $table-&gt;foreignUlid('user_id')-&gt;constrained();
+    $table-&gt;timestamps();
+});
+
+// model
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+
+class Order extends Model
+{
+    use HasUlids;
+
+    // اگر ستون دیگری هم باید UUID/ULID بگیرد:
+    public function uniqueIds(): array
+    {
+        return ['id', 'tracking_code'];
+    }
+}</code></pre>
+    <div class="callout note"><p>UUID نسخه ۴ کاملاً تصادفی است و چون ترتیب ندارد، درج در ایندکس B-Tree (به‌خصوص کلید clustered در InnoDB) را تکه‌تکه و کند می‌کند. برای همین لاراول از UUIDهای <strong>مرتب‌شونده</strong> استفاده می‌کند: در Laravel 12 تریت <code>HasUuids</code> به‌صورت پیش‌فرض UUIDv7 (مبتنی بر زمان) تولید می‌کند و برای رفتار قدیمی (ordered UUIDv4) تریت <code>HasVersion4Uuids</code> وجود دارد. ULID هم ذاتاً مرتب بر اساس زمان و ۲۶ کاراکتری است.</p></div>
+  </section>
+
+  <section class="lesson" id="retrieving" data-title="بازیابی داده و Query Builder">
+    <h2>بازیابی داده و مقایسه با Query Builder و SQL خام</h2>
+    <p>هر مدل Eloquent در واقع یک <strong>Query Builder</strong> قدرتمند هم هست؛ تمام متدهای <code>where</code>، <code>orderBy</code>، <code>join</code> و… روی آن در دسترس‌اند و با متدهای پایانی (terminal) مثل <code>get()</code> اجرا می‌شوند.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>خروجی</th><th>رفتار در صورت نبود رکورد</th></tr></thead>
+      <tbody>
+        <tr><td><code>all()</code></td><td>Eloquent Collection همه سطرها</td><td>Collection خالی — روی جدول بزرگ خطرناک</td></tr>
+        <tr><td><code>get()</code></td><td>Collection نتیجه کوئری ساخته‌شده</td><td>Collection خالی</td></tr>
+        <tr><td><code>find($id)</code> / <code>find([1,2])</code></td><td>مدل یا Collection</td><td><code>null</code> (یا Collection خالی)</td></tr>
+        <tr><td><code>findOrFail($id)</code></td><td>مدل</td><td><code>ModelNotFoundException</code> → پاسخ 404</td></tr>
+        <tr><td><code>first()</code></td><td>اولین مدل</td><td><code>null</code></td></tr>
+        <tr><td><code>firstOrFail()</code></td><td>اولین مدل</td><td><code>ModelNotFoundException</code></td></tr>
+        <tr><td><code>sole()</code></td><td>تنها رکورد</td><td>نبود: <code>ModelNotFoundException</code>؛ بیش از یکی: <code>MultipleRecordsFoundException</code></td></tr>
+        <tr><td><code>value('email')</code></td><td>مقدار یک ستون از اولین سطر</td><td><code>null</code></td></tr>
+        <tr><td><code>pluck('name', 'id')</code></td><td>Collection ساده از مقادیر (با کلید اختیاری)</td><td>Collection خالی</td></tr>
+        <tr><td><code>exists()</code> / <code>doesntExist()</code></td><td>bool</td><td>—</td></tr>
+        <tr><td><code>count()</code>، <code>max()</code>، <code>sum()</code>…</td><td>عدد (aggregate در دیتابیس)</td><td>0 یا null</td></tr>
+      </tbody>
+    </table></div>
+
+    <pre><code class="language-php">&lt;?php
+$active = User::query()
+    -&gt;where('active', true)
+    -&gt;where('created_at', '&gt;=', now()-&gt;subDays(30))
+    -&gt;orderByDesc('created_at')
+    -&gt;limit(20)
+    -&gt;get(['id', 'name', 'email']);
+
+$user  = User::findOrFail($id);              // 404 خودکار در HTTP
+$email = User::where('id', $id)-&gt;value('email');
+$names = User::pluck('name', 'id');          // [1 =&gt; 'Ali', 2 =&gt; 'Sara']
+$user  = User::firstWhere('email', $email);
+$user  = User::findOr($id, fn () =&gt; abort(404, 'کاربر پیدا نشد'));
+
+// مدل را از دیتابیس دوباره بخوانیم
+$fresh = $user-&gt;fresh();   // نمونه جدید
+$user-&gt;refresh();          // همان نمونه + رابطه‌های لود شده</code></pre>
+
+    <div class="callout exam"><p><code>find</code> و <code>first</code> در نبود رکورد <code>null</code> برمی‌گردانند و اگر بلافاصله <code>-&gt;name</code> بگیرید خطای «Attempt to read property on null» می‌گیرید. در کنترلرها از <code>findOrFail</code>/<code>firstOrFail</code> یا <strong>Route Model Binding</strong> استفاده کنید تا خودکار 404 برگردد.</p></div>
+
+    <h3>Eloquent یا Query Builder یا SQL خام؟</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Eloquent</h4><ul>
+        <li>رابطه‌ها، cast، accessor، رویدادها، scopeها، soft delete</li>
+        <li>خوانایی بالا و کد دامنه‌محور</li>
+        <li>هزینه: ساخت شیء برای هر سطر (hydration)، مصرف حافظه بیشتر</li>
+      </ul></div>
+      <div class="card"><h4>Query Builder (<code>DB::table</code>)</h4><ul>
+        <li>خروجی آرایه‌ای از <code>stdClass</code>؛ سبک‌تر و سریع‌تر</li>
+        <li>مناسب گزارش‌ها، aggregateهای سنگین، عملیات انبوه</li>
+        <li>بدون رویداد مدل، cast، scope سراسری و soft delete خودکار</li>
+      </ul></div>
+    </div>
+    <p><strong>SQL خام</strong> (<code>DB::select</code>، <code>DB::statement</code>، <code>whereRaw</code>، <code>selectRaw</code>) برای قابلیت‌های خاص دیتابیس (window function، CTE پیچیده، hint) لازم است، ولی قابلیت حمل بین دیتابیس‌ها را کم می‌کند و مسئولیت امنیت با شماست.</p>
+
+    <h3>SQL Injection در متدهای raw</h3>
+    <p>Query Builder تمام مقادیر را با <strong>PDO parameter binding</strong> ارسال می‌کند، پس <code>where('email', $input)</code> امن است. اما هر متدی که رشته خام SQL می‌گیرد (<code>whereRaw</code>، <code>selectRaw</code>، <code>orderByRaw</code>، <code>havingRaw</code>، <code>DB::raw</code>) اگر ورودی کاربر را مستقیم در رشته قرار دهید آسیب‌پذیر است.</p>
+    <pre><code class="language-php">&lt;?php
+// ❌ آسیب‌پذیر
+User::whereRaw("email = '{$request-&gt;email}'")-&gt;get();
+
+// ✅ امن: binding
+User::whereRaw('email = ?', [$request-&gt;email])-&gt;get();
+User::selectRaw('price * ? as price_with_tax', [1.09])-&gt;get();
+
+// ⚠️ نام ستون‌ها bind نمی‌شوند! orderBy روی ورودی کاربر را whitelist کنید
+$sort = in_array($request-&gt;sort, ['name', 'created_at'], true)
+    ? $request-&gt;sort
+    : 'created_at';
+User::orderBy($sort)-&gt;get();</code></pre>
+    <div class="callout warn"><p>PDO فقط «مقدار» را bind می‌کند، نه نام ستون، نام جدول یا جهت مرتب‌سازی. پس <code>orderBy($request-&gt;input('sort'))</code> یا <code>select($request-&gt;fields)</code> بدون whitelist، خطر injection یا افشای ستون‌های حساس دارد.</p></div>
+  </section>
+
+  <section class="lesson" id="writing" data-title="درج، به‌روزرسانی و Mass Assignment">
+    <h2>درج، به‌روزرسانی و Mass Assignment</h2>
+    <h3>درج و به‌روزرسانی</h3>
+    <pre><code class="language-php">&lt;?php
+// ۱) save: نمونه‌سازی و ذخیره (INSERT یا UPDATE بسته به exists)
+$post = new Post;
+$post-&gt;title = 'Hello';
+$post-&gt;save();
+
+// ۲) create: mass assignment + save؛ نیاز به $fillable
+$post = Post::create(['title' =&gt; 'Hello', 'body' =&gt; '...']);
+
+// ۳) update روی نمونه: فقط ستون‌های dirty در UPDATE می‌آیند
+$post-&gt;update(['title' =&gt; 'New']);
+
+// ۴) update انبوه روی کوئری: یک UPDATE، بدون رویداد مدل
+Post::where('status', 'draft')-&gt;update(['status' =&gt; 'archived']);
+
+// ۵) پیدا کن یا بساز
+$tag  = Tag::firstOrCreate(['slug' =&gt; 'php'], ['name' =&gt; 'PHP']);   // ذخیره می‌کند
+$tag  = Tag::firstOrNew(['slug' =&gt; 'php']);                          // ذخیره نمی‌کند
+$stat = Stat::updateOrCreate(
+    ['user_id' =&gt; $id, 'date' =&gt; today()],   // شرط جستجو
+    ['visits' =&gt; 10]                         // مقادیر برای به‌روزرسانی/ساخت
+);
+
+// ۶) upsert: درج یا به‌روزرسانی چندین سطر در یک کوئری
+Flight::upsert(
+    [
+        ['departure' =&gt; 'THR', 'destination' =&gt; 'MHD', 'price' =&gt; 99],
+        ['departure' =&gt; 'THR', 'destination' =&gt; 'SYZ', 'price' =&gt; 150],
+    ],
+    uniqueBy: ['departure', 'destination'],
+    update: ['price']
+);
+
+// ۷) شمارنده‌ها: اتمیک در سطح SQL (SET views = views + 1)
+$post-&gt;increment('views');
+$post-&gt;decrement('stock', 2);
+$post-&gt;incrementEach(['views' =&gt; 1, 'shares' =&gt; 1]);
+
+// ۸) touch: فقط updated_at را به‌روز کن
+$post-&gt;touch();</code></pre>
+
+    <div class="callout exam"><p><strong>firstOrCreate</strong> اتمیک نیست: ابتدا SELECT و سپس INSERT؛ دو درخواست هم‌زمان ممکن است هر دو «پیدا نکنند» و دو رکورد بسازند. راه درست: <strong>unique index</strong> روی ستون‌های شرط + مدیریت خطای تکراری، یا استفاده از <code>createOrFirst</code> (ابتدا INSERT و در صورت خطای unique constraint، SELECT) یا <code>upsert</code> که در خود دیتابیس اتمیک است.</p></div>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>تعداد کوئری</th><th>رویداد مدل</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td><code>save()</code> / <code>create()</code></td><td>۱ (برای هر رکورد)</td><td>دارد</td><td>ساخت تکی با منطق رویداد</td></tr>
+        <tr><td><code>insert([...])</code></td><td>۱ برای همه</td><td>ندارد؛ timestamps هم خودکار پر نمی‌شود</td><td>درج انبوه سریع</td></tr>
+        <tr><td><code>upsert()</code></td><td>۱ برای همه</td><td>ندارد</td><td>همگام‌سازی انبوه (import)</td></tr>
+        <tr><td><code>updateOrCreate()</code></td><td>۲ (SELECT + INSERT/UPDATE)</td><td>دارد</td><td>یک رکورد با کلید منطقی</td></tr>
+        <tr><td><code>Model::where()-&gt;update()</code></td><td>۱</td><td>ندارد</td><td>تغییر انبوه</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p><code>upsert</code> در همه دیتابیس‌ها به‌جز SQL Server نیاز دارد ستون‌های <code>uniqueBy</code> کلید اصلی یا <strong>unique index</strong> داشته باشند؛ در MySQL این آرگومان عملاً نادیده گرفته می‌شود و از ایندکس‌های unique جدول استفاده می‌شود (<code>ON DUPLICATE KEY UPDATE</code>).</p></div>
+
+    <h3>Mass Assignment</h3>
+    <p><strong>Mass assignment</strong> یعنی پر کردن چند attribute با یک آرایه (<code>create($data)</code>، <code>fill($data)</code>، <code>update($data)</code>). خطر آن این است که کاربر فیلدی مثل <code>is_admin</code> یا <code>balance</code> را به فرم اضافه کند و چون کد <code>$request-&gt;all()</code> را پاس می‌دهد، آن فیلد هم ذخیره شود.</p>
+    <div class="grid-2">
+      <div class="card"><h4><code>$fillable</code> (whitelist)</h4><ul>
+        <li>فقط ستون‌های فهرست‌شده قابل mass assign هستند</li>
+        <li>امن‌تر؛ ستون جدیدی که بعداً اضافه شود خودکار باز نمی‌شود</li>
+        <li>رویکرد پیشنهادی</li>
+      </ul></div>
+      <div class="card"><h4><code>$guarded</code> (blacklist)</h4><ul>
+        <li>همه‌چیز به‌جز ستون‌های فهرست‌شده مجاز است</li>
+        <li><code>$guarded = []</code> یعنی همه آزاد — فقط وقتی همیشه <code>$request-&gt;validated()</code> پاس می‌دهید</li>
+        <li>ستون حساس جدید را ممکن است فراموش کنید</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+class User extends Model
+{
+    protected $fillable = ['name', 'email', 'password'];
+}
+
+// ✅ فقط داده اعتبارسنجی‌شده
+User::create($request-&gt;validated());
+
+// ❌ خطرناک حتی با $fillable اگر $fillable گسترده باشد
+User::create($request-&gt;all());
+
+// تخصیص مستقیم از mass assignment عبور می‌کند (عمداً و آگاهانه)
+$user-&gt;is_admin = true;
+$user-&gt;save();
+
+// forceFill / forceCreate: نادیده گرفتن guard برای کد مورد اعتماد
+$user-&gt;forceFill(['email_verified_at' =&gt; now()])-&gt;save();</code></pre>
+    <div class="callout warn"><p><code>Model::unguard()</code> محافظت را برای <strong>همه مدل‌ها</strong> خاموش می‌کند (معمولاً در seederها استفاده می‌شد). اگر در کد اپلیکیشن فراخوانی شود و <code>reguard()</code> نشود، کل برنامه در برابر mass assignment بی‌دفاع می‌شود. نسخه امن‌تر: <code>Model::unguarded(fn () =&gt; ...)</code> که فقط داخل closure اثر دارد.</p></div>
+    <div class="callout tip"><p>به‌صورت پیش‌فرض، فیلدهایی که در <code>$fillable</code> نیستند <strong>بی‌صدا</strong> دور ریخته می‌شوند. با <code>Model::preventSilentlyDiscardingAttributes(! app()-&gt;isProduction())</code> در محیط توسعه به‌جای آن exception گرفته می‌شود و باگ‌های «چرا این فیلد ذخیره نشد؟» زود پیدا می‌شوند.</p></div>
+  </section>
+
+  <section class="lesson" id="casts-accessors" data-title="Cast، Accessor/Mutator و Serialization">
+    <h2>Attribute Casting، Accessor/Mutator و Serialization</h2>
+    <h3>Casting</h3>
+    <p>Cast تبدیل خودکار نوع داده بین دیتابیس و PHP است: هنگام خواندن (مثلاً رشته JSON → آرایه، <code>tinyint</code> → <code>bool</code>، رشته تاریخ → <code>Carbon</code>) و هنگام نوشتن (برعکس). از Laravel 11 روش پیشنهادی متد <code>casts()</code> است (خاصیت <code>$casts</code> هنوز کار می‌کند). مزیت متد: می‌توان در آن از فراخوانی متد استفاده کرد، مثل <code>AsEnumCollection::of(...)</code>.</p>
+    <pre><code class="language-php">&lt;?php
+use App\Enums\OrderStatus;
+use Illuminate\Database\Eloquent\Casts\AsCollection;
+use Illuminate\Database\Eloquent\Casts\AsEnumCollection;
+
+class Order extends Model
+{
+    protected function casts(): array
+    {
+        return [
+            'paid_at'      =&gt; 'datetime',
+            'shipped_on'   =&gt; 'immutable_date',
+            'total'        =&gt; 'decimal:2',
+            'is_gift'      =&gt; 'boolean',
+            'meta'         =&gt; 'array',               // JSON ⇄ array
+            'items'        =&gt; AsCollection::class,   // JSON ⇄ Collection
+            'status'       =&gt; OrderStatus::class,    // backed enum
+            'flags'        =&gt; AsEnumCollection::of(OrderFlag::class),
+            'card_last4'   =&gt; 'encrypted',           // رمز با APP_KEY
+            'secret_notes' =&gt; 'encrypted:array',
+            'pin'          =&gt; 'hashed',
+        ];
+    }
+}
+
+enum OrderStatus: string
+{
+    case Pending = 'pending';
+    case Paid    = 'paid';
+}
+
+$order-&gt;status === OrderStatus::Paid;   // مقایسه نوع‌امن
+$order-&gt;meta['coupon'] ?? null;</code></pre>
+    <div class="callout warn"><p>با cast نوع <code>array</code>، تغییر مستقیم یک کلید (<code>$order-&gt;meta['x'] = 1</code>) خطای «Indirect modification» می‌دهد چون accessor یک کپی برمی‌گرداند. کل آرایه را دوباره assign کنید یا از <code>AsArrayObject</code>/<code>AsCollection</code> استفاده کنید. همچنین ستون <code>encrypted</code> قابل جستجو با <code>where</code> نیست و با چرخش <code>APP_KEY</code> باید مراقب باشید.</p></div>
+
+    <h4>Custom Cast</h4>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
+
+class MoneyCast implements CastsAttributes
+{
+    public function get(Model $model, string $key, mixed $value, array $attributes): Money
+    {
+        return new Money((int) $value, $attributes['currency'] ?? 'IRR');
+    }
+
+    public function set(Model $model, string $key, mixed $value, array $attributes): array
+    {
+        return [
+            $key       =&gt; $value-&gt;amount,
+            'currency' =&gt; $value-&gt;currency,
+        ];
+    }
+}
+
+// در مدل:  'price' =&gt; MoneyCast::class</code></pre>
+
+    <h3>Accessor و Mutator</h3>
+    <p><strong>Accessor</strong> مقدار را هنگام خواندن تغییر می‌دهد و <strong>Mutator</strong> هنگام نوشتن. سینتکس مدرن (Laravel 9+): یک متد protected با نام camelCase هم‌نام attribute که <code>Attribute</code> برمی‌گرداند. سینتکس قدیمی <code>getFirstNameAttribute</code>/<code>setFirstNameAttribute</code> هنوز پشتیبانی می‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Database\Eloquent\Casts\Attribute;
+
+class User extends Model
+{
+    // accessor + mutator برای ستون واقعی first_name
+    protected function firstName(): Attribute
+    {
+        return Attribute::make(
+            get: fn (string $value) =&gt; ucfirst($value),
+            set: fn (string $value) =&gt; strtolower(trim($value)),
+        );
+    }
+
+    // attribute مجازی (ستون ندارد)
+    protected function fullName(): Attribute
+    {
+        return Attribute::make(
+            get: fn (mixed $value, array $attributes) =&gt;
+                $attributes['first_name'] . ' ' . $attributes['last_name'],
+        )-&gt;shouldCache();
+    }
+}
+
+echo $user-&gt;full_name;</code></pre>
+    <div class="callout exam"><p>فرق <strong>cast</strong> با <strong>accessor</strong>: cast تبدیل نوع عمومی و دوطرفه است (قابل استفاده مجدد در چند مدل)؛ accessor منطق نمایشی/محاسباتی خاص یک مدل است. accessorها در کوئری SQL قابل استفاده نیستند — <code>where('full_name', ...)</code> کار نمی‌کند چون full_name ستون نیست.</p></div>
+
+    <h3>Serialization: hidden، visible، appends</h3>
+    <p>وقتی مدل به آرایه یا JSON تبدیل می‌شود (<code>toArray()</code>، <code>toJson()</code>، یا return مستقیم از کنترلر)، این خاصیت‌ها تعیین می‌کنند چه چیزی خروجی برود:</p>
+    <ul>
+      <li><code>$hidden = ['password', 'remember_token']</code>: هرگز در خروجی نیاید (blacklist).</li>
+      <li><code>$visible = ['id', 'name']</code>: فقط این‌ها (whitelist).</li>
+      <li><code>$appends = ['full_name']</code>: accessorهای مجازی به خروجی اضافه شوند (به‌صورت پیش‌فرض اضافه نمی‌شوند).</li>
+      <li>در زمان اجرا: <code>$user-&gt;makeVisible('email')</code>، <code>makeHidden</code>، <code>setVisible</code>، <code>append('x')</code>.</li>
+      <li>رابطه‌های لودشده هم در خروجی می‌آیند؛ تاریخ‌ها به‌صورت پیش‌فرض با قالب ISO-8601 (UTC) سریالایز می‌شوند (قابل تغییر با <code>serializeDate</code>).</li>
+    </ul>
+    <div class="callout warn"><p>هر accessor داخل <code>$appends</code> در <strong>هر</strong> سریالایز اجرا می‌شود؛ اگر داخلش به رابطه‌ای دسترسی داشته باشید (<code>$this-&gt;orders-&gt;sum(...)</code>) روی یک لیست ۱۰۰تایی، N+1 پنهان ساخته‌اید. برای APIهای جدی به‌جای تکیه بر <code>$hidden</code>/<code>$appends</code> از <strong>API Resource</strong> استفاده کنید تا قرارداد خروجی صریح باشد.</p></div>
+  </section>
+
+  <section class="lesson" id="one-to-many" data-title="روابط یک‌به‌یک و یک‌به‌چند">
+    <h2>روابط یک‌به‌یک و یک‌به‌چند</h2>
+    <p>رابطه‌ها به‌صورت متد روی مدل تعریف می‌شوند و یک شیء <code>Relation</code> برمی‌گردانند. دو شکل دسترسی وجود دارد: <code>$user-&gt;posts()</code> (متد) یک <strong>Query Builder</strong> برای ادامه کوئری است، و <code>$user-&gt;posts</code> (dynamic property) نتیجه را لود و کش می‌کند.</p>
+    <h3>hasOne / belongsTo</h3>
+    <pre><code class="language-php">&lt;?php
+// migration
+Schema::create('profiles', function (Blueprint $table) {
+    $table-&gt;id();
+    $table-&gt;foreignId('user_id')-&gt;unique()-&gt;constrained()-&gt;cascadeOnDelete();
+    $table-&gt;string('bio')-&gt;nullable();
+    $table-&gt;timestamps();
+});
+
+class User extends Model
+{
+    public function profile(): HasOne
+    {
+        return $this-&gt;hasOne(Profile::class);   // profiles.user_id = users.id
+    }
+}
+
+class Profile extends Model
+{
+    public function user(): BelongsTo
+    {
+        return $this-&gt;belongsTo(User::class);   // profiles.user_id → users.id
+    }
+}</code></pre>
+    <div class="callout exam"><p>قاعده تشخیص: <strong>کلید خارجی در جدول هر مدلی باشد، آن مدل <code>belongsTo</code> دارد</strong>؛ طرف مقابل <code>hasOne</code> یا <code>hasMany</code>. نام کلید خارجی پیش‌فرض: snake_case نام مدل والد + <code>_id</code>. امضای کامل: <code>hasOne(Related, foreignKey, localKey)</code> و <code>belongsTo(Related, foreignKey, ownerKey)</code>.</p></div>
+
+    <h3>hasMany / belongsTo</h3>
+    <pre><code class="language-php">&lt;?php
+Schema::create('posts', function (Blueprint $table) {
+    $table-&gt;id();
+    $table-&gt;foreignId('user_id')-&gt;constrained()-&gt;cascadeOnDelete();
+    $table-&gt;string('title');
+    $table-&gt;timestamps();
+    $table-&gt;index(['user_id', 'created_at']);
+});
+
+class User extends Model
+{
+    public function posts(): HasMany
+    {
+        return $this-&gt;hasMany(Post::class);
+    }
+}
+
+class Post extends Model
+{
+    public function author(): BelongsTo
+    {
+        // نام متد author است، پس کلید خارجی را صریح می‌دهیم
+        return $this-&gt;belongsTo(User::class, 'user_id')
+                    -&gt;withDefault(['name' =&gt; 'کاربر حذف‌شده']);
+    }
+}
+
+// استفاده
+$user-&gt;posts()-&gt;where('published', true)-&gt;latest()-&gt;get();
+$user-&gt;posts()-&gt;create(['title' =&gt; 'سلام']);    // user_id خودکار
+$post-&gt;author()-&gt;associate($user)-&gt;save();       // تنظیم کلید خارجی
+$post-&gt;author()-&gt;dissociate()-&gt;save();</code></pre>
+    <div class="callout tip"><p><code>withDefault()</code> روی <code>belongsTo</code>/<code>hasOne</code> الگوی <strong>Null Object</strong> است: اگر رکورد مرتبط نباشد، به‌جای <code>null</code> یک مدل خالی برمی‌گرداند و از شرط‌های <code>?-&gt;</code> زیاد در Blade جلوگیری می‌کند.</p></div>
+    <div class="callout note"><p>رابطه <code>chaperone()</code> (در Laravel 11) روی <code>hasMany</code>، هنگام eager load فرزندان، رابطه معکوس والد را خودکار روی هر فرزند ست می‌کند تا دسترسی <code>$post-&gt;user</code> داخل حلقه کوئری اضافه نزند.</p></div>
+  </section>
+
+  <section class="lesson" id="many-to-many" data-title="رابطه چندبه‌چند و Pivot">
+    <h2>رابطه چندبه‌چند (belongsToMany) و جدول Pivot</h2>
+    <p>برای رابطه N:M یک <strong>جدول واسط (pivot)</strong> لازم است. نام پیش‌فرض: نام مفرد دو مدل به ترتیب الفبایی با <code>_</code>؛ برای <code>Role</code> و <code>User</code> می‌شود <code>role_user</code> با ستون‌های <code>role_id</code> و <code>user_id</code>.</p>
+    <pre><code class="language-php">&lt;?php
+Schema::create('role_user', function (Blueprint $table) {
+    $table-&gt;foreignId('role_id')-&gt;constrained()-&gt;cascadeOnDelete();
+    $table-&gt;foreignId('user_id')-&gt;constrained()-&gt;cascadeOnDelete();
+    $table-&gt;timestamp('expires_at')-&gt;nullable();
+    $table-&gt;timestamps();
+    $table-&gt;primary(['role_id', 'user_id']);   // جلوگیری از تکرار
+});
+
+class User extends Model
+{
+    public function roles(): BelongsToMany
+    {
+        return $this-&gt;belongsToMany(Role::class)
+            -&gt;withPivot('expires_at')     // ستون‌های اضافه pivot
+            -&gt;withTimestamps()            // created_at/updated_at در pivot
+            -&gt;as('membership');           // نام به‌جای -&gt;pivot
+    }
+}
+
+class Role extends Model
+{
+    public function users(): BelongsToMany
+    {
+        return $this-&gt;belongsToMany(User::class)-&gt;withPivot('expires_at');
+    }
+}
+
+foreach ($user-&gt;roles as $role) {
+    echo $role-&gt;membership-&gt;expires_at;
+}
+
+// فیلتر روی ستون pivot
+$user-&gt;roles()-&gt;wherePivot('expires_at', '&gt;', now())-&gt;get();</code></pre>
+
+    <h3>مدیریت رکوردهای pivot</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>رفتار</th></tr></thead>
+      <tbody>
+        <tr><td><code>attach($id, ['expires_at' =&gt; ...])</code></td><td>درج سطر در pivot؛ تکراری را چک نمی‌کند (بدون unique ممکن است دوبار درج شود)</td></tr>
+        <tr><td><code>detach($id)</code> / <code>detach()</code></td><td>حذف یک یا همه اتصال‌ها (خود Role حذف نمی‌شود)</td></tr>
+        <tr><td><code>sync([1, 2, 3])</code></td><td>فقط همین IDها بمانند؛ بقیه detach، جدیدها attach. خروجی: آرایه <code>attached</code>، <code>detached</code>، <code>updated</code></td></tr>
+        <tr><td><code>sync([1 =&gt; ['expires_at' =&gt; ...]])</code></td><td>sync همراه با داده pivot</td></tr>
+        <tr><td><code>syncWithoutDetaching([4])</code></td><td>اضافه کن اگر نیست، چیزی را حذف نکن (attach ایمن در برابر تکرار)</td></tr>
+        <tr><td><code>toggle([1, 2])</code></td><td>اگر متصل است جدا کن، اگر نیست متصل کن (مثل like)</td></tr>
+        <tr><td><code>updateExistingPivot($id, [...])</code></td><td>به‌روزرسانی ستون‌های pivot یک اتصال</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+$user-&gt;roles()-&gt;attach($roleId, ['expires_at' =&gt; now()-&gt;addYear()]);
+$changes = $user-&gt;roles()-&gt;sync($request-&gt;validated('role_ids'));
+$user-&gt;likedPosts()-&gt;toggle($post-&gt;id);</code></pre>
+
+    <h3>Custom Pivot Model</h3>
+    <p>اگر pivot خودش منطق دارد (cast، accessor، رابطه یا رویداد)، یک مدل که از <code>Pivot</code> ارث می‌برد بسازید و با <code>using()</code> معرفی کنید:</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Database\Eloquent\Relations\Pivot;
+
+class RoleUser extends Pivot
+{
+    public $incrementing = false;   // اگر ستون id ندارد
+
+    protected function casts(): array
+    {
+        return ['expires_at' =&gt; 'datetime'];
+    }
+
+    public function isExpired(): bool
+    {
+        return $this-&gt;expires_at?-&gt;isPast() ?? false;
+    }
+}
+
+// در User
+return $this-&gt;belongsToMany(Role::class)-&gt;using(RoleUser::class)-&gt;withPivot('expires_at');</code></pre>
+    <div class="callout exam"><p>چه زمانی pivot باید به یک <strong>مدل کامل</strong> تبدیل شود؟ وقتی رابطه خودش یک مفهوم دامنه با هویت و چرخه حیات مستقل است (مثلاً <code>Enrollment</code> بین Student و Course با نمره، وضعیت و پرداخت). در آن صورت به‌جای belongsToMany، دو رابطه <code>hasMany</code>/<code>belongsTo</code> به مدل میانی تعریف کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="through-polymorphic" data-title="Through، Polymorphic و One-of-Many">
+    <h2>روابط Through، Polymorphic و One-of-Many</h2>
+    <h3>hasOneThrough و hasManyThrough</h3>
+    <p>برای دسترسی به رکوردهای «دو قدم آن‌طرف‌تر» از طریق یک مدل میانی، بدون نوشتن join دستی:</p>
+    <pre class="diagram">Country ──hasMany──► User ──hasMany──► Post
+   └──────────── hasManyThrough(Post, User) ───────────►
+
+Mechanic ──hasOne──► Car ──hasOne──► Owner
+   └──────── hasOneThrough(Owner, Car) ────────►</pre>
+    <pre><code class="language-php">&lt;?php
+// countries(id) ← users(id, country_id) ← posts(id, user_id)
+class Country extends Model
+{
+    public function posts(): HasManyThrough
+    {
+        return $this-&gt;hasManyThrough(
+            Post::class,   // مقصد
+            User::class,   // میانی
+            'country_id',  // FK روی users
+            'user_id',     // FK روی posts
+            'id',          // local key روی countries
+            'id'           // local key روی users
+        );
+    }
+}
+
+class Mechanic extends Model
+{
+    public function carOwner(): HasOneThrough
+    {
+        return $this-&gt;hasOneThrough(Owner::class, Car::class);
+    }
+}
+
+// سینتکس روان (Laravel 10+) وقتی رابطه‌ها از قبل تعریف شده‌اند:
+// return $this-&gt;through('users')-&gt;has('posts');</code></pre>
+    <div class="callout note"><p>Through فقط برای زنجیره‌های <code>hasOne</code>/<code>hasMany</code> طراحی شده است؛ برای مسیرهایی که از belongsToMany عبور می‌کنند، معمولاً <code>whereHas</code> تو در تو یا پکیج‌های جانبی لازم است.</p></div>
+
+    <h3>Polymorphic (morphTo / morphOne / morphMany)</h3>
+    <p>رابطه چندریختی یعنی یک مدل می‌تواند به <strong>بیش از یک نوع</strong> مدل والد تعلق داشته باشد؛ مثلاً Comment هم برای Post و هم برای Video. به‌جای دو ستون FK، دو ستون <code>commentable_id</code> و <code>commentable_type</code> نگه می‌داریم.</p>
+    <pre><code class="language-php">&lt;?php
+Schema::create('comments', function (Blueprint $table) {
+    $table-&gt;id();
+    $table-&gt;text('body');
+    $table-&gt;morphs('commentable');   // commentable_id + commentable_type + index ترکیبی
+    $table-&gt;timestamps();
+});
+
+class Comment extends Model
+{
+    public function commentable(): MorphTo
+    {
+        return $this-&gt;morphTo();
+    }
+}
+
+class Post extends Model
+{
+    public function comments(): MorphMany
+    {
+        return $this-&gt;morphMany(Comment::class, 'commentable');
+    }
+
+    public function image(): MorphOne
+    {
+        return $this-&gt;morphOne(Image::class, 'imageable');
+    }
+}
+
+$comment-&gt;commentable;            // Post یا Video
+$post-&gt;comments()-&gt;create(['body' =&gt; '...']);</code></pre>
+
+    <h3>Many-to-Many Polymorphic</h3>
+    <pre><code class="language-php">&lt;?php
+// tags(id, name) ، taggables(tag_id, taggable_id, taggable_type)
+class Post extends Model
+{
+    public function tags(): MorphToMany
+    {
+        return $this-&gt;morphToMany(Tag::class, 'taggable');
+    }
+}
+
+class Tag extends Model
+{
+    public function posts(): MorphToMany
+    {
+        return $this-&gt;morphedByMany(Post::class, 'taggable');
+    }
+
+    public function videos(): MorphToMany
+    {
+        return $this-&gt;morphedByMany(Video::class, 'taggable');
+    }
+}</code></pre>
+
+    <h3>Morph Map</h3>
+    <p>به‌صورت پیش‌فرض نام کامل کلاس (<code>App\Models\Post</code>) در ستون <code>_type</code> ذخیره می‌شود. اگر بعداً namespace یا نام کلاس را عوض کنید داده‌ها خراب می‌شوند و جزئیات داخلی کد هم در دیتابیس لو می‌رود. راه‌حل: morph map.</p>
+    <pre><code class="language-php">&lt;?php
+// AppServiceProvider::boot()
+use Illuminate\Database\Eloquent\Relations\Relation;
+
+Relation::enforceMorphMap([
+    'post'  =&gt; \App\Models\Post::class,
+    'video' =&gt; \App\Models\Video::class,
+]);</code></pre>
+    <div class="callout exam"><p>معایب polymorphic: <strong>امکان تعریف foreign key constraint در دیتابیس وجود ندارد</strong> (چون ستون id به چند جدول اشاره می‌کند)، پس یکپارچگی ارجاعی و cascade باید در اپلیکیشن مدیریت شود؛ join و گزارش‌گیری سخت‌تر است. <code>enforceMorphMap</code> علاوه بر نگاشت، اگر مدلی بدون نگاشت ذخیره شود exception می‌دهد.</p></div>
+
+    <h3>One-of-Many</h3>
+    <p>گاهی از یک رابطه hasMany فقط «یکی» را می‌خواهیم: آخرین سفارش، قدیمی‌ترین ورود، گران‌ترین خرید. این‌ها به‌صورت یک رابطه hasOne با زیرکوئری بهینه تعریف می‌شوند و قابل eager load هستند:</p>
+    <pre><code class="language-php">&lt;?php
+class User extends Model
+{
+    public function latestOrder(): HasOne
+    {
+        return $this-&gt;hasOne(Order::class)-&gt;latestOfMany();
+    }
+
+    public function oldestOrder(): HasOne
+    {
+        return $this-&gt;hasOne(Order::class)-&gt;oldestOfMany();
+    }
+
+    public function largestOrder(): HasOne
+    {
+        return $this-&gt;hasOne(Order::class)-&gt;ofMany('total', 'max');
+    }
+}
+
+$users = User::with('latestOrder')-&gt;get();   // دو کوئری، نه N+1</code></pre>
+  </section>
+
+  <section class="lesson" id="querying-relations" data-title="کوئری روی رابطه‌ها و Aggregateها">
+    <h2>کوئری روی وجود رابطه و Aggregateها</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>کار</th><th>SQL تقریبی</th></tr></thead>
+      <tbody>
+        <tr><td><code>has('posts')</code></td><td>والدهایی که حداقل یک post دارند</td><td><code>WHERE EXISTS (SELECT ...)</code></td></tr>
+        <tr><td><code>has('posts', '&gt;=', 3)</code></td><td>با شرط تعداد</td><td>زیرکوئری COUNT</td></tr>
+        <tr><td><code>whereHas('posts', fn)</code></td><td>وجود رابطه با شرط</td><td><code>EXISTS</code> با شرط</td></tr>
+        <tr><td><code>doesntHave</code> / <code>whereDoesntHave</code></td><td>نبود رابطه</td><td><code>NOT EXISTS</code></td></tr>
+        <tr><td><code>whereRelation('posts', 'published', true)</code></td><td>میان‌بر whereHas با یک شرط</td><td><code>EXISTS</code></td></tr>
+        <tr><td><code>withWhereHas('posts', fn)</code></td><td>فیلتر والد <strong>و</strong> eager load همان فرزندان فیلترشده</td><td>EXISTS + کوئری دوم IN</td></tr>
+        <tr><td><code>withCount('posts')</code></td><td>ستون <code>posts_count</code></td><td>زیرکوئری COUNT در SELECT</td></tr>
+        <tr><td><code>withSum('orders', 'total')</code></td><td>ستون <code>orders_sum_total</code></td><td>زیرکوئری SUM</td></tr>
+        <tr><td><code>withAvg</code>/<code>withMin</code>/<code>withMax</code></td><td>مثلاً <code>reviews_avg_rating</code></td><td>زیرکوئری</td></tr>
+        <tr><td><code>withExists('comments')</code></td><td>ستون boolean <code>comments_exists</code></td><td>زیرکوئری EXISTS</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+// نویسندگانی که در ماه اخیر پست منتشرشده دارند + تعداد آن پست‌ها
+$authors = User::query()
+    -&gt;whereHas('posts', fn ($q) =&gt; $q-&gt;where('published_at', '&gt;=', now()-&gt;subMonth()))
+    -&gt;withCount([
+        'posts',
+        'posts as recent_posts_count' =&gt; fn ($q) =&gt; $q-&gt;where('published_at', '&gt;=', now()-&gt;subMonth()),
+    ])
+    -&gt;withSum('orders', 'total')
+    -&gt;orderByDesc('recent_posts_count')
+    -&gt;get();
+
+// نکته: whereHas فقط فیلتر می‌کند؛ $author-&gt;posts هنوز همه پست‌ها را (lazy) لود می‌کند.
+// برای اینکه رابطه هم فقط فیلترشده‌ها باشد:
+$authors = User::withWhereHas('posts', fn ($q) =&gt; $q-&gt;where('featured', true))-&gt;get();
+
+// شمارش بعد از لود مدل
+$post-&gt;loadCount('comments');</code></pre>
+    <div class="callout exam"><p>اشتباه کلاسیک: فکر کردن اینکه <code>whereHas</code> رابطه را هم فیلتر/لود می‌کند. <code>whereHas</code> فقط والدها را فیلتر می‌کند؛ <code>with</code> با closure فقط فرزندان لودشده را فیلتر می‌کند (والدها را نه). ترکیب این دو یعنی <code>withWhereHas</code>.</p></div>
+    <div class="callout warn"><p>شرط OR داخل کوئری رابطه را حتماً گروه‌بندی کنید: <code>$user-&gt;posts()-&gt;where('a', 1)-&gt;orWhere('b', 2)</code> به <code>WHERE user_id = ? AND a = 1 OR b = 2</code> تبدیل می‌شود که پست‌های کاربران دیگر را هم برمی‌گرداند. درست: <code>-&gt;where(fn ($q) =&gt; $q-&gt;where('a', 1)-&gt;orWhere('b', 2))</code>.</p></div>
+  </section>
+
+  <section class="lesson" id="eager-loading" data-title="Eager Loading و مسئله N+1">
+    <h2>Eager Loading و مسئله N+1</h2>
+    <p><strong>Lazy loading</strong> یعنی رابطه فقط وقتی به dynamic property دسترسی پیدا می‌کنید لود شود. اگر این کار داخل حلقه باشد، برای هر آیتم یک کوئری جدا اجرا می‌شود: <strong>۱ کوئری برای لیست + N کوئری برای رابطه‌ها = N+1</strong>.</p>
+    <pre><code class="language-php">&lt;?php
+// ❌ N+1: برای ۵۰ پست، ۵۱ کوئری
+$posts = Post::latest()-&gt;take(50)-&gt;get();        // 1 query
+foreach ($posts as $post) {
+    echo $post-&gt;author-&gt;name;                      // +1 query per post
+}
+
+// ✅ Eager loading: فقط ۲ کوئری
+$posts = Post::with('author')-&gt;latest()-&gt;take(50)-&gt;get();</code></pre>
+    <pre class="diagram">Lazy (N+1)                                    Eager (with)
+──────────                                    ────────────
+SELECT * FROM posts LIMIT 50          [1]     SELECT * FROM posts LIMIT 50           [1]
+SELECT * FROM users WHERE id = 7      [2]     SELECT * FROM users
+SELECT * FROM users WHERE id = 3      [3]       WHERE id IN (7, 3, 9, ...)           [2]
+SELECT * FROM users WHERE id = 9      [4]
+...                                           ───────────────────────────────
+SELECT * FROM users WHERE id = 12     [51]    ۲ کوئری، مستقل از تعداد پست‌ها
+───────────────────────────────
+۵۱ کوئری؛ با with('author', 'comments')
+و دسترسی به هر دو در حلقه: ۱۰۱ کوئری</pre>
+
+    <h3>شکل‌های مختلف eager loading</h3>
+    <pre><code class="language-php">&lt;?php
+// چند رابطه و رابطه تو در تو
+Post::with(['author', 'comments.user', 'tags'])-&gt;get();
+
+// انتخاب ستون‌ها (کلید اصلی و کلید خارجی لازم است!)
+Post::with('author:id,name')-&gt;get();
+
+// eager load مقید (constrained)
+User::with(['posts' =&gt; fn ($q) =&gt; $q-&gt;where('published', true)-&gt;latest()])-&gt;get();
+
+// لود بعد از گرفتن نتیجه (lazy eager loading) — همچنان یک کوئری IN
+$posts = Post::all();
+if ($needAuthors) {
+    $posts-&gt;load('author');
+}
+$posts-&gt;loadMissing('author');   // فقط اگر قبلاً لود نشده
+
+// morphTo با رابطه‌های متفاوت برای هر نوع
+Comment::with(['commentable' =&gt; function (MorphTo $morphTo) {
+    $morphTo-&gt;morphWith([Post::class =&gt; ['author'], Video::class =&gt; ['channel']]);
+}])-&gt;get();
+
+// همیشه eager load (در مدل) — با احتیاط
+protected $with = ['author'];
+// و برای یک کوئری خاص: Post::without('author')-&gt;get();</code></pre>
+    <div class="callout warn"><p>در <code>with('author:id,name')</code> اگر ستون <code>id</code> (کلیدی که برای match استفاده می‌شود) را نیاورید، رابطه بی‌صدا <code>null</code> می‌شود. همچنین <code>$with</code> در مدل باعث می‌شود رابطه در <strong>همه</strong> کوئری‌ها لود شود، حتی جاهایی که لازم نیست؛ معمولاً بهتر است صریح باشید.</p></div>
+
+    <h3>پیشگیری: preventLazyLoading و shouldBeStrict</h3>
+    <pre><code class="language-php">&lt;?php
+// app/Providers/AppServiceProvider.php
+use Illuminate\Database\Eloquent\Model;
+
+public function boot(): void
+{
+    // در توسعه/تست هر lazy load یک LazyLoadingViolationException می‌دهد
+    Model::preventLazyLoading(! $this-&gt;app-&gt;isProduction());
+
+    // یا هر سه محافظ با هم:
+    // preventLazyLoading + preventSilentlyDiscardingAttributes + preventAccessingMissingAttributes
+    Model::shouldBeStrict(! $this-&gt;app-&gt;isProduction());
+
+    // در production به‌جای exception فقط لاگ کن
+    Model::handleLazyLoadingViolationUsing(function (Model $model, string $relation) {
+        logger()-&gt;warning('Lazy loading', [get_class($model), $relation]);
+    });
+}</code></pre>
+    <div class="callout exam"><p><code>preventAccessingMissingAttributes</code> یعنی اگر ستونی را select نکرده‌اید (مثلاً <code>select('id')</code>) و به <code>$user-&gt;email</code> دسترسی پیدا کنید، به‌جای <code>null</code> بی‌صدا، exception بگیرید. ابزارهای تشخیص N+1 در عمل: <strong>Laravel Debugbar</strong>، <strong>Telescope</strong> (بخش Queries)، <code>DB::listen</code> و <code>DB::enableQueryLog()</code>، و در تست‌ها <code>expectsDatabaseQueryCount</code>.</p></div>
+    <div class="callout note"><p>نسخه‌های جدید Laravel 12 قابلیت «automatic eager loading» را هم اضافه کرده‌اند (<code>Model::automaticallyEagerLoadRelationships()</code> یا <code>-&gt;withRelationshipAutoloading()</code> روی Collection) که با اولین دسترسی lazy، رابطه را برای کل collection یکجا لود می‌کند. این جایگزین طراحی درست کوئری نیست ولی شبکه ایمنی خوبی است.</p></div>
+  </section>
+
+  <section class="lesson" id="scopes-soft-deletes" data-title="Scopeها و Soft Delete">
+    <h2>Local / Global Scope و Soft Delete</h2>
+    <h3>Local Scope</h3>
+    <p>Scope محلی یک تکه شرط قابل استفاده مجدد است که خوانایی کوئری را بالا می‌برد و شرط‌های تجاری (مثلاً «فعال» یعنی چه) را در یک جا متمرکز می‌کند.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+
+class Post extends Model
+{
+    // سینتکس کلاسیک (همه نسخه‌ها): پیشوند scope
+    public function scopePublished(Builder $query): void
+    {
+        $query-&gt;whereNotNull('published_at')-&gt;where('published_at', '&lt;=', now());
+    }
+
+    // scope پارامتری
+    public function scopeOfType(Builder $query, string $type): void
+    {
+        $query-&gt;where('type', $type);
+    }
+
+    // Laravel 12: attribute #[Scope] بدون پیشوند
+    #[Scope]
+    protected function popular(Builder $query): void
+    {
+        $query-&gt;where('views', '&gt;', 1000);
+    }
+}
+
+Post::published()-&gt;ofType('news')-&gt;popular()-&gt;get();</code></pre>
+
+    <h3>Global Scope</h3>
+    <p>Scope سراسری روی <strong>همه</strong> کوئری‌های مدل اعمال می‌شود؛ نمونه آشنا: خود SoftDeletes، یا multi-tenancy (<code>where tenant_id = ?</code>).</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Database\Eloquent\Scope;
+
+class TenantScope implements Scope
+{
+    public function apply(Builder $builder, Model $model): void
+    {
+        $builder-&gt;where($model-&gt;getTable() . '.tenant_id', tenant()-&gt;id);
+    }
+}
+
+// ثبت با attribute
+#[ScopedBy([TenantScope::class])]
+class Invoice extends Model {}
+
+// یا در booted()
+protected static function booted(): void
+{
+    static::addGlobalScope(new TenantScope);
+    static::addGlobalScope('active', fn (Builder $b) =&gt; $b-&gt;where('active', true));
+}
+
+// حذف موقت
+Invoice::withoutGlobalScope(TenantScope::class)-&gt;get();
+Invoice::withoutGlobalScope('active')-&gt;get();
+Invoice::withoutGlobalScopes()-&gt;get();</code></pre>
+    <div class="callout warn"><p>Global scope «جادوی پنهان» است: توسعه‌دهنده‌ای که کوئری را می‌خواند شرط را نمی‌بیند و دیباگ سخت می‌شود. همچنین Query Builder خام (<code>DB::table('invoices')</code>) scopeها را <strong>اعمال نمی‌کند</strong>؛ در multi-tenancy این می‌تواند نشت داده بین tenantها باشد. نام جدول را در شرط بیاورید تا در joinها ابهام ستون پیش نیاید.</p></div>
+
+    <h3>Soft Delete</h3>
+    <p>به‌جای حذف فیزیکی، ستون <code>deleted_at</code> مقدار می‌گیرد و یک global scope رکوردهای حذف‌شده را از همه کوئری‌ها پنهان می‌کند.</p>
+    <pre><code class="language-php">&lt;?php
+// migration
+$table-&gt;softDeletes();   // ستون nullable deleted_at
+
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class Post extends Model
+{
+    use SoftDeletes;
+}
+
+$post-&gt;delete();                 // UPDATE posts SET deleted_at = now()
+$post-&gt;trashed();                // true
+Post::withTrashed()-&gt;find($id);  // شامل حذف‌شده‌ها
+Post::onlyTrashed()-&gt;get();      // فقط حذف‌شده‌ها
+$post-&gt;restore();                // deleted_at = null
+$post-&gt;forceDelete();            // DELETE واقعی
+
+// روی رابطه هم کار می‌کند
+$user-&gt;posts()-&gt;withTrashed()-&gt;get();</code></pre>
+    <div class="callout exam"><p><strong>مشکل unique index با soft delete:</strong> اگر <code>email</code> یکتا باشد و کاربر soft delete شود، سطرش هنوز در جدول است و ثبت‌نام دوباره با همان ایمیل خطای duplicate می‌دهد. ایندکس ترکیبی <code>(email, deleted_at)</code> هم راه‌حل کامل نیست، چون در MySQL و PostgreSQL مقادیر <code>NULL</code> با هم برابر حساب نمی‌شوند و دو کاربر <strong>فعال</strong> با یک ایمیل مجاز می‌شوند. راه‌حل‌ها: <strong>partial index</strong> در PostgreSQL (<code>UNIQUE (email) WHERE deleted_at IS NULL</code>)، در MySQL یک generated column که فقط برای سطرهای فعال مقدار دارد و unique روی آن؛ و در اعتبارسنجی <code>Rule::unique('users')-&gt;withoutTrashed()</code>.</p></div>
+    <div class="callout warn"><p>Soft delete روی رابطه‌ها cascade نمی‌شود (foreign key <code>ON DELETE CASCADE</code> فقط با DELETE واقعی فعال می‌شود). اگر پست soft delete شد و کامنت‌هایش هم باید پنهان شوند، باید در رویداد <code>deleting</code> یا observer خودتان آن را مدیریت کنید. همچنین جدول به مرور بزرگ می‌شود؛ با <strong>Pruning</strong> رکوردهای قدیمی را پاک کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="events-observers" data-title="رویدادهای مدل، Observer و Dirty Tracking">
+    <h2>رویدادهای مدل، Observer و ردیابی تغییرات</h2>
+    <p>Eloquent در چرخه حیات مدل رویدادهایی dispatch می‌کند. رویدادهای «ـing» <strong>قبل</strong> از عمل اجرا می‌شوند و اگر listener مقدار <code>false</code> برگرداند عمل لغو می‌شود؛ رویدادهای «ـed» <strong>بعد</strong> از عمل.</p>
+    <pre class="diagram">create:   saving → creating → [INSERT] → created → saved
+update:   saving → updating → [UPDATE] → updated → saved
+delete:   deleting → [DELETE / SET deleted_at] → deleted   (+ trashed در SoftDeletes)
+force:    forceDeleting → [DELETE] → forceDeleted
+restore:  restoring → [UPDATE deleted_at=NULL] → restored
+read:     retrieved        replicate: replicating</pre>
+    <div class="callout tip"><p>اگر <code>save()</code> روی مدلی صدا زده شود که هیچ ستون dirty ندارد، کوئری UPDATE زده نمی‌شود و رویدادهای <code>updating</code>/<code>updated</code> اجرا نمی‌شوند؛ اما <code>saving</code>/<code>saved</code> اجرا می‌شوند.</p></div>
+
+    <h3>روش‌های گوش دادن</h3>
+    <pre><code class="language-php">&lt;?php
+// ۱) closure در booted()
+class Post extends Model
+{
+    protected static function booted(): void
+    {
+        static::creating(function (Post $post) {
+            $post-&gt;slug ??= Str::slug($post-&gt;title);
+        });
+    }
+}
+
+// ۲) Observer:  php artisan make:observer PostObserver --model=Post
+class PostObserver
+{
+    public function created(Post $post): void   { /* ... */ }
+    public function updated(Post $post): void
+    {
+        if ($post-&gt;wasChanged('status')) {
+            // اطلاع‌رسانی تغییر وضعیت
+        }
+    }
+    public function deleting(Post $post): void  { $post-&gt;comments()-&gt;delete(); }
+}
+
+// ثبت observer با attribute روی مدل
+#[ObservedBy([PostObserver::class])]
+class Post extends Model {}
+// یا در AppServiceProvider::boot():  Post::observe(PostObserver::class);
+
+// ۳) نگاشت به کلاس‌های Event اختصاصی
+protected $dispatchesEvents = [
+    'created' =&gt; PostPublished::class,
+];</code></pre>
+    <div class="callout exam"><p><strong>چه زمانی رویدادهای مدل اجرا نمی‌شوند؟</strong> هر عملیاتی که مستقیماً از Query Builder یک کوئری می‌زند و مدل را hydrate نمی‌کند: <code>Post::where(...)-&gt;update([...])</code>، <code>Post::where(...)-&gt;delete()</code>، <code>insert()</code>، <code>upsert()</code>، <code>increment</code> روی query builder، <code>DB::table()</code>، و MassPrunable. همچنین <code>saveQuietly()</code>، <code>deleteQuietly()</code>، <code>updateQuietly()</code> و <code>Model::withoutEvents(fn () =&gt; ...)</code> عمداً رویداد را خاموش می‌کنند. اگر audit log یا پاک‌کردن کش به observer وابسته است، این مسیرها باید آگاهانه مدیریت شوند.</p></div>
+    <div class="callout warn"><p>Observer داخل تراکنش: <code>created</code> قبل از commit اجرا می‌شود؛ اگر در آن job صف کنید یا ایمیل بفرستید و تراکنش rollback شود، کار روی داده ناموجود انجام شده است. راه‌حل: پیاده‌سازی اینترفیس <code>ShouldHandleEventsAfterCommit</code> روی observer (جزئیات afterCommit صف‌ها در صفحه «Laravel Deeper»). منطق سنگین را هم در observer نگذارید؛ observer کنترل‌پذیری کد را کم می‌کند چون جریان اجرا پنهان است.</p></div>
+
+    <h3>Dirty Tracking</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>زمان استفاده</th><th>معنا</th></tr></thead>
+      <tbody>
+        <tr><td><code>isDirty('title')</code></td><td>قبل از save</td><td>attribute نسبت به مقدار اصلی تغییر کرده؟ (بدون آرگومان: هر attribute)</td></tr>
+        <tr><td><code>isClean('title')</code></td><td>قبل از save</td><td>برعکس isDirty</td></tr>
+        <tr><td><code>getDirty()</code></td><td>قبل از save</td><td>آرایه attributeهای تغییرکرده</td></tr>
+        <tr><td><code>getOriginal('title')</code></td><td>قبل/بعد از save (در رویداد updating)</td><td>مقدار اصلی خوانده‌شده از دیتابیس</td></tr>
+        <tr><td><code>wasChanged('title')</code></td><td>بعد از save</td><td>در آخرین save این ستون تغییر کرد؟</td></tr>
+        <tr><td><code>getChanges()</code></td><td>بعد از save</td><td>آرایه تغییرات آخرین save</td></tr>
+        <tr><td><code>wasRecentlyCreated</code></td><td>بعد از save</td><td>این نمونه در همین درخواست INSERT شد؟ (مثلاً بعد از firstOrCreate)</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+$user = User::find(1);            // name = 'Ali'
+$user-&gt;name = 'Reza';
+$user-&gt;isDirty('name');           // true
+$user-&gt;getOriginal('name');       // 'Ali'
+$user-&gt;save();
+$user-&gt;isDirty();                 // false
+$user-&gt;wasChanged('name');        // true
+$user-&gt;getChanges();              // ['name' =&gt; 'Reza', 'updated_at' =&gt; '...']</code></pre>
+  </section>
+
+  <section class="lesson" id="collections-large-data" data-title="Collection و داده‌های حجیم">
+    <h2>Eloquent Collection و کار با داده‌های حجیم</h2>
+    <p>خروجی <code>get()</code> و رابطه‌های چندتایی یک <code>Illuminate\Database\Eloquent\Collection</code> است که از Collection پایه ارث می‌برد و متدهای مخصوص مدل هم دارد: <code>find($id)</code>، <code>modelKeys()</code>، <code>load()</code>، <code>loadMissing()</code>، <code>fresh()</code>، <code>makeHidden()</code>، <code>toQuery()</code>، <code>only()</code>/<code>except()</code> بر اساس کلید اصلی.</p>
+
+    <h3>متد Collection یا متد Query؟</h3>
+    <pre><code class="language-php">&lt;?php
+$user-&gt;posts()-&gt;count();   // SELECT COUNT(*) ... — یک عدد از دیتابیس
+$user-&gt;posts-&gt;count();     // همه پست‌ها را SELECT و hydrate می‌کند، بعد در PHP می‌شمارد
+
+$user-&gt;posts()-&gt;where('published', true)-&gt;get();   // فیلتر در SQL
+$user-&gt;posts-&gt;where('published', true);            // فیلتر در حافظه PHP
+
+$user-&gt;posts()-&gt;exists();   // EXISTS — سریع
+$user-&gt;posts-&gt;isNotEmpty(); // نیاز به لود همه</code></pre>
+    <div class="callout exam"><p>قانون: <strong>با پرانتز = Query Builder (کار در دیتابیس)</strong>، <strong>بدون پرانتز = Collection (کار در حافظه)</strong>. اگر رابطه قبلاً eager load شده و قرار است از خود رکوردها هم استفاده کنید، نسخه Collection کوئری اضافه نمی‌زند و انتخاب درستی است؛ اما اگر فقط عدد را می‌خواهید، <code>withCount</code> یا <code>-&gt;posts()-&gt;count()</code> ارزان‌تر است. همچنین <code>Post::all()-&gt;where(...)</code> یعنی کل جدول را آورده‌اید و بعد فیلتر کرده‌اید.</p></div>
+
+    <h3>پردازش میلیون‌ها رکورد</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>روش</th><th>سازوکار</th><th>حافظه</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td><code>chunk(1000, fn)</code></td><td>صفحه‌بندی با <code>LIMIT/OFFSET</code></td><td>هر بار ۱۰۰۰ مدل</td><td>اگر حین پیمایش ستون شرط یا ترتیب را تغییر دهید، رکوردها جا می‌افتند؛ OFFSET بزرگ کند است</td></tr>
+        <tr><td><code>chunkById(1000, fn)</code></td><td><code>WHERE id &gt; lastId ORDER BY id LIMIT</code></td><td>هر بار ۱۰۰۰</td><td>امن برای update حین پیمایش؛ سریع روی جدول بزرگ</td></tr>
+        <tr><td><code>lazy()</code> / <code>lazyById()</code></td><td>مثل chunk ولی خروجی <code>LazyCollection</code></td><td>هر chunk</td><td>API روان Collection با مصرف کم حافظه</td></tr>
+        <tr><td><code>cursor()</code></td><td>یک کوئری؛ با generator هر سطر یک مدل</td><td>یک مدل در لحظه (ولی نتیجه خام ممکن است در بافر PDO باشد)</td><td>eager loading ندارد؛ در MySQL بافر شدن کل نتیجه حافظه را پر می‌کند</td></tr>
+        <tr><td><code>each()</code> / <code>eachById()</code></td><td>میان‌بر chunk + حلقه</td><td>هر chunk</td><td>خوانا برای پردازش تکی</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+// ❌ ممکن است نیمی از رکوردها پردازش نشوند
+User::where('active', false)-&gt;chunk(500, function ($users) {
+    $users-&gt;each-&gt;update(['active' =&gt; true]);   // صفحه بعدی جابه‌جا می‌شود
+});
+
+// ✅
+User::where('active', false)-&gt;chunkById(500, function ($users) {
+    User::whereKey($users-&gt;modelKeys())-&gt;update(['active' =&gt; true]);
+});
+
+// LazyCollection با eager loading (cursor این را ندارد)
+Order::with('items')-&gt;lazyById(1000)
+    -&gt;filter(fn ($o) =&gt; $o-&gt;items-&gt;isNotEmpty())
+    -&gt;each(fn ($o) =&gt; ExportRow::dispatch($o));
+
+// بهترین گزینه وقتی منطق PHP لازم نیست: یک UPDATE انبوه
+User::where('active', false)-&gt;update(['active' =&gt; true]);</code></pre>
+    <div class="callout tip"><p>برای job‌ها یا commandهای طولانی، به‌جای ساخت مدل برای هر سطر، اگر فقط چند ستون لازم است از <code>select</code> محدود، <code>toBase()</code> (خروجی stdClass بدون hydration) یا <code>pluck</code> استفاده کنید. Query log را هم در اسکریپت‌های طولانی خاموش نگه دارید.</p></div>
+  </section>
+
+  <section class="lesson" id="transactions-locking" data-title="تراکنش و قفل‌گذاری">
+    <h2>تراکنش‌ها و قفل‌گذاری (Pessimistic Locking)</h2>
+    <p><strong>تراکنش</strong> چند عملیات را به یک واحد اتمیک تبدیل می‌کند: یا همه commit می‌شوند یا هیچ‌کدام. در لاراول ساده‌ترین و امن‌ترین روش <code>DB::transaction</code> با closure است که در صورت exception خودکار rollback و exception را دوباره پرتاب می‌کند.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\DB;
+
+$order = DB::transaction(function () use ($cart, $user) {
+    $order = $user-&gt;orders()-&gt;create(['total' =&gt; $cart-&gt;total()]);
+    foreach ($cart-&gt;items as $item) {
+        $order-&gt;items()-&gt;create($item-&gt;toArray());
+    }
+    return $order;            // مقدار بازگشتی closure برگردانده می‌شود
+}, attempts: 3);              // در صورت deadlock تا ۳ بار کل closure را تکرار کن
+
+// روش دستی (کنترل بیشتر، ولی مسئولیت rollback با شما)
+DB::beginTransaction();
+try {
+    // ...
+    DB::commit();
+} catch (\Throwable $e) {
+    DB::rollBack();
+    throw $e;
+}</code></pre>
+    <div class="callout exam"><p>آرگومان دوم <code>DB::transaction</code> تعداد تلاش است و فقط برای <strong>deadlock</strong> (و خطاهای مشابه همزمانی) دوباره تلاش می‌کند، نه هر exception. چون کل closure دوباره اجرا می‌شود، کارهای غیرتراکنشی (فراخوانی API خارجی، ارسال ایمیل) را داخلش نگذارید یا idempotent کنید. تراکنش‌های تو در تو با <strong>savepoint</strong> پیاده می‌شوند.</p></div>
+
+    <h3>Race Condition و قفل سطری</h3>
+    <p>سناریو: دو درخواست هم‌زمان موجودی کیف پول ۱۰۰ را می‌خوانند، هر دو ۸۰ برداشت می‌کنند و هر دو موفق می‌شوند (lost update). راه‌حل: <strong>قفل بدبینانه</strong>.</p>
+    <pre><code class="language-php">&lt;?php
+DB::transaction(function () use ($walletId, $amount) {
+    // SELECT ... FOR UPDATE: سطر تا پایان تراکنش برای نوشتن و قفل دیگران بسته است
+    $wallet = Wallet::whereKey($walletId)-&gt;lockForUpdate()-&gt;firstOrFail();
+
+    if ($wallet-&gt;balance &lt; $amount) {
+        throw new InsufficientFunds();
+    }
+    $wallet-&gt;decrement('balance', $amount);
+});
+
+// sharedLock: SELECT ... LOCK IN SHARE MODE / FOR SHARE
+// دیگران می‌توانند بخوانند ولی تا commit نمی‌توانند تغییر دهند
+$product = Product::whereKey($id)-&gt;sharedLock()-&gt;first();</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4>Pessimistic (lockForUpdate)</h4><ul>
+        <li>قفل در دیتابیس؛ تضمین قطعی</li>
+        <li>مناسب رقابت زیاد روی یک سطر (موجودی، کیف پول)</li>
+        <li>خطر deadlock و کاهش throughput؛ تراکنش را کوتاه نگه دارید</li>
+        <li>بیرون از تراکنش بی‌اثر است</li>
+      </ul></div>
+      <div class="card"><h4>Optimistic (ستون version)</h4><ul>
+        <li><code>UPDATE ... WHERE id = ? AND version = ?</code> و بررسی تعداد سطرهای تغییرکرده</li>
+        <li>بدون قفل؛ مناسب رقابت کم</li>
+        <li>در صورت تعارض باید retry یا خطا به کاربر</li>
+        <li>Eloquent پشتیبانی داخلی ندارد؛ دستی پیاده می‌شود</li>
+      </ul></div>
+    </div>
+    <div class="callout tip"><p>برای عملیات ساده، اتمیک کردن در خود SQL از قفل ارزان‌تر است: <code>Wallet::whereKey($id)-&gt;where('balance', '&gt;=', $amount)-&gt;decrement('balance', $amount)</code> و بررسی اینکه خروجی (تعداد سطرهای تأثیرپذیر) برابر ۱ باشد. قفل توزیع‌شده سطح اپلیکیشن (<code>Cache::lock</code>) در صفحه «Laravel Deeper» آمده است.</p></div>
+  </section>
+
+  <section class="lesson" id="pagination-resources" data-title="صفحه‌بندی و API Resource">
+    <h2>صفحه‌بندی و API Resource</h2>
+    <h3>سه نوع صفحه‌بندی</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>کوئری</th><th>مزیت</th><th>عیب</th></tr></thead>
+      <tbody>
+        <tr><td><code>paginate(15)</code></td><td><code>COUNT(*)</code> + <code>LIMIT/OFFSET</code></td><td>تعداد کل و شماره صفحات؛ پرش به صفحه دلخواه</td><td>COUNT روی جدول بزرگ گران؛ OFFSET بزرگ کند</td></tr>
+        <tr><td><code>simplePaginate(15)</code></td><td>فقط <code>LIMIT 16 OFFSET</code></td><td>بدون COUNT؛ فقط قبلی/بعدی</td><td>OFFSET بزرگ هنوز کند است</td></tr>
+        <tr><td><code>cursorPaginate(15)</code></td><td><code>WHERE id &gt; ? ORDER BY id LIMIT</code></td><td>سرعت ثابت در هر عمق (keyset)؛ پایدار با درج همزمان؛ ایده‌آل infinite scroll و API</td><td>بدون شماره صفحه؛ نیاز به ORDER BY روی ستون(های) یکتا و ایندکس‌دار</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+$posts = Post::with('author')
+    -&gt;where('published', true)
+    -&gt;orderByDesc('id')
+    -&gt;paginate(20)
+    -&gt;withQueryString();       // حفظ فیلترهای query string در لینک‌ها
+
+$feed = Post::orderByDesc('id')-&gt;cursorPaginate(20);
+// ?cursor=eyJpZCI6MTAw...
+
+// در Blade
+{{ $posts-&gt;links() }}</code></pre>
+    <div class="callout exam"><p>چرا OFFSET کند است؟ برای <code>OFFSET 100000</code> دیتابیس باید ۱۰۰ هزار سطر را بخواند و دور بریزد. cursor pagination با شرط روی ستون ایندکس‌دار مستقیماً به نقطه شروع پرش می‌کند (Seek Method). همچنین با درج رکورد جدید در صفحه‌بندی offset، آیتم‌ها تکراری یا جا افتاده دیده می‌شوند؛ cursor این مشکل را ندارد.</p></div>
+
+    <h3>API Resource</h3>
+    <p>Resource یک <strong>لایه تبدیل (transformation layer)</strong> بین مدل و JSON خروجی است. مزیت: قرارداد API از ساختار جدول جدا می‌شود، فیلدهای حساس تصادفاً لو نمی‌روند، و شرط‌ها (رابطه لودشده، دسترسی کاربر) صریح‌اند.</p>
+    <pre><code class="language-bash">php artisan make:resource UserResource
+php artisan make:resource UserCollection        # یا --collection</code></pre>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+class UserResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [
+            'id'          =&gt; $this-&gt;id,
+            'name'        =&gt; $this-&gt;name,
+            'email'       =&gt; $this-&gt;when($request-&gt;user()?-&gt;isAdmin(), $this-&gt;email),
+            'posts'       =&gt; PostResource::collection($this-&gt;whenLoaded('posts')),
+            'posts_count' =&gt; $this-&gt;whenCounted('posts'),
+            'created_at'  =&gt; $this-&gt;created_at-&gt;toIso8601String(),
+            $this-&gt;mergeWhen($this-&gt;is_vip, ['tier' =&gt; $this-&gt;tier]),
+        ];
+    }
+}
+
+// کنترلر
+public function index()
+{
+    $users = User::withCount('posts')-&gt;paginate(20);
+    return UserResource::collection($users);   // data + links + meta خودکار
+}
+
+public function show(User $user)
+{
+    return new UserResource($user-&gt;load('posts'));
+}
+
+// متادیتای اضافه
+return UserResource::collection($users)-&gt;additional(['meta' =&gt; ['version' =&gt; 'v1']]);</code></pre>
+    <div class="callout exam"><p><code>whenLoaded('posts')</code> کلیدی‌ترین ابزار جلوگیری از N+1 در Resource است: فقط اگر رابطه از قبل eager load شده باشد آن را در خروجی می‌گذارد و هرگز کوئری جدید نمی‌زند. نوشتن <code>$this-&gt;posts</code> مستقیم داخل Resource در یک collection، همان N+1 است. خروجی به‌صورت پیش‌فرض در کلید <code>data</code> wrap می‌شود (<code>JsonResource::withoutWrapping()</code> برای حذف).</p></div>
+  </section>
+
+  <section class="lesson" id="factories-pruning" data-title="Factory، Pruning و Replicate">
+    <h2>Model Factory، Pruning و Replicate</h2>
+    <h3>Factory</h3>
+    <p>Factory برای ساخت داده تستی و seed استفاده می‌شود. مدل باید تریت <code>HasFactory</code> داشته باشد. پایه‌اش متد <code>definition()</code> است و <strong>state</strong>ها حالت‌های خاص را تعریف می‌کنند.</p>
+    <pre><code class="language-php">&lt;?php
+// php artisan make:factory PostFactory --model=Post
+class PostFactory extends Factory
+{
+    public function definition(): array
+    {
+        return [
+            'user_id'      =&gt; User::factory(),       // رابطه: کاربر جدید می‌سازد
+            'title'        =&gt; fake()-&gt;sentence(),
+            'body'         =&gt; fake()-&gt;paragraphs(3, true),
+            'published_at' =&gt; null,
+        ];
+    }
+
+    public function published(): static
+    {
+        return $this-&gt;state(fn (array $attributes) =&gt; [
+            'published_at' =&gt; now(),
+        ]);
+    }
+
+    public function configure(): static
+    {
+        return $this-&gt;afterCreating(function (Post $post) {
+            $post-&gt;tags()-&gt;attach(Tag::factory()-&gt;count(2)-&gt;create());
+        });
+    }
+}
+
+// استفاده
+$post  = Post::factory()-&gt;make();                    // بدون ذخیره
+$posts = Post::factory()-&gt;count(10)-&gt;published()-&gt;create();
+
+// has: فرزندان (hasMany)
+$user = User::factory()-&gt;has(Post::factory()-&gt;count(3))-&gt;create();
+$user = User::factory()-&gt;hasPosts(3)-&gt;create();       // magic method
+
+// for: والد (belongsTo)
+$posts = Post::factory()-&gt;count(3)-&gt;for(User::factory()-&gt;state(['name' =&gt; 'Ali']))-&gt;create();
+
+// belongsToMany با داده pivot
+$user = User::factory()-&gt;hasAttached(Role::factory()-&gt;count(2), ['expires_at' =&gt; now()-&gt;addYear()])-&gt;create();
+
+// sequence: مقادیر چرخشی
+Post::factory()-&gt;count(4)-&gt;sequence(['status' =&gt; 'draft'], ['status' =&gt; 'published'])-&gt;create();
+
+// recycle: استفاده مجدد از یک نمونه موجود برای همه رابطه‌ها
+$tenant = Tenant::factory()-&gt;create();
+Invoice::factory()-&gt;count(5)-&gt;recycle($tenant)-&gt;create();</code></pre>
+    <div class="callout tip"><p>در <code>definition()</code> رابطه را به‌صورت <code>User::factory()</code> (نه <code>User::factory()-&gt;create()-&gt;id</code>) بنویسید؛ در این حالت اگر با <code>for()</code> یا مقدار صریح <code>user_id</code> override شود، کاربر اضافه ساخته نمی‌شود.</p></div>
+
+    <h3>Pruning: پاک‌سازی دوره‌ای</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Database\Eloquent\Prunable;      // یا MassPrunable
+
+class ActivityLog extends Model
+{
+    use Prunable;
+
+    public function prunable(): Builder
+    {
+        return static::where('created_at', '&lt;=', now()-&gt;subMonths(6));
+    }
+
+    protected function pruning(): void
+    {
+        // قبل از حذف هر رکورد — مثلاً حذف فایل‌های وابسته
+    }
+}
+
+// routes/console.php
+use Illuminate\Support\Facades\Schedule;
+Schedule::command('model:prune')-&gt;daily();</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4>Prunable</h4><ul>
+        <li>هر رکورد را hydrate و <code>delete()</code> می‌کند</li>
+        <li>رویدادهای deleting/deleted و هوک <code>pruning()</code> اجرا می‌شوند</li>
+        <li>با SoftDeletes، حذف قطعی (forceDelete) انجام می‌دهد</li>
+        <li>کندتر روی حجم بالا</li>
+      </ul></div>
+      <div class="card"><h4>MassPrunable</h4><ul>
+        <li>یک DELETE انبوه با کوئری</li>
+        <li>بدون رویداد و بدون <code>pruning()</code></li>
+        <li>بسیار سریع؛ مناسب لاگ و داده موقت</li>
+      </ul></div>
+    </div>
+
+    <h3>Replicate</h3>
+    <pre><code class="language-php">&lt;?php
+// نسخه ذخیره‌نشده از مدل، بدون کلید اصلی و timestamps
+$copy = $invoice-&gt;replicate(except: ['number', 'paid_at']);
+$copy-&gt;number = Invoice::nextNumber();
+$copy-&gt;save();
+// رابطه‌ها کپی نمی‌شوند؛ باید خودتان آن‌ها را replicate کنید.</code></pre>
+  </section>
+
+  <section class="lesson" id="performance" data-title="چک‌لیست کارایی Eloquent">
+    <h2>چک‌لیست کارایی Eloquent</h2>
+    <ol>
+      <li><strong>N+1 را حذف کنید:</strong> <code>with()</code> برای رابطه‌هایی که در حلقه، view یا Resource استفاده می‌شوند؛ <code>preventLazyLoading()</code> در توسعه.</li>
+      <li><strong>فقط ستون‌های لازم:</strong> <code>select(['id', 'title'])</code> و <code>with('author:id,name')</code>؛ ستون‌های TEXT/JSON سنگین را بی‌دلیل نیاورید.</li>
+      <li><strong>Aggregate در دیتابیس:</strong> <code>withCount</code>، <code>withSum</code>، <code>count()</code> روی query به‌جای شمردن Collection.</li>
+      <li><strong>ایندکس‌گذاری:</strong> روی کلیدهای خارجی، ستون‌های <code>where</code>/<code>orderBy</code>، ایندکس ترکیبی متناسب با کوئری (ترتیب ستون‌ها مهم است)، ستون‌های <code>_type/_id</code> در polymorphic (<code>morphs()</code> خودش ایندکس می‌سازد).</li>
+      <li><strong>exists به‌جای count:</strong> برای بررسی وجود، <code>exists()</code> ارزان‌تر از <code>count() &gt; 0</code> است.</li>
+      <li><strong>عملیات انبوه:</strong> <code>insert</code>/<code>upsert</code>/<code>update</code> روی query به‌جای حلقه <code>save()</code> (آگاه از نبود رویداد).</li>
+      <li><strong>داده حجیم:</strong> <code>chunkById</code>/<code>lazyById</code> به‌جای <code>all()</code>.</li>
+      <li><strong>صفحه‌بندی درست:</strong> <code>simplePaginate</code>/<code>cursorPaginate</code> برای جدول‌های بزرگ.</li>
+      <li><strong>کش:</strong> نتایج کوئری‌های پرتکرار و کم‌تغییر را با <code>Cache::remember</code> کش و در observer/رویداد مدل invalidate کنید.</li>
+      <li><strong>تحلیل:</strong> کوئری را با <code>toSql()</code>/<code>toRawSql()</code> یا <code>dd()</code>/<code>dump()</code> روی builder ببینید و در دیتابیس <code>EXPLAIN</code> بگیرید؛ <code>-&gt;explain()</code> هم روی builder وجود دارد.</li>
+      <li><strong>از accessorهای سنگین در <code>$appends</code> و <code>$with</code> سراسری پرهیز کنید.</strong></li>
+      <li><strong>whereHas روی جدول‌های بزرگ</strong> به زیرکوئری EXISTS تبدیل می‌شود؛ اگر کند بود، join یا <code>whereIn</code> با زیرکوئری را بسنجید.</li>
+    </ol>
+    <pre><code class="language-php">&lt;?php
+// دیدن کوئری‌ها هنگام دیباگ
+DB::enableQueryLog();
+$posts = Post::with('author')-&gt;get();
+dump(DB::getQueryLog());
+
+Post::where('id', 5)-&gt;toRawSql();    // SQL با مقادیر جایگذاری‌شده (Laravel 10.15+)
+
+// هشدار برای کوئری‌های کند (AppServiceProvider)
+DB::listen(function ($query) {
+    if ($query-&gt;time &gt; 500) {
+        logger()-&gt;warning('Slow query', ['sql' =&gt; $query-&gt;sql, 'ms' =&gt; $query-&gt;time]);
+    }
+});</code></pre>
+    <div class="callout exam"><p>اگر در آزمون سناریویی مثل «صفحه لیست سفارش‌ها ۳ ثانیه طول می‌کشد» دادند، پاسخ ساختاریافته: (۱) اندازه‌گیری با Telescope/Debugbar و شمارش کوئری‌ها، (۲) رفع N+1 با eager loading، (۳) محدود کردن ستون‌ها و صفحه‌بندی، (۴) EXPLAIN و افزودن ایندکس، (۵) انتقال aggregateها به SQL، (۶) کش و در نهایت denormalization (مثلاً ستون شمارنده).</p></div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-eloquent-1">
+      <summary>الگوی Active Record را تعریف کنید و آن را با Data Mapper مقایسه کنید. Eloquent از کدام استفاده می‌کند و این انتخاب چه پیامدهایی دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> در <strong>Active Record</strong> هر شیء هم داده یک سطر جدول را نگه می‌دارد و هم مسئول ذخیره و بازیابی خودش است (<code>$user-&gt;save()</code>). در <strong>Data Mapper</strong> موجودیت‌ها شیء ساده‌اند و یک لایه جدا (Mapper/EntityManager) آن‌ها را به دیتابیس نگاشت می‌کند. Eloquent پیاده‌سازی Active Record است؛ Doctrine نمونه Data Mapper.</p>
+        <pre><code class="language-php">// Active Record
+$user = User::find(1); $user-&gt;name = 'Ali'; $user-&gt;save();
+// Data Mapper
+$user = $repo-&gt;find(1); $user-&gt;rename('Ali'); $em-&gt;flush();</code></pre>
+        <p><strong>پیامدهای Active Record:</strong></p>
+        <ul>
+          <li>✅ توسعه سریع، کد کم، قراردادهای پیش‌فرض، API روان برای رابطه‌ها.</li>
+          <li>❌ نقض <strong>SRP</strong>؛ دامنه به ساختار جدول و دیتابیس وابسته است.</li>
+          <li>❌ تست واحد بدون دیتابیس سخت‌تر است؛ معمولاً تست با <code>RefreshDatabase</code>.</li>
+          <li>❌ Unit of Work ندارد؛ هر save یک کوئری فوری است و دسته‌بندی تغییرات با خود توسعه‌دهنده است (تراکنش).</li>
+        </ul>
+        <p><strong>جمع‌بندی:</strong> برای اکثر اپلیکیشن‌های وب مناسب است؛ در دامنه‌های پیچیده با مدل‌های لاغر، Service/Action کلاس‌ها و در صورت نیاز Repository، معایبش را کنترل می‌کنیم.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-2">
+      <summary>مسئله N+1 چیست؟ با یک مثال تعداد کوئری‌ها را نشان دهید و راه‌های تشخیص و رفع آن را در لاراول توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> وقتی یک لیست با ۱ کوئری گرفته می‌شود و سپس برای هر آیتم در حلقه، رابطه‌اش به‌صورت <strong>lazy</strong> با یک کوئری جدا لود می‌شود؛ مجموعاً <strong>N+1</strong> کوئری.</p>
+        <pre><code class="language-php">$posts = Post::all();                 // 1 query (مثلاً 100 پست)
+foreach ($posts as $p) echo $p-&gt;author-&gt;name;   // +100 query  =&gt; 101
+
+$posts = Post::with('author')-&gt;get();  // 2 query: posts + users WHERE id IN (...)</code></pre>
+        <p><strong>تشخیص:</strong> Debugbar/Telescope (تعداد و تکرار کوئری‌ها)، <code>DB::enableQueryLog()</code>، <code>DB::listen</code>، و مهم‌تر از همه <code>Model::preventLazyLoading(! app()-&gt;isProduction())</code> که در توسعه exception می‌دهد.</p>
+        <p><strong>رفع:</strong></p>
+        <ul>
+          <li><code>with()</code> هنگام کوئری، شامل تو در تو (<code>comments.user</code>) و مقید با closure.</li>
+          <li><code>load()</code>/<code>loadMissing()</code> وقتی مدل‌ها از قبل گرفته شده‌اند.</li>
+          <li><code>withCount</code>/<code>withSum</code> به‌جای <code>$post-&gt;comments-&gt;count()</code> در حلقه.</li>
+          <li>در API Resource از <code>whenLoaded</code> استفاده شود.</li>
+        </ul>
+        <p><strong>نکته:</strong> eager load بی‌رویه هم هزینه دارد (داده و حافظه اضافه)؛ فقط آنچه استفاده می‌شود لود شود و ستون‌ها محدود شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-3">
+      <summary>Mass Assignment چیست و چه خطر امنیتی دارد؟ <code>$fillable</code> و <code>$guarded</code> را مقایسه کنید و بگویید <code>Model::unguard()</code> چه ریسکی دارد.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> پر کردن چند attribute مدل با یک آرایه در یک فراخوانی: <code>create()</code>، <code>fill()</code>، <code>update()</code>.</p>
+        <p><strong>خطر:</strong> اگر ورودی کاربر مستقیم پاس شود (<code>User::create($request-&gt;all())</code>)، مهاجم می‌تواند فیلدهایی مثل <code>is_admin=1</code> یا <code>balance</code> را به درخواست اضافه کند و آن‌ها هم ذخیره شوند (privilege escalation).</p>
+        <ul>
+          <li><strong><code>$fillable</code></strong> = whitelist؛ فقط این ستون‌ها مجازند. امن‌تر، چون ستون جدید به‌طور پیش‌فرض بسته است.</li>
+          <li><strong><code>$guarded</code></strong> = blacklist؛ همه به‌جز این‌ها. <code>$guarded = []</code> یعنی همه باز. ریسک فراموش کردن ستون حساس جدید.</li>
+        </ul>
+        <pre><code class="language-php">protected $fillable = ['name', 'email'];
+User::create($request-&gt;validated());   // دفاع دولایه: validation + fillable
+$user-&gt;forceFill(['is_admin' =&gt; true])-&gt;save();  // فقط در کد مورد اعتماد</code></pre>
+        <p><strong>unguard:</strong> محافظت را به‌صورت سراسری برای همه مدل‌ها در طول اجرای پروسس خاموش می‌کند؛ اگر در کد اپ استفاده و برگردانده نشود (یا در Octane که پروسس ماندگار است) کل برنامه آسیب‌پذیر می‌شود. جایگزین امن: <code>Model::unguarded(fn () =&gt; ...)</code> با دامنه محدود، و فقط در seeder.</p>
+        <p><strong>تکمیلی:</strong> <code>preventSilentlyDiscardingAttributes()</code> در توسعه باعث می‌شود فیلدهای غیرمجاز بی‌صدا دور ریخته نشوند و exception بدهند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-4">
+      <summary>تفاوت <code>$user-&gt;posts()-&gt;count()</code> و <code>$user-&gt;posts-&gt;count()</code> چیست؟ هر کدام در چه شرایطی انتخاب درست است؟</summary>
+      <div class="answer">
+        <p><strong>با پرانتز</strong> (<code>posts()</code>) شیء Relation یعنی یک Query Builder برمی‌گردد و <code>count()</code> یک <code>SELECT COUNT(*)</code> در دیتابیس اجرا می‌کند؛ هیچ مدلی ساخته نمی‌شود.</p>
+        <p><strong>بدون پرانتز</strong> (<code>posts</code>) dynamic property است: اگر رابطه لود نشده باشد، <strong>همه</strong> پست‌ها SELECT و به مدل تبدیل می‌شوند، نتیجه روی مدل کش می‌شود، سپس <code>count()</code> روی Collection در PHP اجرا می‌شود.</p>
+        <ul>
+          <li>فقط عدد لازم است → <code>posts()-&gt;count()</code> یا برای لیست، <code>withCount('posts')</code> (یک زیرکوئری، بدون N+1).</li>
+          <li>رابطه قبلاً eager load شده یا بعداً خود پست‌ها را هم نمایش می‌دهید → <code>posts-&gt;count()</code> کوئری اضافه نمی‌زند و انتخاب بهتری است.</li>
+        </ul>
+        <pre><code class="language-php">$users = User::withCount('posts')-&gt;get();
+foreach ($users as $u) echo $u-&gt;posts_count;    // بدون کوئری اضافه</code></pre>
+        <p>همین منطق برای <code>where</code> (SQL در برابر فیلتر حافظه)، <code>exists()</code> در برابر <code>isNotEmpty()</code> و <code>sum</code> صدق می‌کند. اشتباه رایج: <code>Post::all()-&gt;where('active', 1)</code> که کل جدول را می‌آورد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-5">
+      <summary>رابطه چندبه‌چند بین User و Role را با migration و مدل پیاده کنید. تفاوت <code>attach</code>، <code>sync</code>، <code>syncWithoutDetaching</code> و <code>toggle</code> را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>ساختار:</strong> جدول pivot <code>role_user</code> (نام مفرد الفبایی) با دو کلید خارجی و کلید اصلی ترکیبی برای جلوگیری از تکرار.</p>
+        <pre><code class="language-php">Schema::create('role_user', function (Blueprint $t) {
+    $t-&gt;foreignId('role_id')-&gt;constrained()-&gt;cascadeOnDelete();
+    $t-&gt;foreignId('user_id')-&gt;constrained()-&gt;cascadeOnDelete();
+    $t-&gt;timestamps();
+    $t-&gt;primary(['role_id', 'user_id']);
+});
+// User
+public function roles(): BelongsToMany {
+    return $this-&gt;belongsToMany(Role::class)-&gt;withTimestamps();
+}
+// Role
+public function users(): BelongsToMany {
+    return $this-&gt;belongsToMany(User::class);
+}</code></pre>
+        <ul>
+          <li><strong>attach($ids, $pivotData)</strong>: فقط INSERT؛ وجود قبلی را چک نمی‌کند (بدون کلید یکتا، تکراری می‌سازد و با کلید یکتا خطا می‌دهد).</li>
+          <li><strong>sync($ids)</strong>: وضعیت نهایی را تعیین می‌کند؛ IDهای غایب detach و جدیدها attach می‌شوند. خروجی: <code>attached/detached/updated</code>. مناسب فرم «انتخاب نقش‌ها».</li>
+          <li><strong>syncWithoutDetaching($ids)</strong>: اضافه می‌کند اگر نیست، چیزی حذف نمی‌کند؛ attach ایمن در برابر تکرار.</li>
+          <li><strong>toggle($ids)</strong>: هر ID متصل را جدا و غیرمتصل را وصل می‌کند؛ مناسب like/bookmark.</li>
+          <li><strong>detach / updateExistingPivot</strong>: حذف اتصال / به‌روزرسانی ستون‌های pivot.</li>
+        </ul>
+        <p>برای ستون‌های اضافه <code>withPivot()</code>، برای منطق روی pivot <code>using(CustomPivot::class)</code>، و اگر رابطه خودش موجودیت مستقل است، آن را مدل کامل کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-6">
+      <summary>رابطه Polymorphic چیست؟ یک سیستم کامنت برای Post و Video طراحی کنید و معایب این رابطه و نقش Morph Map را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> رابطه‌ای که در آن یک مدل می‌تواند به چند نوع مدل والد تعلق داشته باشد. به‌جای چند FK، دو ستون <code>{name}_id</code> و <code>{name}_type</code> ذخیره می‌شود.</p>
+        <pre><code class="language-php">// migration: $table-&gt;morphs('commentable');
+class Comment extends Model {
+    public function commentable(): MorphTo { return $this-&gt;morphTo(); }
+}
+class Post extends Model {
+    public function comments(): MorphMany {
+        return $this-&gt;morphMany(Comment::class, 'commentable');
+    }
+}
+// AppServiceProvider::boot
+Relation::enforceMorphMap(['post' =&gt; Post::class, 'video' =&gt; Video::class]);</code></pre>
+        <p><strong>چرا:</strong> جلوگیری از جدول‌های تکراری (post_comments، video_comments) و منطق مشترک.</p>
+        <p><strong>معایب:</strong></p>
+        <ul>
+          <li>عدم امکان <strong>foreign key constraint</strong> و cascade در دیتابیس؛ یکپارچگی باید در کد (رویداد deleting) حفظ شود.</li>
+          <li>کوئری‌ها و گزارش‌ها (join) پیچیده‌تر؛ ایندکس ترکیبی <code>(type, id)</code> لازم است (<code>morphs</code> می‌سازد).</li>
+        </ul>
+        <p><strong>Morph Map:</strong> به‌جای نام کامل کلاس (<code>App\Models\Post</code>) یک alias پایدار ذخیره می‌کند؛ با refactor نام/namespace داده‌ها خراب نمی‌شوند و ساختار داخلی کد افشا نمی‌شود. <code>enforceMorphMap</code> همچنین برای مدل بدون نگاشت exception می‌دهد. انواع دیگر: <code>morphOne</code>، و چندبه‌چند با <code>morphToMany</code>/<code>morphedByMany</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-7">
+      <summary>کد زیر چه مشکلی دارد؟ آن را بازنویسی کنید.
+        <code>User::where('active', 0)-&gt;chunk(100, fn ($users) =&gt; $users-&gt;each-&gt;update(['active' =&gt; 1]));</code></summary>
+      <div class="answer">
+        <p><strong>مشکل:</strong> <code>chunk</code> با <code>LIMIT/OFFSET</code> صفحه‌بندی می‌کند. بعد از پردازش صفحه اول، آن ۱۰۰ رکورد دیگر شرط <code>active = 0</code> را ندارند و مجموعه نتیجه جابه‌جا می‌شود؛ کوئری بعدی با <code>OFFSET 100</code> از ۱۰۰ رکورد پردازش‌نشده رد می‌شود. نتیجه: حدود نیمی از رکوردها به‌روز نمی‌شوند. همچنین هر <code>update</code> یک کوئری جدا است (۱۰۰ کوئری در هر chunk).</p>
+        <pre><code class="language-php">// ✅ اگر منطق یا رویداد مدل لازم است
+User::where('active', 0)-&gt;chunkById(100, function ($users) {
+    foreach ($users as $user) {
+        $user-&gt;update(['active' =&gt; 1]);   // رویدادها اجرا می‌شوند
+    }
+});
+
+// ✅ اگر رویداد لازم نیست: یک کوئری
+User::where('active', 0)-&gt;update(['active' =&gt; 1]);
+
+// ✅ میانه: chunk امن + update انبوه هر دسته
+User::where('active', 0)-&gt;chunkById(1000, fn ($users) =&gt;
+    User::whereKey($users-&gt;modelKeys())-&gt;update(['active' =&gt; 1])
+);</code></pre>
+        <p><strong>توضیح:</strong> <code>chunkById</code> از <code>WHERE id &gt; lastId ORDER BY id</code> استفاده می‌کند؛ به تغییر داده حساس نیست و روی جدول بزرگ از OFFSET سریع‌تر است. برای پیمایش با API Collection، <code>lazyById()</code>؛ و <code>cursor()</code> فقط یک کوئری می‌زند ولی eager loading ندارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-8">
+      <summary>رویدادهای مدل و Observer را توضیح دهید. در چه شرایطی رویدادهای مدل اجرا نمی‌شوند و این چه خطری برای منطق برنامه دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Eloquent در چرخه حیات مدل رویداد dispatch می‌کند: <code>retrieved</code>، <code>creating/created</code>، <code>updating/updated</code>، <code>saving/saved</code>، <code>deleting/deleted</code>، <code>restoring/restored</code>، <code>forceDeleting/forceDeleted</code>، <code>replicating</code>. رویدادهای «ـing» پیش از عمل‌اند و با <code>return false</code> عمل را لغو می‌کنند. <strong>Observer</strong> کلاسی است که همه listenerهای یک مدل را یکجا جمع می‌کند.</p>
+        <pre><code class="language-php">#[ObservedBy([OrderObserver::class])]
+class Order extends Model {}
+
+class OrderObserver implements ShouldHandleEventsAfterCommit {
+    public function updated(Order $o): void {
+        if ($o-&gt;wasChanged('status')) Cache::forget("order:{$o-&gt;id}");
+    }
+}</code></pre>
+        <p><strong>زمانی که اجرا نمی‌شوند:</strong></p>
+        <ul>
+          <li>عملیات انبوه روی query: <code>Order::where(...)-&gt;update()</code>، <code>-&gt;delete()</code>، <code>insert</code>، <code>upsert</code>.</li>
+          <li><code>DB::table()</code> و SQL خام.</li>
+          <li><code>saveQuietly</code>، <code>deleteQuietly</code>، <code>Model::withoutEvents()</code>، <code>MassPrunable</code>.</li>
+          <li><code>save()</code> بدون تغییر: updating/updated اجرا نمی‌شود.</li>
+        </ul>
+        <p><strong>خطر:</strong> اگر audit log، invalidation کش، همگام‌سازی جستجو (Scout) یا محاسبه فیلد به observer وابسته باشد، یک update انبوه بی‌صدا آن را دور می‌زند و داده ناسازگار می‌شود. راه‌حل: برای این مسیرها منطق را صریح فراخوانی کنید یا منطق حیاتی را در Service لایه بگذارید. همچنین observer داخل تراکنش قبل از commit اجرا می‌شود؛ با <code>ShouldHandleEventsAfterCommit</code> آن را به بعد از commit منتقل کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-9">
+      <summary>Soft Delete چگونه کار می‌کند؟ مشکل آن با unique index را توضیح دهید و راه‌حل ارائه کنید.</summary>
+      <div class="answer">
+        <p><strong>سازوکار:</strong> تریت <code>SoftDeletes</code> و ستون <code>deleted_at</code>. متد <code>delete()</code> به‌جای DELETE، ستون را با زمان فعلی پر می‌کند و یک <strong>global scope</strong> شرط <code>whereNull('deleted_at')</code> را به همه کوئری‌ها اضافه می‌کند. API: <code>withTrashed()</code>، <code>onlyTrashed()</code>، <code>restore()</code>، <code>forceDelete()</code>، <code>trashed()</code>.</p>
+        <p><strong>مشکل unique:</strong> ایندکس یکتای <code>email</code> سطرهای حذف‌شده را هم در نظر می‌گیرد؛ کاربری که حساب حذف‌شده دارد نمی‌تواند با همان ایمیل دوباره ثبت‌نام کند. ایندکس <code>(email, deleted_at)</code> هم کافی نیست، چون NULLها در unique index متمایز حساب می‌شوند و دو رکورد فعال با یک ایمیل مجاز می‌شود.</p>
+        <pre><code class="language-sql">-- PostgreSQL: partial index
+CREATE UNIQUE INDEX users_email_active ON users (email) WHERE deleted_at IS NULL;
+
+-- MySQL: generated column
+ALTER TABLE users ADD active_email VARCHAR(255)
+  AS (IF(deleted_at IS NULL, email, NULL)) STORED,
+  ADD UNIQUE (active_email);</code></pre>
+        <pre><code class="language-php">'email' =&gt; [Rule::unique('users')-&gt;withoutTrashed()],</code></pre>
+        <p><strong>نکات دیگر:</strong> soft delete روی فرزندان cascade نمی‌شود (FK cascade فقط با DELETE واقعی)؛ کوئری‌های <code>DB::table</code> scope را اعمال نمی‌کنند؛ جدول رشد می‌کند و باید Prunable شود؛ و از نظر حریم خصوصی، soft delete «حذف واقعی» داده شخصی نیست.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-10">
+      <summary>در یک سیستم کیف پول، دو درخواست برداشت هم‌زمان ممکن است موجودی را منفی کنند. مشکل را تحلیل و با Eloquent راه‌حل ارائه کنید.</summary>
+      <div class="answer">
+        <p><strong>تحلیل:</strong> یک <strong>race condition</strong> از نوع lost update / check-then-act: هر دو درخواست موجودی ۱۰۰ را می‌خوانند، هر دو شرط <code>balance &gt;= 80</code> را برقرار می‌بینند و هر دو کم می‌کنند. بررسی در PHP و نوشتن در دو مرحله جداست و اتمیک نیست.</p>
+        <p><strong>راه‌حل ۱ — قفل بدبینانه در تراکنش:</strong></p>
+        <pre><code class="language-php">DB::transaction(function () use ($id, $amount) {
+    $wallet = Wallet::whereKey($id)-&gt;lockForUpdate()-&gt;firstOrFail();
+    if ($wallet-&gt;balance &lt; $amount) throw new InsufficientFunds;
+    $wallet-&gt;decrement('balance', $amount);
+    $wallet-&gt;transactions()-&gt;create(['amount' =&gt; -$amount]);
+}, attempts: 3);</code></pre>
+        <p><code>lockForUpdate</code> یعنی <code>SELECT ... FOR UPDATE</code>؛ درخواست دوم تا commit اولی منتظر می‌ماند و سپس موجودی به‌روز را می‌بیند. بیرون از تراکنش اثری ندارد.</p>
+        <p><strong>راه‌حل ۲ — UPDATE شرطی اتمیک:</strong></p>
+        <pre><code class="language-php">$affected = Wallet::whereKey($id)-&gt;where('balance', '&gt;=', $amount)
+    -&gt;decrement('balance', $amount);
+if ($affected === 0) throw new InsufficientFunds;</code></pre>
+        <p><strong>مقایسه:</strong> قفل تضمین قوی و امکان منطق پیچیده‌تر می‌دهد ولی throughput را کم و ریسک deadlock دارد (پس <code>attempts</code> و تراکنش کوتاه). UPDATE شرطی سریع‌تر است ولی فقط برای منطق ساده. قفل خوش‌بینانه (ستون version) برای رقابت کم مناسب است. علاوه بر این‌ها CHECK constraint (<code>balance &gt;= 0</code>) لایه دفاعی آخر است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-11">
+      <summary>انواع صفحه‌بندی در لاراول (<code>paginate</code>، <code>simplePaginate</code>، <code>cursorPaginate</code>) را مقایسه کنید. برای یک API فید با میلیون‌ها رکورد کدام را انتخاب می‌کنید و چرا؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>paginate:</strong> دو کوئری، <code>COUNT(*)</code> و <code>LIMIT/OFFSET</code>. تعداد کل و شماره صفحات دارد؛ مناسب پنل ادمین با جدول متوسط.</li>
+          <li><strong>simplePaginate:</strong> بدون COUNT؛ یک سطر اضافه می‌گیرد تا بفهمد صفحه بعد هست یا نه. فقط قبلی/بعدی.</li>
+          <li><strong>cursorPaginate:</strong> keyset pagination؛ <code>WHERE (id) &lt; ? ORDER BY id DESC LIMIT n</code> با cursor رمزشده در query string.</li>
+        </ul>
+        <p><strong>انتخاب برای فید:</strong> <code>cursorPaginate</code>، چون:</p>
+        <ul>
+          <li>هزینه OFFSET خطی است (دیتابیس باید سطرهای قبلی را بخواند و دور بریزد)؛ cursor با ایندکس مستقیم seek می‌کند و سرعت در صفحه ۱ و ۱۰۰۰ یکسان است.</li>
+          <li>COUNT روی میلیون‌ها سطر (به‌خصوص InnoDB) گران است.</li>
+          <li>با درج آیتم جدید، offset باعث تکرار/جاافتادن آیتم‌ها می‌شود؛ cursor پایدار است.</li>
+        </ul>
+        <pre><code class="language-php">return PostResource::collection(
+    Post::where('published', true)-&gt;orderByDesc('id')-&gt;cursorPaginate(20)
+);</code></pre>
+        <p><strong>محدودیت‌ها:</strong> پرش به صفحه دلخواه و نمایش تعداد کل ممکن نیست؛ مرتب‌سازی باید روی ستون(های) یکتا و ایندکس‌دار باشد (مثلاً <code>created_at</code> + <code>id</code>) و ستون‌های مرتب‌سازی nullable مشکل‌سازند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-12">
+      <summary>API Resource چیست و چرا بهتر از برگرداندن مستقیم مدل یا استفاده از <code>$hidden</code> است؟ نقش <code>whenLoaded</code> را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> کلاسی (<code>JsonResource</code>) که یک مدل یا collection را به آرایه خروجی API تبدیل می‌کند؛ یک <strong>transformation layer</strong> بین لایه داده و قرارداد API.</p>
+        <p><strong>چرا:</strong></p>
+        <ul>
+          <li><strong>جداسازی قرارداد از schema:</strong> تغییر نام ستون یا refactor جدول، API را نمی‌شکند.</li>
+          <li><strong>امنیت به‌صورت whitelist:</strong> با return مستقیم مدل، هر ستون جدید (مثلاً <code>api_token</code>) خودکار لو می‌رود مگر یادتان باشد به <code>$hidden</code> اضافه کنید.</li>
+          <li><strong>منطق شرطی صریح:</strong> <code>when()</code>، <code>mergeWhen()</code> بر اساس دسترسی کاربر.</li>
+          <li><strong>یکنواختی:</strong> wrap در <code>data</code>، <code>links/meta</code> خودکار برای paginator، نسخه‌بندی (V1/V2).</li>
+        </ul>
+        <pre><code class="language-php">public function toArray(Request $request): array {
+    return [
+        'id'       =&gt; $this-&gt;id,
+        'title'    =&gt; $this-&gt;title,
+        'author'   =&gt; new UserResource($this-&gt;whenLoaded('author')),
+        'comments' =&gt; $this-&gt;whenCounted('comments'),
+    ];
+}
+// کنترلر
+return PostResource::collection(Post::with('author')-&gt;withCount('comments')-&gt;paginate());</code></pre>
+        <p><strong>whenLoaded:</strong> رابطه را فقط اگر از قبل eager load شده باشد در خروجی می‌گذارد و هرگز lazy load نمی‌کند؛ پس Resource خودش منبع N+1 نمی‌شود و کنترلر تصمیم می‌گیرد چه چیزی لود شود. هزینه Resource: یک کلاس اضافه و کمی overhead که در برابر مزایا ناچیز است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-13">
+      <summary>Local Scope و Global Scope را تعریف و مقایسه کنید. یک global scope برای multi-tenancy بنویسید و خطرات آن را بگویید.</summary>
+      <div class="answer">
+        <p><strong>Local scope:</strong> شرط قابل استفاده مجدد که صریحاً فراخوانی می‌شود (<code>Post::published()</code>)؛ با متد <code>scopeXxx</code> یا در Laravel 12 با attribute <code>#[Scope]</code>.</p>
+        <p><strong>Global scope:</strong> شرطی که خودکار به <strong>همه</strong> کوئری‌های مدل اضافه می‌شود؛ کلاسی که <code>Scope</code> را با متد <code>apply()</code> پیاده می‌کند، یا closure در <code>booted()</code>. نمونه داخلی: SoftDeletes.</p>
+        <pre><code class="language-php">class TenantScope implements Scope {
+    public function apply(Builder $b, Model $m): void {
+        $b-&gt;where($m-&gt;qualifyColumn('tenant_id'), app('tenant')-&gt;id);
+    }
+}
+#[ScopedBy([TenantScope::class])]
+class Invoice extends Model {
+    protected static function booted(): void {
+        static::creating(fn ($i) =&gt; $i-&gt;tenant_id ??= app('tenant')-&gt;id);
+    }
+}
+Invoice::withoutGlobalScope(TenantScope::class)-&gt;get();   // ادمین کل سیستم</code></pre>
+        <p><strong>مقایسه:</strong> local = صریح، قابل‌دیدن، اختیاری؛ global = پیش‌فرض امن (فراموش کردن شرط ممکن نیست) ولی پنهان.</p>
+        <p><strong>خطرات global scope:</strong></p>
+        <ul>
+          <li>Query Builder خام (<code>DB::table</code>) و SQL خام آن را اعمال نمی‌کنند → نشت داده بین tenantها.</li>
+          <li>دیباگ سخت: شرط در کد کوئری دیده نمی‌شود.</li>
+          <li>در queue job و command، tenant فعلی باید صریحاً تنظیم شود.</li>
+          <li>در joinها بدون qualify کردن نام ستون، ابهام ستون پیش می‌آید.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-14">
+      <summary>Attribute Casting، Accessor و Mutator را توضیح دهید. چه زمانی custom cast می‌نویسید و تفاوت روش Laravel 11 با نسخه‌های قبل چیست؟</summary>
+      <div class="answer">
+        <p><strong>Cast:</strong> تبدیل خودکار و دوطرفه نوع بین دیتابیس و PHP. در Laravel 11+ با متد <code>casts(): array</code> (پیش‌تر خاصیت <code>$casts</code> که هنوز معتبر است). مزیت متد: امکان فراخوانی متد مثل <code>AsEnumCollection::of(Flag::class)</code>.</p>
+        <pre><code class="language-php">protected function casts(): array {
+    return [
+        'status'   =&gt; OrderStatus::class,  // enum
+        'options'  =&gt; AsCollection::class,
+        'paid_at'  =&gt; 'immutable_datetime',
+        'token'    =&gt; 'encrypted',
+        'price'    =&gt; MoneyCast::class,    // custom
+    ];
+}
+protected function fullName(): Attribute {
+    return Attribute::make(get: fn ($v, $a) =&gt; "{$a['first_name']} {$a['last_name']}");
+}</code></pre>
+        <p><strong>Accessor/Mutator:</strong> تغییر مقدار هنگام خواندن/نوشتن یا ساخت attribute مجازی. سینتکس مدرن: متد protected camelCase که <code>Attribute::make(get:, set:)</code> برمی‌گرداند؛ سینتکس قدیمی: <code>getXxxAttribute</code>/<code>setXxxAttribute</code>.</p>
+        <p><strong>Custom cast</strong> وقتی: تبدیل در چند مدل تکرار می‌شود، Value Object دارید (Money، Address، Coordinates)، یا یک attribute به چند ستون نگاشت می‌شود. کلاس <code>CastsAttributes</code> با متدهای <code>get</code> و <code>set</code>.</p>
+        <p><strong>نکات:</strong> accessorها در SQL قابل استفاده نیستند؛ attribute مجازی برای JSON باید در <code>$appends</code> بیاید؛ ستون encrypted قابل جستجو نیست؛ تغییر مستقیم کلید آرایه cast شده خطای indirect modification می‌دهد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-15">
+      <summary>تفاوت <code>firstOrCreate</code>، <code>updateOrCreate</code>، <code>createOrFirst</code> و <code>upsert</code> چیست؟ کدام در شرایط هم‌زمانی بالا امن است؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>firstOrCreate(attrs, values):</strong> SELECT بر اساس attrs؛ اگر نبود INSERT با attrs+values. رویدادها اجرا می‌شوند.</li>
+          <li><strong>updateOrCreate(attrs, values):</strong> SELECT؛ اگر بود UPDATE با values، وگرنه INSERT.</li>
+          <li><strong>createOrFirst(attrs, values):</strong> ابتدا INSERT؛ اگر خطای <strong>unique constraint</strong> داد، SELECT. نیاز به unique index دارد.</li>
+          <li><strong>upsert(rows, uniqueBy, update):</strong> یک کوئری انبوه (<code>INSERT ... ON DUPLICATE KEY UPDATE</code> یا <code>ON CONFLICT</code>)؛ بدون رویداد مدل؛ نیاز به unique index.</li>
+        </ul>
+        <p><strong>هم‌زمانی:</strong> <code>firstOrCreate</code> و <code>updateOrCreate</code> الگوی check-then-act دارند و اتمیک نیستند؛ دو درخواست هم‌زمان هر دو «پیدا نمی‌کنند» و دو INSERT می‌زنند. بدون unique index داده تکراری، و با unique index یکی از درخواست‌ها exception می‌گیرد.</p>
+        <pre><code class="language-php">// unique index روی (user_id, date) شرط لازم است
+$stat = DailyStat::createOrFirst(['user_id' =&gt; $id, 'date' =&gt; today()]);
+
+DailyStat::upsert(
+    [['user_id' =&gt; $id, 'date' =&gt; today(), 'visits' =&gt; 1]],
+    uniqueBy: ['user_id', 'date'],
+    update: ['visits' =&gt; DB::raw('visits + 1')]
+);</code></pre>
+        <p><strong>جمع‌بندی:</strong> امنیت واقعی همیشه از <strong>unique constraint دیتابیس</strong> می‌آید؛ <code>upsert</code> و <code>createOrFirst</code> بر آن تکیه دارند. برای import انبوه <code>upsert</code>، برای یک رکورد با نیاز به رویداد <code>createOrFirst</code> یا <code>updateOrCreate</code> داخل تراکنش با مدیریت خطای تکراری.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-16">
+      <summary>تفاوت <code>whereHas</code>، <code>with</code> با closure و <code>withWhereHas</code> را با مثال توضیح دهید.</summary>
+      <div class="answer">
+        <p>هدف: «کاربرانی که پست ویژه دارند، همراه با فقط همان پست‌های ویژه».</p>
+        <pre><code class="language-php">// ۱) فقط والدها فیلتر می‌شوند؛ $u-&gt;posts همه پست‌ها (و lazy!)
+User::whereHas('posts', fn ($q) =&gt; $q-&gt;where('featured', true))-&gt;get();
+
+// ۲) همه کاربران می‌آیند؛ فقط پست‌های لودشده فیلتر می‌شوند
+User::with(['posts' =&gt; fn ($q) =&gt; $q-&gt;where('featured', true)])-&gt;get();
+
+// ۳) هر دو: کاربرانِ دارای پست ویژه + eager load همان پست‌ها
+User::withWhereHas('posts', fn ($q) =&gt; $q-&gt;where('featured', true))-&gt;get();</code></pre>
+        <ul>
+          <li><strong>whereHas:</strong> زیرکوئری <code>EXISTS</code> روی جدول والد؛ چیزی لود نمی‌کند.</li>
+          <li><strong>with + closure:</strong> کوئری دوم <code>WHERE user_id IN (...) AND featured = 1</code>؛ کاربران بدون پست ویژه با collection خالی برمی‌گردند.</li>
+          <li><strong>withWhereHas:</strong> ترکیب دو مورد بالا با یک شرط مشترک؛ جلوگیری از تکرار closure.</li>
+        </ul>
+        <p>مرتبط‌ها: <code>has('posts', '&gt;', 5)</code> برای شرط تعداد، <code>doesntHave</code>/<code>whereDoesntHave</code> برای نبود رابطه، <code>whereRelation</code> به‌عنوان میان‌بر، و <code>withCount</code>/<code>withExists</code> برای افزودن ستون محاسباتی بدون لود رکوردها.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-17">
+      <summary>برای خروجی گرفتن CSV از ۵ میلیون رکورد سفارش، از کدام روش Eloquent استفاده می‌کنید؟ <code>chunk</code>، <code>chunkById</code>، <code>lazy</code> و <code>cursor</code> را مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>مشکل:</strong> <code>Order::all()</code> یا <code>get()</code> همه ۵ میلیون مدل را در حافظه می‌سازد و با memory exhausted از کار می‌افتد.</p>
+        <ul>
+          <li><strong>chunk(n):</strong> LIMIT/OFFSET؛ حافظه محدود ولی OFFSET در صفحات عمیق کند و به تغییر داده حساس است.</li>
+          <li><strong>chunkById(n):</strong> <code>WHERE id &gt; last</code>؛ سرعت ثابت، امن در برابر تغییر داده.</li>
+          <li><strong>lazy()/lazyById():</strong> همان chunk ولی خروجی <code>LazyCollection</code>؛ API روان (<code>map/filter/each</code>) و پشتیبانی از eager loading در هر chunk.</li>
+          <li><strong>cursor():</strong> یک کوئری و generator؛ فقط یک مدل در لحظه hydrate می‌شود، اما eager loading ندارد و در MySQL با buffered query، نتیجه خام در حافظه PDO انباشته می‌شود.</li>
+        </ul>
+        <pre><code class="language-php">$out = fopen(storage_path('app/orders.csv'), 'w');
+Order::query()
+    -&gt;select(['id', 'user_id', 'total', 'created_at'])
+    -&gt;with('user:id,email')
+    -&gt;lazyById(2000)
+    -&gt;each(fn ($o) =&gt; fputcsv($out, [$o-&gt;id, $o-&gt;user-&gt;email, $o-&gt;total, $o-&gt;created_at]));
+fclose($out);</code></pre>
+        <p><strong>انتخاب:</strong> <code>lazyById</code> با ستون‌های محدود و eager load. این کار را در یک <strong>queued job</strong> انجام دهید (نه در درخواست HTTP) و پس از اتمام، لینک دانلود اطلاع داده شود. اگر به منطق مدل نیازی نیست، <code>toBase()</code> یا Query Builder باز هم سبک‌تر است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-18">
+      <summary>تفاوت <code>isDirty</code>، <code>wasChanged</code> و <code>getOriginal</code> چیست؟ در یک observer چگونه فقط هنگام تغییر وضعیت سفارش ایمیل می‌فرستید؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>isDirty('attr'):</strong> قبل از ذخیره؛ آیا مقدار فعلی با مقدار اصلی (خوانده‌شده از DB) فرق دارد؟ <code>getDirty()</code> لیست کامل.</li>
+          <li><strong>getOriginal('attr'):</strong> مقدار اصلی قبل از تغییرات؛ در رویداد <code>updating</code> یا <code>updated</code> مقدار قبلی را می‌دهد.</li>
+          <li><strong>wasChanged('attr'):</strong> بعد از ذخیره؛ آیا این ستون در آخرین save تغییر کرد؟ <code>getChanges()</code> لیست کامل.</li>
+        </ul>
+        <pre><code class="language-php">class OrderObserver
+{
+    public function updating(Order $order): void
+    {
+        if ($order-&gt;isDirty('status') &amp;&amp; $order-&gt;getOriginal('status') === OrderStatus::Shipped) {
+            // جلوگیری از بازگشت وضعیت
+        }
+    }
+
+    public function updated(Order $order): void
+    {
+        if ($order-&gt;wasChanged('status')) {
+            // notification صف‌شده با afterCommit(): فقط بعد از commit موفق ارسال می‌شود
+            $order-&gt;user-&gt;notify(
+                (new OrderStatusChanged($order, from: $order-&gt;getOriginal('status')))-&gt;afterCommit()
+            );
+        }
+    }
+}</code></pre>
+        <p><strong>نکات:</strong> در <code>updated</code>، <code>isDirty</code> هنوز true است چون syncOriginal بعد از رویداد اجرا می‌شود، ولی <code>wasChanged</code> معنای روشن‌تری دارد. اگر وضعیت با <code>Order::where(...)-&gt;update()</code> تغییر کند observer اجرا نمی‌شود. ارسال ایمیل باید بعد از commit تراکنش باشد؛ اینجا با <code>afterCommit()</code> روی notification صف‌شده انجام شده است. اگر به‌جای آن کل observer را <code>ShouldHandleEventsAfterCommit</code> کنید، دقت کنید که تا زمان اجرای listener، <code>syncOriginal</code> انجام شده و <code>getOriginal</code> دیگر مقدار قبلی را نمی‌دهد (اما <code>wasChanged</code> هنوز درست است)؛ پس مقدار قبلی را باید در <code>updating</code> نگه دارید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-eloquent-19">
+      <summary>اگر یک صفحه لیست محصولات در production کند شده باشد، چه مراحلی برای بهینه‌سازی لایه Eloquent طی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>۱. اندازه‌گیری قبل از تغییر:</strong> Telescope یا Debugbar یا لاگ <code>DB::listen</code> برای تعداد کوئری، کوئری‌های تکراری و زمان هر کدام؛ APM در production.</p>
+        <p><strong>۲. حذف N+1:</strong> رابطه‌های استفاده‌شده در view/Resource را با <code>with</code> لود کنید؛ <code>preventLazyLoading</code> در توسعه.</p>
+        <p><strong>۳. کاهش داده:</strong> <code>select</code> ستون‌های لازم، <code>with('category:id,name')</code>، صفحه‌بندی (و برای جدول بزرگ <code>simplePaginate</code>/<code>cursorPaginate</code>).</p>
+        <p><strong>۴. aggregate در دیتابیس:</strong> <code>withCount('reviews')</code>، <code>withAvg('reviews', 'rating')</code> به‌جای محاسبه در حلقه.</p>
+        <p><strong>۵. ایندکس:</strong> با <code>EXPLAIN</code> بررسی کنید؛ ایندکس ترکیبی متناسب با where + order، مثلاً <code>(category_id, is_active, created_at)</code>.</p>
+        <pre><code class="language-php">$products = Product::query()
+    -&gt;select(['id', 'name', 'price', 'category_id'])
+    -&gt;with('category:id,name')
+    -&gt;withAvg('reviews', 'rating')
+    -&gt;where('is_active', true)
+    -&gt;latest('id')
+    -&gt;simplePaginate(24);</code></pre>
+        <p><strong>۶. کش:</strong> <code>Cache::remember</code> برای داده پرتکرار (مثلاً دسته‌بندی‌ها) با invalidation در observer؛ دقت به کلید کش برای هر صفحه/فیلتر.</p>
+        <p><strong>۷. denormalization:</strong> اگر هنوز کند است، ستون‌های شمارنده/میانگین ذخیره‌شده یا جدول خلاصه که با job به‌روز می‌شود. در نهایت حذف accessorهای سنگین از <code>$appends</code> و <code>$with</code> سراسری.</p>
+      </div>
+    </details>
+
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>مفاهیم</h4>
+      <ul>
+        <li>Eloquent = <strong>Active Record</strong> (مدل = جدول، نمونه = سطر)؛ Doctrine = Data Mapper.</li>
+        <li>قرارداد: جدول جمع snake_case، PK <code>id</code>، <code>created_at/updated_at</code>، FK = <code>model_id</code>.</li>
+        <li>UUID/ULID: <code>HasUuids</code> (L12: UUIDv7)، <code>HasUlids</code>؛ migration: <code>uuid()</code>/<code>ulid()</code>.</li>
+        <li>Laravel 11+: <code>protected function casts(): array</code>.</li>
+      </ul>
+      <h4>بازیابی</h4>
+      <ul>
+        <li><code>find</code>/<code>first</code> → null؛ <code>findOrFail</code>/<code>firstOrFail</code> → 404؛ <code>sole</code> → دقیقاً یکی.</li>
+        <li><code>value('col')</code>، <code>pluck('name','id')</code>، <code>exists()</code>، <code>firstWhere</code>.</li>
+        <li>raw فقط با binding: <code>whereRaw('x = ?', [$v])</code>؛ نام ستون را whitelist کنید.</li>
+      </ul>
+      <h4>نوشتن</h4>
+      <ul>
+        <li><code>create</code> (fillable)، <code>update</code>، <code>save</code>، <code>firstOrCreate</code>، <code>firstOrNew</code>، <code>updateOrCreate</code>، <code>createOrFirst</code>.</li>
+        <li><code>upsert(rows, uniqueBy, update)</code> — یک کوئری، بدون رویداد، نیاز unique index.</li>
+        <li><code>increment/decrement/incrementEach</code>، <code>touch()</code>، <code>replicate()</code>.</li>
+        <li><code>$fillable</code> (whitelist) &gt; <code>$guarded</code>؛ <code>forceFill</code>؛ از <code>unguard()</code> پرهیز.</li>
+      </ul>
+      <h4>Cast و Attribute</h4>
+      <ul>
+        <li><code>datetime</code>، <code>immutable_datetime</code>، <code>decimal:2</code>، <code>boolean</code>، <code>array</code>، <code>AsCollection</code>، <code>encrypted</code>، <code>hashed</code>، Enum::class.</li>
+        <li>Custom cast: <code>CastsAttributes</code> با <code>get/set</code>.</li>
+        <li><code>Attribute::make(get:, set:)</code>؛ قدیمی: <code>getXAttribute</code>.</li>
+        <li><code>$hidden</code>، <code>$visible</code>، <code>$appends</code>، <code>makeVisible</code>.</li>
+      </ul>
+      <h4>روابط</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>رابطه</th><th>FK کجاست</th></tr></thead>
+        <tbody>
+          <tr><td><code>hasOne</code>/<code>hasMany</code></td><td>جدول فرزند</td></tr>
+          <tr><td><code>belongsTo</code></td><td>جدول خود مدل</td></tr>
+          <tr><td><code>belongsToMany</code></td><td>جدول pivot (<code>role_user</code>)</td></tr>
+          <tr><td><code>hasOneThrough</code>/<code>hasManyThrough</code></td><td>مدل میانی + مقصد</td></tr>
+          <tr><td><code>morphTo</code>/<code>morphMany</code>/<code>morphOne</code></td><td><code>x_id</code> + <code>x_type</code></td></tr>
+          <tr><td><code>morphToMany</code>/<code>morphedByMany</code></td><td>pivot چندریختی (<code>taggables</code>)</td></tr>
+        </tbody>
+      </table></div>
+      <ul>
+        <li>Pivot: <code>withPivot</code>، <code>withTimestamps</code>، <code>as()</code>، <code>using()</code>، <code>wherePivot</code>.</li>
+        <li><code>attach</code>، <code>detach</code>، <code>sync</code>، <code>syncWithoutDetaching</code>، <code>toggle</code>، <code>updateExistingPivot</code>.</li>
+        <li><code>latestOfMany()</code>، <code>oldestOfMany()</code>، <code>ofMany('col','max')</code>؛ <code>withDefault()</code>؛ <code>associate/dissociate</code>.</li>
+        <li><code>Relation::enforceMorphMap([...])</code>.</li>
+      </ul>
+      <h4>کوئری روی رابطه و Eager Loading</h4>
+      <ul>
+        <li><code>has</code>، <code>whereHas</code>، <code>doesntHave</code>، <code>whereDoesntHave</code>، <code>whereRelation</code>، <code>withWhereHas</code>.</li>
+        <li><code>withCount</code> → <code>x_count</code>، <code>withSum('r','c')</code> → <code>r_sum_c</code>، <code>withExists</code>، <code>loadCount</code>.</li>
+        <li><code>with('a', 'b.c')</code>، <code>with('a:id,name')</code>، <code>with(['a' =&gt; fn])</code>، <code>load</code>، <code>loadMissing</code>، <code>$with</code>، <code>without</code>.</li>
+        <li><code>Model::preventLazyLoading()</code>، <code>Model::shouldBeStrict()</code> در AppServiceProvider.</li>
+        <li><code>posts()</code> = Query، <code>posts</code> = Collection.</li>
+      </ul>
+      <h4>Scope، Soft Delete، رویداد</h4>
+      <ul>
+        <li><code>scopeX(Builder $q)</code> یا <code>#[Scope]</code> (L12)؛ global: <code>Scope::apply</code>، <code>#[ScopedBy]</code>، <code>withoutGlobalScope(s)</code>.</li>
+        <li><code>SoftDeletes</code> + <code>$table-&gt;softDeletes()</code>؛ <code>withTrashed</code>، <code>onlyTrashed</code>، <code>restore</code>، <code>forceDelete</code>، <code>trashed()</code>.</li>
+        <li>رویدادها: saving → creating/updating → created/updated → saved؛ deleting/deleted؛ restoring/restored.</li>
+        <li><code>#[ObservedBy]</code> یا <code>Model::observe()</code>؛ <code>ShouldHandleEventsAfterCommit</code>.</li>
+        <li>بدون رویداد: query <code>update/delete</code>، <code>insert</code>، <code>upsert</code>، <code>saveQuietly</code>، <code>withoutEvents</code>.</li>
+        <li><code>isDirty</code>، <code>isClean</code>، <code>getOriginal</code>، <code>wasChanged</code>، <code>getChanges</code>، <code>wasRecentlyCreated</code>.</li>
+      </ul>
+      <h4>داده حجیم، تراکنش، صفحه‌بندی</h4>
+      <ul>
+        <li><code>chunkById</code> &gt; <code>chunk</code> (وقتی داده تغییر می‌کند)؛ <code>lazyById</code>؛ <code>cursor</code> (بدون eager load).</li>
+        <li><code>DB::transaction(fn, attempts: 3)</code>؛ <code>lockForUpdate()</code>، <code>sharedLock()</code> فقط داخل تراکنش.</li>
+        <li><code>paginate</code> (COUNT)، <code>simplePaginate</code> (بدون COUNT)، <code>cursorPaginate</code> (keyset)؛ <code>withQueryString()</code>.</li>
+      </ul>
+      <h4>Resource، Factory، Pruning</h4>
+      <ul>
+        <li><code>make:resource</code>؛ <code>toArray</code>، <code>when</code>، <code>whenLoaded</code>، <code>whenCounted</code>، <code>mergeWhen</code>، <code>::collection()</code>، <code>additional</code>.</li>
+        <li>Factory: <code>definition()</code>، state، <code>count</code>، <code>make/create</code>، <code>has/for</code>، <code>hasAttached</code>، <code>sequence</code>، <code>recycle</code>، <code>afterCreating</code>.</li>
+        <li><code>Prunable</code> (با رویداد) / <code>MassPrunable</code> (یک DELETE)؛ <code>Schedule::command('model:prune')-&gt;daily()</code>.</li>
+      </ul>
+      <h4>Artisan</h4>
+      <pre><code class="language-bash">php artisan make:model Post -mfsc   # migration, factory, seeder, controller
+php artisan make:model Post --all   # همه + policy, requests
+php artisan make:observer PostObserver --model=Post
+php artisan make:cast MoneyCast
+php artisan make:scope TenantScope
+php artisan make:resource PostResource
+php artisan make:factory PostFactory
+php artisan model:show Post          # ستون‌ها، رابطه‌ها، observerها
+php artisan model:prune --pretend
+php artisan db:show / db:table users</code></pre>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

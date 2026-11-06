@@ -1,0 +1,1288 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Database Design — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="database-design">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Database Design</h1>
+    <p class="lead">طراحی پایگاه داده‌ی رابطه‌ای از نیازمندی تا جدول: مدل مفهومی/منطقی/فیزیکی، ER، کلیدها، روابط، نرمال‌سازی تا BCNF با مثال کامل، Constraintها، انتخاب نوع داده، Soft delete، Polymorphic، Audit، ایندکس، مرور SQL و Migrationهای Laravel، همراه با یک case study فروشگاه آنلاین.</p>
+  </header>
+
+  <!-- ===================== 1 ===================== -->
+  <section class="lesson" id="design-process" data-title="فرایند طراحی و سطوح مدل">
+    <h2>فرایند طراحی و سطوح مدل</h2>
+    <p>طراحی پایگاه داده یعنی تبدیل نیازمندی‌های کسب‌وکار به ساختاری که داده را <strong>درست (integrity)</strong>، <strong>بدون تکرار غیرضروری</strong> و <strong>با کارایی مناسب برای الگوهای دسترسی</strong> نگه دارد. این کار معمولاً در چهار گام انجام می‌شود:</p>
+
+    <pre class="diagram">Requirements ──► Conceptual Model ──► Logical Model ──► Physical Model
+ (نیازمندی‌ها)     (ER: موجودیت‌ها و      (جدول، ستون، کلید،     (DBMS خاص: نوع داده،
+                   روابط، مستقل از       نرمال‌سازی، مستقل       ایندکس، partition،
+                   تکنولوژی)              از DBMS خاص)            engine، storage)</pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>سطح</th><th>مخاطب</th><th>چه چیزی مشخص می‌شود</th><th>خروجی</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Conceptual</strong></td><td>ذی‌نفعان کسب‌وکار</td><td>موجودیت‌ها، روابط اصلی، قواعد کسب‌وکار؛ بدون جزئیات فنی</td><td>ER diagram سطح بالا</td></tr>
+        <tr><td><strong>Logical</strong></td><td>تحلیل‌گر/توسعه‌دهنده</td><td>همه‌ی attributeها، کلید اصلی و خارجی، کاردینالیتی، نرمال‌سازی؛ مستقل از DBMS</td><td>Schema رابطه‌ای (جداول و ستون‌ها)</td></tr>
+        <tr><td><strong>Physical</strong></td><td>DBA/توسعه‌دهنده</td><td>نوع داده‌ی دقیق، ایندکس، constraint، partitioning، charset، engine</td><td>DDL / Migration</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>گام نیازمندی‌ها: چه سوال‌هایی بپرسیم؟</h3>
+    <ul>
+      <li>چه <strong>موجودیت‌هایی</strong> (اسم‌ها) داریم؟ مشتری، سفارش، محصول…</li>
+      <li>چه <strong>روابطی</strong> (فعل‌ها) بین آن‌هاست؟ «مشتری سفارش <em>می‌دهد</em>».</li>
+      <li><strong>قواعد کسب‌وکار:</strong> آیا سفارش بدون مشتری معنا دارد؟ هر محصول چند دسته می‌تواند داشته باشد؟ حذف مشتری با سفارش‌هایش چه می‌کند؟</li>
+      <li><strong>الگوهای دسترسی:</strong> پرتکرارترین کوئری‌ها چیست؟ نسبت خواندن به نوشتن؟ حجم داده و رشد؟</li>
+      <li><strong>نیازهای غیرعملکردی:</strong> تاریخچه و audit، چندزبانه، چندمستأجره (multi-tenant)، منطقه‌ی زمانی، نگه‌داری داده (retention) و GDPR.</li>
+    </ul>
+
+    <div class="callout exam"><p>تفاوت سه سطح مدل سوال کلاسیک است. یک جمله‌ی خلاصه: <strong>Conceptual</strong> = «چه چیزی» (برای کسب‌وکار)، <strong>Logical</strong> = «چه ساختاری» (جداول و کلیدها، مستقل از محصول)، <strong>Physical</strong> = «چگونه» (پیاده‌سازی روی MySQL/PostgreSQL با نوع داده و ایندکس).</p></div>
+  </section>
+
+  <!-- ===================== 2 ===================== -->
+  <section class="lesson" id="er-model" data-title="مدل ER و کاردینالیتی">
+    <h2>مدل ER و کاردینالیتی</h2>
+    <dl class="terms">
+      <dt>Entity</dt><dd>شیء یا مفهومی که داده‌اش را نگه می‌داریم (Customer، Order). در مدل منطقی معمولاً یک جدول.</dd>
+      <dt>Entity Instance</dt><dd>یک نمونه‌ی مشخص (مشتری شماره‌ی ۴۲) → یک سطر.</dd>
+      <dt>Attribute</dt><dd>ویژگی موجودیت (name، email) → ستون.</dd>
+      <dt>Composite Attribute</dt><dd>ویژگی قابل تقسیم (address = city + street + zip).</dd>
+      <dt>Multi-valued Attribute</dt><dd>ویژگی با چند مقدار (چند شماره تلفن) → در مدل رابطه‌ای جدول جدا.</dd>
+      <dt>Derived Attribute</dt><dd>قابل محاسبه از بقیه (age از birth_date، total از آیتم‌ها) → معمولاً ذخیره نمی‌شود مگر برای کارایی.</dd>
+      <dt>Weak Entity</dt><dd>موجودیتی که بدون والد شناسایی نمی‌شود (OrderItem بدون Order). کلیدش شامل کلید والد است.</dd>
+      <dt>Relationship</dt><dd>ارتباط بین موجودیت‌ها؛ خودش هم می‌تواند attribute داشته باشد (quantity در رابطه‌ی سفارش-محصول).</dd>
+    </dl>
+
+    <h3>کاردینالیتی (Cardinality) و مشارکت (Participation)</h3>
+    <ul>
+      <li><strong>کاردینالیتی:</strong> حداکثر تعداد نمونه‌های طرف مقابل: <code>1:1</code>، <code>1:N</code>، <code>M:N</code>.</li>
+      <li><strong>مشارکت (Optionality/Modality):</strong> حداقل تعداد: اجباری (حداقل یک) یا اختیاری (صفر هم مجاز). در پیاده‌سازی، اجباری بودن معمولاً با <code>NOT NULL</code> روی FK نمایش داده می‌شود.</li>
+    </ul>
+
+    <h3>نماد Crow's Foot</h3>
+    <pre class="diagram">  ──||──   دقیقاً یک (one and only one)
+  ──o|──   صفر یا یک (zero or one)
+  ──|&lt;──   یک یا بیشتر (one or many)
+  ──o&lt;──   صفر یا بیشتر (zero or many)
+
+  CUSTOMER ||──────o&lt; ORDER        هر سفارش دقیقاً یک مشتری؛ هر مشتری صفر یا چند سفارش
+  ORDER    ||──────|&lt; ORDER_ITEM   هر سفارش حداقل یک آیتم
+  PRODUCT  ||──────o&lt; ORDER_ITEM
+  USER     ||──────o| PROFILE      هر کاربر حداکثر یک پروفایل</pre>
+
+    <div class="callout tip"><p>برای پیدا کردن کاردینالیتی، رابطه را از <strong>هر دو طرف</strong> جمله‌بندی کنید: «یک مشتری چند سفارش می‌تواند داشته باشد؟ (چند)» و «یک سفارش به چند مشتری تعلق دارد؟ (یک)» → 1:N. اگر هر دو طرف «چند» بود → M:N و نیاز به جدول واسط.</p></div>
+  </section>
+
+  <!-- ===================== 3 ===================== -->
+  <section class="lesson" id="keys" data-title="کلیدها">
+    <h2>کلیدها</h2>
+    <dl class="terms">
+      <dt>Super Key</dt><dd>هر مجموعه از ستون‌ها که سطر را یکتا مشخص کند (ممکن است ستون اضافی داشته باشد).</dd>
+      <dt>Candidate Key</dt><dd>Super key <strong>کمینه</strong>؛ با حذف هر ستون دیگر یکتا نیست. ممکن است چند candidate key داشته باشیم (id، email، national_code).</dd>
+      <dt>Primary Key</dt><dd>candidate key انتخاب‌شده برای شناسایی سطر؛ یکتا، NOT NULL، و در حالت ایده‌آل تغییرناپذیر. هر جدول یک PK.</dd>
+      <dt>Alternate Key</dt><dd>candidate keyهایی که PK نشده‌اند → با <code>UNIQUE</code> اجبار می‌شوند.</dd>
+      <dt>Composite Key</dt><dd>کلید چندستونی، مثل <code>(order_id, product_id)</code> در جدول واسط.</dd>
+      <dt>Foreign Key</dt><dd>ستونی که به PK (یا unique key) جدول دیگر اشاره می‌کند و <strong>Referential Integrity</strong> را تضمین می‌کند.</dd>
+    </dl>
+
+    <h3>Natural Key در برابر Surrogate Key</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Natural Key</h4><ul>
+        <li>مقداری با معنای کسب‌وکاری (کد ملی، ISBN، email، کد کشور ISO).</li>
+        <li>بدون ستون اضافه؛ خوانا.</li>
+        <li>خطر: <strong>تغییر می‌کند</strong> (ایمیل عوض می‌شود)، فرمتش عوض می‌شود، یا یکتایی‌اش در واقعیت نقض می‌شود؛ و تغییر PK باید در همه‌ی FKها منتشر شود.</li>
+        <li>اغلب طولانی (رشته) → ایندکس‌ها بزرگ‌تر.</li>
+      </ul></div>
+      <div class="card"><h4>Surrogate Key</h4><ul>
+        <li>شناسه‌ی مصنوعی بی‌معنا (auto-increment، UUID، ULID).</li>
+        <li>پایدار، کوچک، یکنواخت؛ JOIN سریع.</li>
+        <li>عیب: نیاز به ستون اضافه و <strong>همچنان باید natural key را با UNIQUE</strong> محافظت کرد، وگرنه رکورد تکراری منطقی خواهیم داشت.</li>
+      </ul></div>
+    </div>
+    <div class="callout exam"><p>توصیه‌ی رایج: PK را surrogate بگیرید و natural key را <code>UNIQUE</code> کنید. استثنا: جداول lookup کوچک و پایدار (مثل کد ارز <code>IRR</code>، <code>USD</code>) و جداول واسط که composite key طبیعی دارند.</p></div>
+
+    <h3>Auto-increment در برابر UUID/ULID</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Auto-increment (BIGINT)</th><th>UUID v4 (تصادفی)</th><th>UUIDv7 / ULID (مرتب زمانی)</th></tr></thead>
+      <tbody>
+        <tr><td>اندازه</td><td>۸ بایت</td><td>۱۶ بایت (اگر BINARY باشد؛ ۳۶ کاراکتر به‌صورت رشته)</td><td>۱۶ بایت (ULID به‌صورت رشته ۲۶ کاراکتر)</td></tr>
+        <tr><td>تولید</td><td>توسط دیتابیس؛ نیاز به round-trip</td><td>در برنامه، بدون هماهنگی</td><td>در برنامه، بدون هماهنگی</td></tr>
+        <tr><td>کارایی درج در B-tree (InnoDB clustered)</td><td>عالی (append به انتها)</td><td>ضعیف: درج تصادفی → page split و fragmentation</td><td>خوب (تقریباً append)</td></tr>
+        <tr><td>قابل حدس/شمارش</td><td>بله (نشت تعداد سفارش‌ها، IDOR آسان‌تر)</td><td>خیر</td><td>زمان ایجاد قابل استخراج، ولی قابل شمارش نیست</td></tr>
+        <tr><td>ادغام داده بین سیستم‌ها/شاردها</td><td>تعارض شناسه</td><td>بدون تعارض</td><td>بدون تعارض</td></tr>
+        <tr><td>خوانایی و دیباگ</td><td>آسان</td><td>سخت</td><td>متوسط</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>یک الگوی رایج: PK داخلی <code>BIGINT</code> auto-increment برای JOINهای سریع، به‌علاوه‌ی ستون <code>public_id</code> از نوع ULID/UUID یکتا برای استفاده در URL و API. در Laravel، traitهای <code>HasUuids</code> و <code>HasUlids</code> شناسه‌های مرتب زمانی تولید می‌کنند و ستون‌ها با <code>$table-&gt;uuid()</code> یا <code>$table-&gt;ulid()</code> ساخته می‌شوند.</p></div>
+    <div class="callout warn"><p>پنهان کردن ID با UUID جایگزین <strong>Authorization</strong> نیست. حتی با شناسه‌ی غیرقابل حدس، باید بررسی کنید کاربر اجازه‌ی دسترسی به آن رکورد را دارد (Policy در Laravel).</p></div>
+  </section>
+
+  <!-- ===================== 4 ===================== -->
+  <section class="lesson" id="relationships" data-title="پیاده‌سازی روابط">
+    <h2>پیاده‌سازی روابط</h2>
+
+    <h3>یک‌به‌یک (1:1)</h3>
+    <p>FK با <strong>UNIQUE</strong> در یکی از دو طرف (معمولاً طرف اختیاری/وابسته). کاربرد: جدا کردن ستون‌های کم‌استفاده یا حجیم (پروفایل، تنظیمات)، داده‌ی حساس با دسترسی متفاوت، یا زیرنوع‌ها.</p>
+    <pre><code class="language-sql">CREATE TABLE user_profiles (
+  id         BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  user_id    BIGINT UNSIGNED NOT NULL UNIQUE,         -- UNIQUE = یک‌به‌یک
+  bio        TEXT,
+  avatar_url VARCHAR(500),
+  CONSTRAINT fk_profile_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+-- راه دیگر: PK جدول فرزند همان FK باشد (shared primary key)
+-- user_profiles(user_id PRIMARY KEY REFERENCES users(id))</code></pre>
+
+    <h3>یک‌به‌چند (1:N)</h3>
+    <p>FK در طرف «چند». هر سفارش یک <code>customer_id</code> دارد.</p>
+    <pre><code class="language-sql">CREATE TABLE orders (
+  id          BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  customer_id BIGINT UNSIGNED NOT NULL,                -- NOT NULL = مشارکت اجباری
+  status      VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
+  INDEX idx_orders_customer_created (customer_id, created_at)
+);</code></pre>
+
+    <h3>چندبه‌چند (M:N)</h3>
+    <p>در مدل رابطه‌ای مستقیماً ممکن نیست؛ با <strong>جدول واسط (Junction/Pivot/Associative)</strong> به دو رابطه‌ی 1:N شکسته می‌شود. جدول واسط می‌تواند attributeهای خود رابطه را هم نگه دارد.</p>
+    <pre><code class="language-sql">CREATE TABLE product_tag (
+  product_id BIGINT UNSIGNED NOT NULL,
+  tag_id     BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NULL,
+  PRIMARY KEY (product_id, tag_id),                  -- جلوگیری از تکرار + ایندکس برای product → tags
+  INDEX idx_tag_product (tag_id, product_id),        -- برای tag → products
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+  FOREIGN KEY (tag_id)     REFERENCES tags(id)     ON DELETE CASCADE
+);</code></pre>
+
+    <div class="callout exam"><p>وقتی رابطه‌ی M:N خودش داده و رفتار مهمی دارد (مثل <code>enrollments</code> بین دانشجو و درس با نمره و تاریخ، یا <code>order_items</code> با قیمت و تعداد)، آن را یک <strong>موجودیت مستقل</strong> ببینید: PK surrogate، مدل Eloquent جدا (یا Pivot model سفارشی) و قواعد خودش.</p></div>
+
+    <h3>رابطه‌ی خودارجاع (Self-referencing)</h3>
+    <pre><code class="language-sql">-- دسته‌بندی درختی و کارمند/مدیر
+CREATE TABLE categories (
+  id        BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  parent_id BIGINT UNSIGNED NULL,
+  name      VARCHAR(100) NOT NULL,
+  FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE SET NULL
+);</code></pre>
+    <p>برای درخت عمیق و کوئری «همه‌ی زیرشاخه‌ها» گزینه‌ها: <strong>Adjacency list</strong> (بالا) + <code>WITH RECURSIVE</code>، <strong>Materialized path</strong> (<code>path = '1/4/9/'</code>)، <strong>Nested set</strong>، یا <strong>Closure table</strong> (جدول همه‌ی جفت‌های جد/نواده).</p>
+  </section>
+
+  <!-- ===================== 5 ===================== -->
+  <section class="lesson" id="normalization" data-title="نرمال‌سازی: FD، ناهنجاری‌ها، 1NF تا BCNF">
+    <h2>نرمال‌سازی: FD، ناهنجاری‌ها، 1NF تا BCNF</h2>
+    <h3>Functional Dependency (FD)</h3>
+    <p>می‌گوییم <code>X → Y</code> (X تعیین‌کننده‌ی Y است) اگر هر دو سطری که در X مقدار یکسان دارند، در Y هم مقدار یکسان داشته باشند. مثال: <code>customer_id → customer_name</code>، <code>(order_id, product_id) → quantity</code>.</p>
+    <dl class="terms">
+      <dt>Full FD</dt><dd>Y به <strong>کل</strong> کلید ترکیبی وابسته است و نه به بخشی از آن.</dd>
+      <dt>Partial FD</dt><dd>Y فقط به <strong>بخشی</strong> از کلید ترکیبی وابسته است → نقض 2NF.</dd>
+      <dt>Transitive FD</dt><dd><code>A → B</code> و <code>B → C</code> که B کلید نیست → C به‌طور غیرمستقیم به کلید وابسته است → نقض 3NF.</dd>
+      <dt>Determinant</dt><dd>طرف چپ یک FD (X در X → Y).</dd>
+    </dl>
+
+    <h3>ناهنجاری‌ها (Anomalies)</h3>
+    <p>جدول نرمال‌نشده‌ی زیر را در نظر بگیرید:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>student_id</th><th>student_name</th><th>course_id</th><th>course_title</th><th>instructor</th><th>instructor_phone</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Sara</td><td>DB101</td><td>Databases</td><td>Dr. Karimi</td><td>0912-111</td></tr>
+        <tr><td>2</td><td>Reza</td><td>DB101</td><td>Databases</td><td>Dr. Karimi</td><td>0912-111</td></tr>
+        <tr><td>1</td><td>Sara</td><td>AL201</td><td>Algorithms</td><td>Dr. Moradi</td><td>0912-222</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>Update anomaly:</strong> تلفن Dr. Karimi در چند سطر تکرار شده؛ اگر یکی را به‌روز کنیم و بقیه را نه، داده ناسازگار می‌شود.</li>
+      <li><strong>Insert anomaly:</strong> نمی‌توانیم درس جدیدی را ثبت کنیم تا دانشجویی در آن ثبت‌نام نکرده باشد (چون student_id بخشی از کلید است و نمی‌تواند NULL باشد).</li>
+      <li><strong>Delete anomaly:</strong> اگر Sara از AL201 انصراف دهد و تنها دانشجوی آن باشد، با حذف سطر، اطلاعات درس و استاد Algorithms هم از بین می‌رود.</li>
+    </ul>
+    <div class="callout exam"><p>هدف نرمال‌سازی حذف همین سه ناهنجاری با از بین بردن <strong>افزونگی (redundancy)</strong> است: «هر واقعیت فقط در یک جا ثبت شود» (One fact in one place).</p></div>
+
+    <h3>فرم‌های نرمال</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>فرم</th><th>شرط</th><th>جمله‌ی کلیدی</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1NF</strong></td><td>همه‌ی مقادیر اتمیک؛ بدون گروه تکرارشونده؛ هر سطر کلید یکتا دارد</td><td>«یک خانه، یک مقدار»</td></tr>
+        <tr><td><strong>2NF</strong></td><td>1NF + هیچ ستون غیرکلیدی به <strong>بخشی</strong> از کلید ترکیبی وابسته نباشد</td><td>«کل کلید»</td></tr>
+        <tr><td><strong>3NF</strong></td><td>2NF + هیچ ستون غیرکلیدی به ستون غیرکلیدی دیگر وابسته نباشد (بدون وابستگی تعدی)</td><td>«و هیچ چیز جز کلید»</td></tr>
+        <tr><td><strong>BCNF</strong></td><td>برای هر FD غیربدیهی <code>X → Y</code>، X یک super key باشد</td><td>«هر determinant یک کلید است»</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>جمله‌ی معروف برای حفظ کردن: هر ستون غیرکلیدی باید به «<strong>the key</strong> (1NF)، <strong>the whole key</strong> (2NF)، and <strong>nothing but the key</strong> (3NF)» وابسته باشد.</p></div>
+
+    <h3>مثال کامل: نرمال‌سازی جدول سفارش‌ها</h3>
+    <p>جدول اولیه (خروجی یک فایل Excel):</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>order_id</th><th>order_date</th><th>customer_id</th><th>customer_name</th><th>customer_city</th><th>products</th></tr></thead>
+      <tbody>
+        <tr><td>1001</td><td>2026-10-01</td><td>42</td><td>Sara</td><td>Tehran</td><td>P1:Laptop:1200:1, P7:Mouse:25:2</td></tr>
+        <tr><td>1002</td><td>2026-10-03</td><td>17</td><td>Reza</td><td>Shiraz</td><td>P7:Mouse:25:1</td></tr>
+      </tbody>
+    </table></div>
+
+    <h4>گام ۱ → 1NF</h4>
+    <p>ستون <code>products</code> چند مقدار دارد (غیراتمیک). هر محصول سفارش را یک سطر می‌کنیم. کلید: <code>(order_id, product_id)</code>.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>order_id</th><th>product_id</th><th>order_date</th><th>customer_id</th><th>customer_name</th><th>customer_city</th><th>product_name</th><th>unit_price</th><th>qty</th></tr></thead>
+      <tbody>
+        <tr><td>1001</td><td>P1</td><td>2026-10-01</td><td>42</td><td>Sara</td><td>Tehran</td><td>Laptop</td><td>1200</td><td>1</td></tr>
+        <tr><td>1001</td><td>P7</td><td>2026-10-01</td><td>42</td><td>Sara</td><td>Tehran</td><td>Mouse</td><td>25</td><td>2</td></tr>
+        <tr><td>1002</td><td>P7</td><td>2026-10-03</td><td>17</td><td>Reza</td><td>Shiraz</td><td>Mouse</td><td>25</td><td>1</td></tr>
+      </tbody>
+    </table></div>
+
+    <h4>گام ۲ → 2NF (حذف وابستگی جزئی)</h4>
+    <p>وابستگی‌ها:</p>
+    <ul>
+      <li><code>order_id → order_date, customer_id, customer_name, customer_city</code> (فقط بخشی از کلید) ✗</li>
+      <li><code>product_id → product_name, current_price</code> (فقط بخشی از کلید) ✗</li>
+      <li><code>(order_id, product_id) → qty, unit_price</code> (کل کلید) ✓ — <code>unit_price</code> اینجا «قیمت در لحظه‌ی خرید» است.</li>
+    </ul>
+    <pre class="diagram">orders(order_id PK, order_date, customer_id, customer_name, customer_city)
+products(product_id PK, product_name, current_price)
+order_items(order_id FK, product_id FK, qty, unit_price,  PK(order_id, product_id))</pre>
+
+    <h4>گام ۳ → 3NF (حذف وابستگی تعدی)</h4>
+    <p>در <code>orders</code>: <code>order_id → customer_id → customer_name, customer_city</code>. نام و شهر مشتری به مشتری وابسته‌اند نه به سفارش.</p>
+    <pre class="diagram">customers(customer_id PK, customer_name, customer_city)
+orders(order_id PK, order_date, customer_id FK)
+products(product_id PK, product_name, current_price)
+order_items(order_id FK, product_id FK, qty, unit_price, PK(order_id, product_id))</pre>
+    <div class="callout note"><p>چرا <code>unit_price</code> در <code>order_items</code> «تکرار» نیست؟ چون واقعیت متفاوتی است: قیمتی که مشتری در آن لحظه پرداخته. <code>products.current_price</code> ممکن است فردا عوض شود ولی فاکتور قدیمی نباید تغییر کند. تشخیص اینکه دو ستون واقعاً یک واقعیت‌اند یا نه، بخش مهم تحلیل است. همین منطق برای آدرس ارسال سفارش (snapshot) هم صادق است.</p></div>
+
+    <h4>BCNF با مثال</h4>
+    <p>جدول <code>teaching(student, course, instructor)</code> با قواعد: هر استاد فقط یک درس تدریس می‌کند (<code>instructor → course</code>)، هر دانشجو در هر درس یک استاد دارد (<code>(student, course) → instructor</code>).</p>
+    <ul>
+      <li>Candidate keyها: <code>(student, course)</code> و <code>(student, instructor)</code>.</li>
+      <li>همه‌ی ستون‌ها جزء یک candidate key هستند (prime attribute)، پس جدول در <strong>3NF</strong> است.</li>
+      <li>اما <code>instructor → course</code> و <code>instructor</code> super key نیست → نقض <strong>BCNF</strong>. ناهنجاری: درس هر استاد در چند سطر تکرار می‌شود.</li>
+      <li>تجزیه: <code>instructor_course(instructor PK, course)</code> و <code>student_instructor(student, instructor, PK(student, instructor))</code>.</li>
+      <li>هزینه: قاعده‌ی <code>(student, course) → instructor</code> (هر دانشجو در یک درس فقط یک استاد) دیگر با یک constraint ساده قابل اجبار نیست (<strong>dependency preservation</strong> از دست می‌رود). به همین دلیل گاهی در 3NF می‌مانیم.</li>
+    </ul>
+    <div class="callout exam"><p>تفاوت 3NF و BCNF: 3NF اجازه می‌دهد determinant غیرکلید باشد <strong>اگر</strong> ستون وابسته جزئی از یک candidate key باشد؛ BCNF این استثنا را ندارد. BCNF سخت‌گیرانه‌تر است، اما تجزیه به BCNF همیشه حافظ وابستگی‌ها نیست، در حالی که تجزیه به 3NF همیشه می‌تواند هم lossless و هم dependency-preserving باشد. فرم‌های بالاتر (4NF برای multi-valued dependency، 5NF برای join dependency) در عمل کمتر مطرح‌اند.</p></div>
+    <div class="callout warn"><p>تجزیه باید <strong>Lossless join</strong> باشد: با JOIN جداول حاصل، دقیقاً جدول اصلی (نه سطرهای جعلی اضافه) برگردد. شرط کافی: ستون مشترک بین دو جدول حاصل، کلید یکی از آن‌ها باشد.</p></div>
+  </section>
+
+  <!-- ===================== 7 ===================== -->
+  <section class="lesson" id="denormalization" data-title="Denormalization">
+    <h2>Denormalization</h2>
+    <p><strong>Denormalization</strong> یعنی افزودن عمدی و کنترل‌شده‌ی افزونگی به یک Schema نرمال برای بهبود کارایی خواندن. ترتیب درست: <strong>اول نرمال طراحی کن، بعد با شواهد (اندازه‌گیری) denormalize کن.</strong></p>
+    <h3>چه زمانی توجیه دارد؟</h3>
+    <ul>
+      <li>کوئری‌های پرتکرار با JOIN/aggregate سنگین که با ایندکس حل نمی‌شوند (داشبورد، لیست محصولات با تعداد نظر).</li>
+      <li>نسبت خواندن به نوشتن بسیار بالا و داده‌ی تکراری کم‌تغییر.</li>
+      <li>گزارش‌گیری و Data Warehouse (Star Schema) که عمداً denormalized است.</li>
+      <li><strong>Snapshot تاریخی</strong> که اصلاً denormalization نیست بلکه نیاز کسب‌وکار است (قیمت و آدرس در سفارش).</li>
+    </ul>
+    <h3>تکنیک‌ها</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>تکنیک</th><th>مثال</th><th>هزینه</th></tr></thead>
+      <tbody>
+        <tr><td>ستون شمارنده/تجمعی</td><td><code>posts.comments_count</code>، <code>orders.total</code></td><td>به‌روزرسانی هم‌زمان؛ خطر race (از <code>UPDATE ... SET c = c + 1</code> استفاده کنید)</td></tr>
+        <tr><td>کپی ستون از جدول مرجع</td><td><code>order_items.product_name</code></td><td>ناسازگاری در صورت تغییر مرجع</td></tr>
+        <tr><td>جدول خلاصه / Materialized View</td><td><code>daily_sales(date, product_id, revenue)</code></td><td>داده با تأخیر؛ نیاز به job بازسازی</td></tr>
+        <tr><td>Cache خارج دیتابیس</td><td>Redis</td><td>invalidation</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>برای هر داده‌ی denormalized باید <strong>منبع حقیقت (source of truth)</strong> و <strong>مکانیزم همگام‌سازی</strong> را مشخص کنید: در همان تراکنش، با trigger، با Event/Observer در Laravel، یا job دوره‌ای. و بپذیرید که ممکن است موقتاً ناسازگار باشد. بدون این، denormalization به داده‌ی خراب می‌رسد.</p></div>
+    <pre><code class="language-php">&lt;?php
+// همگام‌سازی شمارنده در همان تراکنش
+DB::transaction(function () use ($post, $data) {
+    $post-&gt;comments()-&gt;create($data);
+    $post-&gt;increment('comments_count');      // UPDATE posts SET comments_count = comments_count + 1
+});</code></pre>
+  </section>
+
+  <!-- ===================== 8 ===================== -->
+  <section class="lesson" id="constraints" data-title="Constraintها و اکشن‌های FK">
+    <h2>Constraintها و اکشن‌های FK</h2>
+    <p>Constraintها <strong>آخرین خط دفاع</strong> از یکپارچگی داده هستند. Validation در برنامه لازم است، اما کافی نیست: چند سرویس، اسکریپت، race condition و باگ همه می‌توانند آن را دور بزنند.</p>
+    <pre><code class="language-sql">CREATE TABLE products (
+  id          BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  sku         VARCHAR(40)  NOT NULL,
+  title       VARCHAR(200) NOT NULL,
+  price       DECIMAL(12,2) NOT NULL,
+  stock       INT NOT NULL DEFAULT 0,
+  category_id BIGINT UNSIGNED NULL,
+  CONSTRAINT uq_products_sku   UNIQUE (sku),
+  CONSTRAINT ck_products_price CHECK (price &gt;= 0),
+  CONSTRAINT ck_products_stock CHECK (stock &gt;= 0),
+  CONSTRAINT fk_products_cat   FOREIGN KEY (category_id) REFERENCES categories(id)
+      ON DELETE SET NULL ON UPDATE CASCADE
+);</code></pre>
+    <dl class="terms">
+      <dt>NOT NULL</dt><dd>مقدار اجباری. پیش‌فرض را NOT NULL بگیرید و فقط وقتی «ناشناخته/ناموجود» معنای واقعی دارد NULL مجاز کنید.</dd>
+      <dt>UNIQUE</dt><dd>یکتایی؛ معمولاً یک ایندکس یکتا می‌سازد. در اغلب DBMSها چند NULL در ستون UNIQUE مجاز است (NULL با NULL برابر نیست).</dd>
+      <dt>CHECK</dt><dd>شرط دلخواه روی سطر. در MySQL از 8.0.16 واقعاً اجرا می‌شود (قبل از آن parse و نادیده گرفته می‌شد).</dd>
+      <dt>DEFAULT</dt><dd>مقدار پیش‌فرض.</dd>
+      <dt>PRIMARY KEY</dt><dd>UNIQUE + NOT NULL؛ در InnoDB ترتیب فیزیکی ذخیره (clustered index) را هم تعیین می‌کند.</dd>
+      <dt>FOREIGN KEY</dt><dd>یکپارچگی ارجاعی؛ نمی‌توان به سطر ناموجود اشاره کرد.</dd>
+    </dl>
+
+    <h3>اکشن‌های ON DELETE / ON UPDATE</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>اکشن</th><th>رفتار با حذف والد</th><th>کاربرد مناسب</th></tr></thead>
+      <tbody>
+        <tr><td><code>RESTRICT</code> / <code>NO ACTION</code></td><td>اگر فرزند وجود دارد، حذف والد رد می‌شود (پیش‌فرض)</td><td>داده‌ی مهم تاریخی: مشتری دارای سفارش، محصول دارای فاکتور</td></tr>
+        <tr><td><code>CASCADE</code></td><td>فرزندان هم حذف می‌شوند</td><td>فرزند بدون والد بی‌معناست: <code>order_items</code> با <code>orders</code>، پروفایل با کاربر، pivot</td></tr>
+        <tr><td><code>SET NULL</code></td><td>FK فرزند NULL می‌شود (ستون باید nullable باشد)</td><td>رابطه‌ی اختیاری: محصول بعد از حذف دسته‌اش، پست بعد از حذف نویسنده («کاربر حذف‌شده»)</td></tr>
+        <tr><td><code>SET DEFAULT</code></td><td>مقدار پیش‌فرض (پشتیبانی محدود؛ InnoDB پشتیبانی نمی‌کند)</td><td>نادر</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p><code>CASCADE</code> زنجیره‌ای خطرناک است: حذف یک کاربر می‌تواند ده‌ها هزار سطر را در چند جدول حذف کند، بدون اینکه Eloquent eventها (مثل <code>deleting</code>) اجرا شوند و بدون اینکه فایل‌های مرتبط پاک شوند. برای داده‌ی مالی و تاریخی از <code>RESTRICT</code> و soft delete استفاده کنید.</p></div>
+    <div class="callout note"><p>در PostgreSQL تفاوت <code>RESTRICT</code> و <code>NO ACTION</code> این است که NO ACTION را می‌توان deferrable کرد (بررسی در انتهای تراکنش). در MySQL/InnoDB این دو عملاً یکسان‌اند. همچنین InnoDB روی ستون FK اگر ایندکس نباشد خودش ایندکس می‌سازد، ولی PostgreSQL نه؛ آنجا باید خودتان ایندکس بگذارید.</p></div>
+  </section>
+
+  <!-- ===================== 9 ===================== -->
+  <section class="lesson" id="data-types" data-title="انتخاب نوع داده">
+    <h2>انتخاب نوع داده</h2>
+    <p>نوع داده‌ی درست هم صحت را تضمین می‌کند (تاریخ نامعتبر ذخیره نمی‌شود) و هم کارایی را (ستون کوچک‌تر = ایندکس کوچک‌تر = صفحه‌های بیشتر در حافظه).</p>
+
+    <h3>پول: DECIMAL، نه FLOAT</h3>
+    <p><code>FLOAT</code>/<code>DOUBLE</code> اعداد ممیز شناور دودویی‌اند و مقادیری مثل <code>0.1</code> را دقیق نمایش نمی‌دهند؛ جمع هزاران تراکنش خطای گرد کردن انباشته می‌کند.</p>
+    <pre><code class="language-sql">-- با FLOAT/DOUBLE: مقدار 0.1 دقیق قابل نمایش نیست و 0.1 + 0.2 می‌شود 0.30000000000000004
+-- ✅
+price DECIMAL(12,2) NOT NULL       -- 12 رقم کل، 2 رقم اعشار
+-- یا ذخیره به کوچک‌ترین واحد پول به‌صورت عدد صحیح
+amount_minor BIGINT NOT NULL       -- ریال، سنت</code></pre>
+    <ul>
+      <li>واحد پول را هم ذخیره کنید (<code>currency CHAR(3)</code>) اگر چندارزی هستید.</li>
+      <li>در PHP هم پول را با float حساب نکنید؛ از عدد صحیح (واحد خرد) یا کتابخانه‌هایی مثل <code>brick/money</code> یا <code>bcmath</code> استفاده کنید. Cast <code>decimal:2</code> در Eloquent مقدار را به رشته برمی‌گرداند تا دقت حفظ شود.</li>
+    </ul>
+
+    <h3>تاریخ، زمان و منطقه‌ی زمانی</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>رفتار</th></tr></thead>
+      <tbody>
+        <tr><td>MySQL <code>TIMESTAMP</code></td><td>به UTC تبدیل و ذخیره می‌شود و هنگام خواندن به time zone نشست برمی‌گردد؛ بازه‌ی محدود تا سال ۲۰۳۸</td></tr>
+        <tr><td>MySQL <code>DATETIME</code></td><td>همان مقداری که داده شده، بدون تبدیل time zone؛ بازه‌ی وسیع</td></tr>
+        <tr><td>PostgreSQL <code>timestamptz</code></td><td>یک لحظه‌ی مطلق (instant) ذخیره می‌کند؛ توصیه‌ی معمول در PostgreSQL</td></tr>
+        <tr><td><code>DATE</code></td><td>فقط تاریخ (تولد، سررسید) — بدون time zone</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>قاعده‌ی طلایی: <strong>زمان را در UTC ذخیره کن و در لایه‌ی نمایش به منطقه‌ی زمانی کاربر تبدیل کن.</strong> در Laravel <code>'timezone' =&gt; 'UTC'</code> در <code>config/app.php</code> را نگه دارید و در خروجی با Carbon <code>-&gt;setTimezone('Asia/Tehran')</code> تبدیل کنید. استثنا: رویدادهای آینده‌ای که به «ساعت محلی» وابسته‌اند (جلسه ساعت ۹ صبح تهران) — آنجا زمان محلی + نام time zone را ذخیره کنید، چون قوانین DST/time zone ممکن است عوض شوند.</p></div>
+    <div class="callout tip"><p>تاریخ شمسی را به‌عنوان رشته ذخیره نکنید. تاریخ میلادی/UTC ذخیره کنید و در نمایش تبدیل کنید؛ وگرنه مرتب‌سازی، بازه‌گیری و محاسبات تاریخ مشکل‌ساز می‌شود.</p></div>
+
+    <h3>رشته‌ها: CHAR، VARCHAR، TEXT</h3>
+    <ul>
+      <li><code>CHAR(n)</code>: طول ثابت؛ برای کدهای با طول ثابت (کد کشور ISO، کد ارز).</li>
+      <li><code>VARCHAR(n)</code>: طول متغیر با سقف؛ برای اکثر رشته‌ها (نام، ایمیل، عنوان). سقف را بر اساس دامنه‌ی واقعی تعیین کنید (ایمیل حدود ۲۵۵ یا ۳۲۰).</li>
+      <li><code>TEXT</code>: متن بلند (بدنه‌ی مقاله، توضیحات). در MySQL محدودیت‌هایی دارد: ایندکس کامل روی آن ممکن نیست (فقط prefix index یا FULLTEXT)، و ممکن است خارج از صفحه‌ی اصلی سطر ذخیره شود.</li>
+      <li>در PostgreSQL تفاوت کارایی <code>VARCHAR(n)</code> و <code>TEXT</code> عملاً وجود ندارد؛ سقف طول نقش constraint دارد.</li>
+      <li>Charset را <code>utf8mb4</code> بگیرید (پشتیبانی کامل از یونیکد و emoji). <code>utf8</code> قدیمی MySQL (utf8mb3) کاراکترهای ۴ بایتی را ذخیره نمی‌کند.</li>
+    </ul>
+
+    <h3>ENUM در برابر جدول lookup در برابر VARCHAR + CHECK</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>گزینه</th><th>مزایا</th><th>معایب</th></tr></thead>
+      <tbody>
+        <tr><td>ENUM دیتابیسی</td><td>فشرده، اعتبارسنجی خودکار</td><td>تغییر لیست مقادیر نیاز به ALTER TABLE دارد؛ مرتب‌سازی بر اساس ترتیب تعریف نه الفبا؛ قابل حمل بین DBMSها نیست؛ نمی‌توان metadata (برچسب فارسی، ترتیب نمایش، فعال/غیرفعال) کنار مقدار نگه داشت</td></tr>
+        <tr><td>جدول lookup + FK</td><td>افزودن مقدار با INSERT؛ metadata؛ قابل مدیریت از پنل ادمین</td><td>JOIN اضافه (معمولاً ناچیز)</td></tr>
+        <tr><td>VARCHAR + CHECK (یا فقط validation)</td><td>ساده، خوانا؛ همراه با PHP Enum در کد</td><td>تغییر CHECK هم نیاز به migration دارد؛ حجم بیشتر از ENUM</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+enum OrderStatus: string {
+    case Pending = 'pending';
+    case Paid = 'paid';
+    case Shipped = 'shipped';
+    case Cancelled = 'cancelled';
+}
+// مدل
+protected function casts(): array
+{
+    return ['status' =&gt; OrderStatus::class];
+}</code></pre>
+    <div class="callout tip"><p>برای مجموعه‌ی کوچک و پایداری که منطق کد به آن وابسته است (وضعیت سفارش)، <code>VARCHAR</code> + PHP backed enum + cast انتخاب خوبی است. برای مقادیری که کاربران ادمین مدیریت می‌کنند (دسته‌بندی، روش ارسال) جدول lookup.</p></div>
+
+    <h3>ستون JSON</h3>
+    <ul>
+      <li><strong>مناسب برای:</strong> داده‌ی نیمه‌ساختاریافته و متغیر که کمتر روی آن فیلتر/JOIN می‌شود: تنظیمات کاربر، payload وب‌هوک، ویژگی‌های متغیر محصول، metadata.</li>
+      <li><strong>نامناسب برای:</strong> داده‌ای که روی آن JOIN، FK، constraint یا گزارش‌گیری مکرر دارید. اگر مدام <code>WHERE json-&gt;'$.x'</code> می‌زنید، احتمالاً باید ستون واقعی باشد.</li>
+      <li>ایندکس: در MySQL با <strong>generated column</strong> یا functional index؛ در PostgreSQL نوع <code>jsonb</code> با GIN index.</li>
+      <li>در Laravel: <code>$table-&gt;json('settings')</code>، cast <code>'settings' =&gt; 'array'</code> یا <code>AsArrayObject</code>/<code>AsCollection</code>، و کوئری <code>where('settings-&gt;theme', 'dark')</code>.</li>
+    </ul>
+
+    <h3>سایر نکات</h3>
+    <ul>
+      <li>کوچک‌ترین نوع عددی کافی: <code>TINYINT</code>/<code>SMALLINT</code> برای مقادیر کوچک؛ برای PK جداول بزرگ <code>BIGINT UNSIGNED</code> (پر شدن INT در حدود ۲.۱ میلیارد یا ۴.۲ میلیارد unsigned).</li>
+      <li>Boolean: <code>BOOLEAN</code> (در MySQL همان <code>TINYINT(1)</code>).</li>
+      <li>شماره تلفن، کد ملی، کد پستی: <strong>رشته</strong> نه عدد (صفر ابتدایی، عدم انجام عملیات ریاضی).</li>
+      <li>IP: در PostgreSQL نوع <code>inet</code>؛ در MySQL <code>VARBINARY(16)</code> یا <code>VARCHAR(45)</code>.</li>
+    </ul>
+  </section>
+
+  <!-- ===================== 10 ===================== -->
+  <section class="lesson" id="conventions" data-title="نام‌گذاری و قراردادها">
+    <h2>نام‌گذاری و قراردادها</h2>
+    <p>ثبات در نام‌گذاری از هر قانون خاصی مهم‌تر است. قراردادهای رایج (و هم‌راستا با Laravel):</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>مورد</th><th>قرارداد</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td>جدول</td><td>snake_case، جمع</td><td><code>users</code>، <code>order_items</code></td></tr>
+        <tr><td>ستون</td><td>snake_case، مفرد</td><td><code>first_name</code>، <code>created_at</code></td></tr>
+        <tr><td>PK</td><td><code>id</code></td><td><code>id</code></td></tr>
+        <tr><td>FK</td><td><code>&lt;مفرد جدول&gt;_id</code></td><td><code>user_id</code>، <code>category_id</code></td></tr>
+        <tr><td>Pivot</td><td>نام مفرد دو جدول به ترتیب الفبا</td><td><code>post_tag</code>، <code>role_user</code></td></tr>
+        <tr><td>Boolean</td><td>پیشوند is_/has_</td><td><code>is_active</code>، <code>has_discount</code></td></tr>
+        <tr><td>زمان</td><td>پسوند _at برای timestamp، _on/_date برای تاریخ</td><td><code>paid_at</code>، <code>birth_date</code></td></tr>
+        <tr><td>Index/Constraint</td><td>پیشوند نوع + جدول + ستون‌ها</td><td><code>idx_orders_user_id</code>، <code>uq_users_email</code>، <code>fk_orders_user</code></td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>از کلمات رزرو‌شده (<code>order</code>، <code>group</code>، <code>user</code> در PostgreSQL) به‌عنوان نام جدول/ستون پرهیز کنید.</li>
+      <li>از مخفف‌های مبهم (<code>usr_nm</code>) و پیشوندهای مجارستانی (<code>tbl_users</code>) پرهیز کنید.</li>
+      <li>واحد را در نام ستون بیاورید اگر مبهم است: <code>duration_seconds</code>، <code>weight_grams</code>، <code>amount_rial</code>.</li>
+      <li>نام‌گذاری صریح constraintها، پیام خطا و migration بعدی (drop) را ساده می‌کند.</li>
+    </ul>
+  </section>
+
+  <!-- ===================== 11 ===================== -->
+  <section class="lesson" id="special-patterns" data-title="Soft delete، Polymorphic و Audit">
+    <h2>Soft delete، Polymorphic و Audit</h2>
+
+    <h3>Soft Delete</h3>
+    <p>به جای حذف فیزیکی، ستون <code>deleted_at</code> مقدار می‌گیرد و کوئری‌ها سطرهای حذف‌شده را نادیده می‌گیرند. در Laravel: <code>$table-&gt;softDeletes()</code> + trait <code>SoftDeletes</code>؛ global scope به‌طور خودکار <code>whereNull('deleted_at')</code> اضافه می‌کند.</p>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul>
+        <li>بازیابی (undo/سطل زباله).</li>
+        <li>حفظ یکپارچگی ارجاعی با داده‌ی تاریخی (فاکتورهای مشتری حذف‌شده).</li>
+        <li>ردگیری و audit ساده.</li>
+      </ul></div>
+      <div class="card"><h4>معایب</h4><ul>
+        <li><strong>UNIQUE می‌شکند:</strong> کاربر حذف‌شده با email X مانع ثبت‌نام مجدد با همان email است.</li>
+        <li>FK و CASCADE معنایشان را از دست می‌دهند (دیتابیس از soft delete خبر ندارد).</li>
+        <li>هر کوئری خام/گزارش باید شرط را به یاد داشته باشد؛ JOINها به رکوردهای حذف‌شده می‌رسند.</li>
+        <li>رشد جدول و ایندکس‌ها؛ تضاد با حق حذف داده (GDPR).</li>
+      </ul></div>
+    </div>
+    <p><strong>راه‌حل‌های UNIQUE:</strong></p>
+    <pre><code class="language-sql">-- PostgreSQL: partial unique index
+CREATE UNIQUE INDEX uq_users_email_active ON users(email) WHERE deleted_at IS NULL;
+
+-- MySQL: ستون تولیدی که برای سطرهای حذف‌شده NULL است (NULLها در UNIQUE تکرارپذیرند)
+ALTER TABLE users
+  ADD COLUMN email_active VARCHAR(255)
+    GENERATED ALWAYS AS (IF(deleted_at IS NULL, email, NULL)) STORED,
+  ADD UNIQUE KEY uq_users_email_active (email_active);</code></pre>
+    <div class="callout tip"><p>جایگزین‌ها: جابه‌جایی رکورد حذف‌شده به جدول <strong>archive</strong>، یا جدول تاریخچه/رویداد. soft delete را فقط برای موجودیت‌هایی بزنید که واقعاً بازیابی یا ارجاع تاریخی لازم دارند، نه پیش‌فرض همه‌ی جداول.</p></div>
+
+    <h3>Polymorphic Associations</h3>
+    <p>یک جدول به چند نوع والد اشاره می‌کند، با دو ستون <code>*_type</code> و <code>*_id</code>. مثال: کامنت روی پست و ویدیو.</p>
+    <pre><code class="language-php">&lt;?php
+Schema::create('comments', function (Blueprint $table) {
+    $table-&gt;id();
+    $table-&gt;morphs('commentable');   // commentable_type + commentable_id + index ترکیبی
+    $table-&gt;text('body');
+    $table-&gt;timestamps();
+});
+
+// AppServiceProvider::boot — نام کلاس را مستقیم در دیتابیس ذخیره نکنید
+Relation::enforceMorphMap([
+    'post'  =&gt; Post::class,
+    'video' =&gt; Video::class,
+]);</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul>
+        <li>یک جدول و یک منطق برای همه‌ی انواع؛ افزودن نوع جدید بدون migration.</li>
+        <li>پشتیبانی خوب در Eloquent (<code>morphTo</code>، <code>morphMany</code>، <code>morphToMany</code>).</li>
+      </ul></div>
+      <div class="card"><h4>معایب</h4><ul>
+        <li><strong>FK ممکن نیست</strong> (ستون id به چند جدول اشاره می‌کند) → خطر رکورد یتیم؛ cascade باید در برنامه انجام شود.</li>
+        <li>JOIN و گزارش‌گیری سخت‌تر.</li>
+        <li>اگر نام کلاس ذخیره شود، با refactor namespace داده می‌شکند (morph map لازم است).</li>
+      </ul></div>
+    </div>
+    <p><strong>جایگزین‌ها با یکپارچگی کامل:</strong> (۱) جدول جدا برای هر نوع (<code>post_comments</code>، <code>video_comments</code>)؛ (۲) چند FK nullable (<code>post_id</code>، <code>video_id</code>) با CHECK که دقیقاً یکی پر باشد؛ (۳) جدول supertype مشترک (<code>commentables</code>) که post و video به آن اشاره کنند.</p>
+
+    <h3>Audit و History Tables</h3>
+    <p>برای پاسخ به «چه کسی، چه چیزی را، کی، از چه به چه تغییر داد؟».</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>روش</th><th>توضیح</th><th>مناسب برای</th></tr></thead>
+      <tbody>
+        <tr><td>ستون‌های ساده</td><td><code>created_by</code>، <code>updated_by</code>، <code>created_at</code>، <code>updated_at</code></td><td>فقط آخرین تغییر</td></tr>
+        <tr><td>جدول audit عمومی</td><td><code>audits(id, auditable_type, auditable_id, event, old_values JSON, new_values JSON, user_id, ip, created_at)</code></td><td>ردگیری همه‌ی تغییرات چند جدول (مثل پکیج‌های audit در Laravel)</td></tr>
+        <tr><td>جدول history موازی</td><td><code>product_prices(product_id, price, valid_from, valid_to)</code></td><td>نسخه‌بندی زمانی (temporal): «قیمت در تاریخ X چه بود؟»</td></tr>
+        <tr><td>Trigger دیتابیسی</td><td>ثبت خودکار در history</td><td>وقتی چند برنامه به دیتابیس می‌نویسند؛ ولی منطق پنهان و کاربر برنامه در دسترس نیست</td></tr>
+        <tr><td>Event Sourcing</td><td>خود رویدادها منبع حقیقت‌اند</td><td>دامنه‌های پیچیده؛ هزینه‌ی بالا</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-sql">-- قیمت فعلی و قیمت در یک تاریخ مشخص
+SELECT price FROM product_prices
+WHERE product_id = 10 AND valid_from &lt;= '2026-10-15'
+  AND (valid_to IS NULL OR valid_to &gt; '2026-10-15');</code></pre>
+    <div class="callout warn"><p>جدول audit append-only است و سریع رشد می‌کند: آن را partition یا آرشیو کنید، به برنامه فقط مجوز INSERT بدهید، و داده‌ی حساس (رمز، توکن) را در old/new values ذخیره نکنید.</p></div>
+  </section>
+
+  <!-- ===================== 12 ===================== -->
+  <section class="lesson" id="indexing" data-title="مبانی طراحی ایندکس">
+    <h2>مبانی طراحی ایندکس</h2>
+    <p>ایندکس (معمولاً <strong>B+Tree</strong>) ساختاری مرتب روی یک یا چند ستون است که جست‌وجو، مرتب‌سازی و JOIN را از <code>O(n)</code> به حدود <code>O(log n)</code> می‌رساند. در عوض نوشتن را کندتر می‌کند و فضا می‌گیرد.</p>
+    <h3>کجا ایندکس بگذاریم؟</h3>
+    <ul>
+      <li>ستون‌های پرتکرار در <code>WHERE</code>، <code>JOIN ... ON</code>، <code>ORDER BY</code> و <code>GROUP BY</code>.</li>
+      <li><strong>همه‌ی FKها</strong> (برای JOIN و برای بررسی FK هنگام حذف والد).</li>
+      <li>ستون‌هایی با <strong>selectivity</strong> بالا (مقادیر متمایز زیاد). ایندکس تنها روی ستون boolean معمولاً بی‌فایده است، مگر داده خیلی نامتوازن باشد یا در ایندکس ترکیبی.</li>
+    </ul>
+    <h3>ایندکس ترکیبی و قاعده‌ی leftmost prefix</h3>
+    <pre><code class="language-sql">CREATE INDEX idx_orders_user_status_created ON orders (user_id, status, created_at);
+
+-- ✅ استفاده می‌شود
+SELECT * FROM orders WHERE user_id = 5;
+SELECT * FROM orders WHERE user_id = 5 AND status = 'paid';
+SELECT * FROM orders WHERE user_id = 5 AND status = 'paid' ORDER BY created_at DESC;
+-- ❌ نه به‌طور مؤثر (ستون اول نیست)
+SELECT * FROM orders WHERE status = 'paid';</code></pre>
+    <ul>
+      <li>ستون‌های برابری اول، سپس ستون بازه‌ای/مرتب‌سازی. بعد از اولین شرط بازه‌ای، ستون‌های بعدی برای جست‌وجو کمتر مؤثرند.</li>
+      <li><strong>Covering index:</strong> اگر همه‌ی ستون‌های مورد نیاز کوئری در ایندکس باشند، جدول اصلاً خوانده نمی‌شود (در EXPLAIN مای‌اسکیوال: <code>Using index</code>).</li>
+      <li>ایندکس روی <code>(a, b)</code> ایندکس جداگانه روی <code>(a)</code> را زائد می‌کند.</li>
+    </ul>
+    <h3>چه چیزهایی ایندکس را بی‌اثر می‌کند</h3>
+    <ul>
+      <li>تابع روی ستون: <code>WHERE YEAR(created_at) = 2026</code> → بنویسید <code>created_at &gt;= '2026-01-01' AND created_at &lt; '2027-01-01'</code>.</li>
+      <li><code>LIKE '%abc'</code> (wildcard ابتدایی) → FULLTEXT یا موتور جست‌وجو.</li>
+      <li>تبدیل نوع ضمنی: مقایسه‌ی ستون VARCHAR با عدد.</li>
+      <li><code>OR</code> روی ستون‌های مختلف (گاهی؛ با UNION یا index merge).</li>
+    </ul>
+    <pre><code class="language-sql">EXPLAIN SELECT * FROM orders WHERE user_id = 5 AND status = 'paid' ORDER BY created_at DESC LIMIT 20;
+-- type: ref/range خوب، ALL = full scan؛ key: ایندکس انتخاب‌شده؛ rows: تخمین سطرها؛
+-- Extra: "Using filesort" یا "Using temporary" = هشدار</code></pre>
+    <div class="callout exam"><p>Trade-off ایندکس را همیشه ذکر کنید: هر ایندکس هزینه‌ی INSERT/UPDATE/DELETE و فضا دارد؛ پس بر اساس کوئری‌های واقعی (slow query log، EXPLAIN) ایندکس بگذارید، نه روی همه‌ی ستون‌ها. در InnoDB هر secondary index، PK را هم در خود دارد؛ PK بزرگ (مثل UUID رشته‌ای) همه‌ی ایندکس‌ها را بزرگ می‌کند.</p></div>
+  </section>
+
+  <!-- ===================== 13 ===================== -->
+  <section class="lesson" id="sql-refresher" data-title="مرور SQL: JOIN، GROUP BY، Subquery">
+    <h2>مرور SQL: JOIN، GROUP BY، Subquery</h2>
+    <p>داده‌ی نمونه: <code>customers(id, name)</code> و <code>orders(id, customer_id, total, created_at)</code>. مشتری ۳ هیچ سفارشی ندارد و سفارشی با <code>customer_id</code> ناموجود هم فرض کنید.</p>
+
+    <pre class="diagram">  INNER JOIN       LEFT JOIN        RIGHT JOIN       FULL OUTER JOIN
+   ( A (∩) B )     (AAA(∩) B )      ( A (∩)BBB)      (AAA(∩)BBB)
+  فقط مشترک‌ها      همه‌ی A + مطابق‌ها  همه‌ی B + مطابق‌ها  همه‌ی هر دو</pre>
+
+    <pre><code class="language-sql">-- INNER: فقط مشتریانی که سفارش دارند
+SELECT c.name, o.id, o.total
+FROM customers c
+JOIN orders o ON o.customer_id = c.id;
+
+-- LEFT: همه‌ی مشتریان، حتی بدون سفارش (ستون‌های o برایشان NULL)
+SELECT c.name, COUNT(o.id) AS order_count     -- COUNT(o.id) نه COUNT(*)، تا مشتری بدون سفارش 0 شود
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+GROUP BY c.id, c.name;
+
+-- Anti-join: مشتریانی که هیچ سفارشی ندارند
+SELECT c.* FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+WHERE o.id IS NULL;
+
+-- CROSS JOIN: ضرب دکارتی (همه‌ی ترکیب‌ها)، مثلاً سایز × رنگ
+SELECT s.name, col.name FROM sizes s CROSS JOIN colors col;
+
+-- SELF JOIN: کارمند و مدیرش
+SELECT e.name AS employee, m.name AS manager
+FROM employees e LEFT JOIN employees m ON m.id = e.manager_id;</code></pre>
+    <div class="callout warn"><p>شرط روی جدول سمت راست LEFT JOIN را در <code>WHERE</code> بگذارید، LEFT JOIN عملاً به INNER JOIN تبدیل می‌شود (چون سطرهای NULL حذف می‌شوند). اگر می‌خواهید فقط سفارش‌های ۲۰۲۶ را join کنید ولی همه‌ی مشتریان بمانند، شرط را در <code>ON</code> بیاورید: <code>LEFT JOIN orders o ON o.customer_id = c.id AND o.created_at &gt;= '2026-01-01'</code>. همچنین MySQL، FULL OUTER JOIN ندارد و با UNION یک LEFT و یک RIGHT شبیه‌سازی می‌شود.</p></div>
+
+    <h3>GROUP BY و HAVING</h3>
+    <pre><code class="language-sql">-- مشتریانی که در 2026 بیش از 5 سفارش و مجموع خرید بالای 1000 داشته‌اند
+SELECT customer_id, COUNT(*) AS cnt, SUM(total) AS spent
+FROM orders
+WHERE created_at &gt;= '2026-01-01'          -- قبل از گروه‌بندی، روی سطرها
+GROUP BY customer_id
+HAVING COUNT(*) &gt; 5 AND SUM(total) &gt; 1000 -- بعد از گروه‌بندی، روی گروه‌ها
+ORDER BY spent DESC;</code></pre>
+    <p>ترتیب منطقی اجرا: <code>FROM/JOIN → WHERE → GROUP BY → HAVING → SELECT → DISTINCT → ORDER BY → LIMIT</code>. به همین دلیل alias تعریف‌شده در SELECT در WHERE قابل استفاده نیست. در حالت <code>ONLY_FULL_GROUP_BY</code> (پیش‌فرض MySQL جدید)، هر ستون غیرتجمعی در SELECT باید در GROUP BY باشد یا به‌طور تابعی به آن وابسته باشد.</p>
+
+    <h3>Subquery، EXISTS و CTE</h3>
+    <pre><code class="language-sql">-- Scalar subquery
+SELECT name, (SELECT MAX(total) FROM orders o WHERE o.customer_id = c.id) AS max_order
+FROM customers c;
+
+-- IN
+SELECT * FROM products WHERE id IN (SELECT product_id FROM order_items WHERE qty &gt; 10);
+
+-- EXISTS (correlated): معمولاً برای «آیا وجود دارد؟» مناسب است و در اولین مطابقت متوقف می‌شود
+SELECT * FROM customers c
+WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND o.total &gt; 500);
+
+-- CTE + Window function: آخرین سفارش هر مشتری
+WITH ranked AS (
+  SELECT o.*, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at DESC) AS rn
+  FROM orders o
+)
+SELECT * FROM ranked WHERE rn = 1;</code></pre>
+    <div class="callout warn"><p><code>NOT IN</code> با subqueryای که ممکن است <code>NULL</code> برگرداند، هیچ سطری برنمی‌گرداند (چون مقایسه با NULL نتیجه‌ی UNKNOWN دارد). برای anti-join از <code>NOT EXISTS</code> یا <code>LEFT JOIN ... IS NULL</code> استفاده کنید.</p></div>
+  </section>
+
+  <!-- ===================== 14 ===================== -->
+  <section class="lesson" id="laravel-migrations" data-title="Migrationهای Laravel">
+    <h2>Migrationهای Laravel</h2>
+    <p>Migrationها کنترل نسخه‌ی Schema هستند: هر تغییر یک فایل با timestamp، قابل بازبینی در Git و قابل اجرا یکسان روی همه‌ی محیط‌ها.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('orders', function (Blueprint $table) {
+            $table-&gt;id();                                              // BIGINT UNSIGNED AUTO_INCREMENT PK
+            $table-&gt;ulid('public_id')-&gt;unique();
+            $table-&gt;foreignId('customer_id')-&gt;constrained()-&gt;restrictOnDelete();
+            $table-&gt;foreignId('coupon_id')-&gt;nullable()-&gt;constrained()-&gt;nullOnDelete();
+            $table-&gt;string('status', 20)-&gt;default('pending');
+            $table-&gt;decimal('subtotal', 12, 2);
+            $table-&gt;decimal('total', 12, 2);
+            $table-&gt;char('currency', 3)-&gt;default('IRR');
+            $table-&gt;json('shipping_address');                          // snapshot
+            $table-&gt;timestamp('paid_at')-&gt;nullable();
+            $table-&gt;timestamps();
+            $table-&gt;softDeletes();
+
+            $table-&gt;index(['customer_id', 'created_at']);
+            $table-&gt;index(['status', 'created_at']);
+        });
+
+        Schema::create('order_items', function (Blueprint $table) {
+            $table-&gt;id();
+            $table-&gt;foreignId('order_id')-&gt;constrained()-&gt;cascadeOnDelete();
+            $table-&gt;foreignId('product_id')-&gt;constrained()-&gt;restrictOnDelete();
+            $table-&gt;string('product_name');                            // snapshot
+            $table-&gt;decimal('unit_price', 12, 2);
+            $table-&gt;unsignedInteger('quantity');
+            $table-&gt;unique(['order_id', 'product_id']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('order_items');
+        Schema::dropIfExists('orders');
+    }
+};</code></pre>
+
+    <h3>بهترین روش‌ها</h3>
+    <ul>
+      <li><strong>Migration اجراشده در production را ویرایش نکنید</strong>؛ یک migration جدید بسازید. ویرایش فایل قدیمی روی محیط‌هایی که قبلاً اجرا شده اثری ندارد و Schemaها واگرا می‌شوند.</li>
+      <li>متد <code>down()</code> را بنویسید و تست کنید (یا آگاهانه تصمیم بگیرید که rollback پشتیبانی نمی‌شود).</li>
+      <li>FK و ایندکس را در migration تعریف کنید، نه دستی روی دیتابیس.</li>
+      <li>در Laravel 11 به بعد، هنگام تغییر ستون با <code>-&gt;change()</code> باید <strong>همه‌ی modifierهایی که می‌خواهید بمانند</strong> (nullable، default، comment…) را دوباره بنویسید؛ وگرنه حذف می‌شوند.</li>
+      <li><strong>Migration داده</strong> (تبدیل داده‌ی موجود) را از تغییر Schema جدا کنید و برای جداول بزرگ به‌صورت دسته‌ای (<code>chunkById</code>) یا در job انجام دهید.</li>
+      <li>از مدل‌های Eloquent در migration استفاده نکنید (مدل در آینده تغییر می‌کند و migration قدیمی می‌شکند)؛ از <code>DB::table()</code> استفاده کنید.</li>
+      <li>تعداد زیاد migration را با <code>php artisan schema:dump --prune</code> فشرده کنید.</li>
+    </ul>
+    <h3>تغییرات بدون downtime (Expand / Contract)</h3>
+    <p>برای تغییر نام یا نوع ستون در سیستم زنده، به جای یک تغییر شکننده، چند گام:</p>
+    <ol>
+      <li><strong>Expand:</strong> ستون جدید را nullable اضافه کن.</li>
+      <li>کد را deploy کن که در هر دو ستون بنویسد.</li>
+      <li>داده‌های قدیمی را دسته‌ای منتقل کن (backfill).</li>
+      <li>کد را deploy کن که از ستون جدید بخواند.</li>
+      <li><strong>Contract:</strong> ستون قدیمی را حذف و در صورت نیاز NOT NULL را اعمال کن.</li>
+    </ol>
+    <div class="callout warn"><p>افزودن ستون NOT NULL بدون default یا ساخت ایندکس روی جدول بسیار بزرگ می‌تواند جدول را قفل کند یا طول بکشد. نسخه‌ی DBMS، الگوریتم ALTER (در MySQL: <code>INSTANT</code>/<code>INPLACE</code>) و ابزارهای online schema change را در نظر بگیرید.</p></div>
+  </section>
+
+  <!-- ===================== 15 ===================== -->
+  <section class="lesson" id="case-study" data-title="Case Study: فروشگاه آنلاین">
+    <h2>Case Study: فروشگاه آنلاین</h2>
+    <h3>نیازمندی‌ها</h3>
+    <ul>
+      <li>کاربران ثبت‌نام می‌کنند و چند آدرس دارند.</li>
+      <li>محصولات در دسته‌های درختی هستند؛ هر محصول چند variant (رنگ/سایز) با SKU، قیمت و موجودی جداگانه دارد.</li>
+      <li>محصولات می‌توانند چند تگ داشته باشند.</li>
+      <li>کاربر سفارش ثبت می‌کند؛ سفارش چند آیتم دارد؛ قیمت و آدرس در لحظه‌ی خرید باید ثابت بماند.</li>
+      <li>هر سفارش ممکن است چند تلاش پرداخت داشته باشد.</li>
+      <li>کاربران به محصولات خریداری‌شده امتیاز و نظر می‌دهند (هر کاربر یک نظر برای هر محصول).</li>
+      <li>کوپن تخفیف با سقف استفاده.</li>
+    </ul>
+
+    <h3>ER Diagram</h3>
+    <pre class="diagram">                         ┌──────────────┐
+                         │  categories  │◄──┐ parent_id (self, SET NULL)
+                         │ id, parent_id│───┘
+                         │ name, slug UQ│
+                         └──────┬───────┘
+                                │ 1
+                                │
+                                │ N
+ ┌──────────┐ N      M ┌────────┴───────┐ 1      N ┌──────────────────┐
+ │   tags   │◄────────►│    products    │─────────►│ product_variants │
+ │ id, name │product_tag│ id, title,     │          │ id, product_id   │
+ └──────────┘ (pivot)  │ slug UQ,       │          │ sku UQ, price,   │
+                       │ category_id,   │          │ stock, attrs JSON│
+                       │ is_active      │          └────────┬─────────┘
+                       └────┬───────────┘                   │ 1
+                            │ 1                             │
+                            │ N                             │ N
+ ┌──────────┐ 1      N ┌────┴─────┐                ┌────────┴─────────┐
+ │  users   │─────────►│ reviews  │                │   order_items    │
+ │ id, email│          │ UQ(user, │                │ id, order_id,    │
+ │ UQ, name │          │ product) │                │ variant_id,      │
+ └──┬───┬───┘          │ rating   │                │ product_name,    │
+    │   │ 1            └──────────┘                │ unit_price, qty  │
+    │   │                                          └────────┬─────────┘
+    │   │ N  ┌────────────┐                                 │ N
+    │   └───►│ addresses  │                                 │
+    │        │ id,user_id │                                 │ 1
+    │ 1      └────────────┘        ┌──────────┐ 1   N ┌──────┴───────┐
+    └─────────────────────────────►│  orders  │◄──────│   payments   │
+                       N           │ id, user_│       │ id, order_id │
+         ┌──────────┐ 1          N │ coupon_id│       │ amount,status│
+         │ coupons  │─────────────►│ status,  │       │ gateway_ref  │
+         │ code UQ  │              │ totals,  │       └──────────────┘
+         │ max_uses │              │ ship_addr│
+         └──────────┘              │ (snapshot)│
+                                   └──────────┘</pre>
+
+    <h3>جداول کلیدی و تصمیم‌ها</h3>
+    <pre><code class="language-sql">CREATE TABLE users (
+  id          BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  email       VARCHAR(255) NOT NULL UNIQUE,
+  name        VARCHAR(150) NOT NULL,
+  password    VARCHAR(255) NOT NULL,
+  created_at  TIMESTAMP NULL, updated_at TIMESTAMP NULL
+);
+
+CREATE TABLE addresses (
+  id        BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  user_id   BIGINT UNSIGNED NOT NULL,
+  city      VARCHAR(100) NOT NULL,
+  line1     VARCHAR(255) NOT NULL,
+  postal_code VARCHAR(10) NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE product_variants (
+  id         BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  product_id BIGINT UNSIGNED NOT NULL,
+  sku        VARCHAR(40) NOT NULL UNIQUE,
+  price      DECIMAL(12,2) NOT NULL CHECK (price &gt;= 0),
+  stock      INT NOT NULL DEFAULT 0 CHECK (stock &gt;= 0),
+  attributes JSON NULL,                         -- {"color":"black","size":"L"}
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+);
+
+CREATE TABLE orders (
+  id               BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  user_id          BIGINT UNSIGNED NOT NULL,
+  coupon_id        BIGINT UNSIGNED NULL,
+  status           VARCHAR(20) NOT NULL DEFAULT 'pending',
+  subtotal         DECIMAL(12,2) NOT NULL,
+  discount         DECIMAL(12,2) NOT NULL DEFAULT 0,
+  total            DECIMAL(12,2) NOT NULL,
+  shipping_address JSON NOT NULL,              -- snapshot، نه FK به addresses
+  created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE RESTRICT,
+  FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE SET NULL,
+  INDEX idx_orders_user_created (user_id, created_at),
+  INDEX idx_orders_status_created (status, created_at)
+);
+
+CREATE TABLE order_items (
+  id           BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  order_id     BIGINT UNSIGNED NOT NULL,
+  variant_id   BIGINT UNSIGNED NOT NULL,
+  product_name VARCHAR(200) NOT NULL,          -- snapshot
+  unit_price   DECIMAL(12,2) NOT NULL,         -- snapshot قیمت
+  quantity     INT UNSIGNED NOT NULL CHECK (quantity &gt; 0),
+  UNIQUE (order_id, variant_id),
+  FOREIGN KEY (order_id)   REFERENCES orders(id) ON DELETE CASCADE,
+  FOREIGN KEY (variant_id) REFERENCES product_variants(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE reviews (
+  id         BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  user_id    BIGINT UNSIGNED NOT NULL,
+  product_id BIGINT UNSIGNED NOT NULL,
+  rating     TINYINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  body       TEXT NULL,
+  UNIQUE (user_id, product_id),                -- قاعده‌ی «یک نظر برای هر محصول»
+  FOREIGN KEY (user_id)    REFERENCES users(id)    ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+);</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>تصمیم</th><th>دلیل</th></tr></thead>
+      <tbody>
+        <tr><td>جدا کردن <code>product_variants</code> از <code>products</code></td><td>SKU، قیمت و موجودی ویژگی variant است نه محصول (نرمال‌سازی؛ جلوگیری از تکرار عنوان و توضیحات)</td></tr>
+        <tr><td>آدرس ارسال به‌صورت snapshot JSON در سفارش</td><td>ویرایش/حذف آدرس کاربر نباید سفارش‌های قبلی را تغییر دهد</td></tr>
+        <tr><td><code>unit_price</code> و <code>product_name</code> در <code>order_items</code></td><td>فاکتور باید قیمت و نام لحظه‌ی خرید را نشان دهد</td></tr>
+        <tr><td><code>ON DELETE RESTRICT</code> برای user و variant در سفارش</td><td>داده‌ی مالی نباید با حذف کاربر/محصول از بین برود؛ به جای حذف، soft delete یا غیرفعال‌سازی</td></tr>
+        <tr><td><code>CASCADE</code> برای order_items و addresses</td><td>بدون والد معنا ندارند</td></tr>
+        <tr><td><code>payments</code> جدا با 1:N</td><td>چند تلاش ناموفق/موفق؛ ردگیری <code>gateway_ref</code>؛ idempotency</td></tr>
+        <tr><td><code>UNIQUE(user_id, product_id)</code> در reviews</td><td>اجبار قاعده‌ی کسب‌وکار در سطح دیتابیس</td></tr>
+        <tr><td>ستون <code>total</code> (derived) در orders</td><td>denormalization موجه: هر بار محاسبه لازم نیست و مقدار نهایی فاکتور باید ثابت بماند</td></tr>
+        <tr><td>کوپن: <code>max_uses</code> + جدول <code>coupon_redemptions(coupon_id, user_id, order_id)</code></td><td>شمارش استفاده و جلوگیری از استفاده‌ی تکراری با UNIQUE</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>کم کردن موجودی بدون race condition</h3>
+    <pre><code class="language-php">&lt;?php
+DB::transaction(function () use ($cart, $user) {
+    foreach ($cart-&gt;items as $item) {
+        // UPDATE شرطی اتمیک: اگر موجودی کافی نباشد، 0 سطر تغییر می‌کند
+        $affected = DB::table('product_variants')
+            -&gt;where('id', $item-&gt;variant_id)
+            -&gt;where('stock', '&gt;=', $item-&gt;qty)
+            -&gt;decrement('stock', $item-&gt;qty);
+
+        if ($affected === 0) {
+            throw new OutOfStockException($item-&gt;variant_id);   // rollback کل تراکنش
+        }
+    }
+    // ... ساخت order و order_items
+});</code></pre>
+  </section>
+
+  <!-- ===================== QUESTIONS ===================== -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-database-design-1">
+      <summary>مدل مفهومی، منطقی و فیزیکی را تعریف و با هم مقایسه کنید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Conceptual (مفهومی):</strong> دید سطح بالا و مستقل از تکنولوژی از موجودیت‌ها، روابط اصلی و قواعد کسب‌وکار. مخاطب: ذی‌نفعان غیرفنی. ابزار: ER diagram ساده. مثال: «مشتری سفارش می‌دهد؛ سفارش شامل محصولات است.»</li>
+          <li><strong>Logical (منطقی):</strong> تبدیل مدل مفهومی به ساختار رابطه‌ای: جداول، همه‌ی attributeها، PK و FK، کاردینالیتی دقیق، شکستن M:N به جدول واسط و نرمال‌سازی (معمولاً تا 3NF). هنوز مستقل از DBMS خاص.</li>
+          <li><strong>Physical (فیزیکی):</strong> پیاده‌سازی روی DBMS مشخص: نوع داده‌ی دقیق (<code>DECIMAL(12,2)</code>، <code>TIMESTAMP</code>)، ایندکس‌ها، constraintها، charset، partitioning، و گاهی denormalization برای کارایی. خروجی: DDL یا Migration.</li>
+        </ul>
+        <p><strong>چرا جدا؟</strong> هر سطح سوال متفاوتی را جواب می‌دهد: «چه چیزی» (درستی نیازمندی)، «چه ساختاری» (صحت و عدم افزونگی)، «چگونه» (کارایی روی پلتفرم). جدا کردن آن‌ها اجازه می‌دهد خطای نیازمندی زود کشف شود و تصمیمات فیزیکی (مثلاً تغییر از MySQL به PostgreSQL) روی مدل منطقی اثر نگذارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-2">
+      <summary>Natural Key و Surrogate Key را مقایسه کنید. شما برای جدول کاربران کدام را انتخاب می‌کنید و چرا؟</summary>
+      <div class="answer">
+        <p><strong>Natural key:</strong> شناسه‌ای با معنای واقعی که در دامنه وجود دارد (email، کد ملی، ISBN). <strong>Surrogate key:</strong> شناسه‌ی مصنوعی بدون معنا که سیستم تولید می‌کند (auto-increment، UUID، ULID).</p>
+        <p><strong>مقایسه:</strong></p>
+        <ul>
+          <li><strong>پایداری:</strong> natural key ممکن است تغییر کند (کاربر ایمیلش را عوض می‌کند) و این تغییر باید به همه‌ی FKها منتشر شود؛ surrogate هرگز تغییر نمی‌کند.</li>
+          <li><strong>اندازه و کارایی:</strong> surrogate عددی کوچک است و JOIN و ایندکس‌ها را سبک نگه می‌دارد.</li>
+          <li><strong>یکتایی واقعی:</strong> natural keyها گاهی در عمل یکتا نیستند یا همیشه موجود نیستند (کاربر خارجی کد ملی ندارد).</li>
+          <li><strong>معنا:</strong> natural key خواناست و گاهی JOIN را حذف می‌کند.</li>
+        </ul>
+        <p><strong>انتخاب برای users:</strong> PK = <code>BIGINT</code> auto-increment (یا ULID اگر شناسه در URL عمومی است یا تولید توزیع‌شده لازم است)، و <code>email</code> با <code>UNIQUE</code>. یعنی surrogate برای ارجاع، و natural key همچنان با constraint محافظت می‌شود تا کاربر تکراری ساخته نشود.</p>
+        <p><strong>استثنا:</strong> جداول lookup کوچک و پایدار (کد ارز، کد کشور) و جدول واسط که composite natural key دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-3">
+      <summary>استفاده از UUID به‌عنوان کلید اصلی چه مزایا و معایبی نسبت به auto-increment دارد؟</summary>
+      <div class="answer">
+        <p><strong>مزایای UUID:</strong></p>
+        <ul>
+          <li>تولید در برنامه بدون هماهنگی با دیتابیس؛ شناسه قبل از INSERT معلوم است (مفید در سیستم توزیع‌شده، صف‌ها و offline-first).</li>
+          <li>یکتایی سراسری: ادغام داده بین دیتابیس‌ها/شاردها بدون تعارض.</li>
+          <li>غیرقابل حدس و شمارش: تعداد کاربران/سفارش‌ها نشت نمی‌کند و حمله‌ی شمارشی (IDOR) سخت‌تر است.</li>
+        </ul>
+        <p><strong>معایب:</strong></p>
+        <ul>
+          <li><strong>اندازه:</strong> ۱۶ بایت (یا ۳۶ کاراکتر اگر رشته ذخیره شود) در برابر ۸ بایت؛ در InnoDB همه‌ی secondary indexها PK را هم دارند، پس همه بزرگ‌تر می‌شوند.</li>
+          <li><strong>UUID v4 تصادفی</strong> در clustered index باعث درج در مکان‌های تصادفی B-tree، page split، fragmentation و کاهش کارایی cache می‌شود.</li>
+          <li>خوانایی و دیباگ سخت‌تر.</li>
+        </ul>
+        <p><strong>راه‌حل‌های میانه:</strong> UUID مرتب زمانی (<strong>UUIDv7</strong>) یا <strong>ULID</strong> که تقریباً append-only درج می‌شوند؛ ذخیره به‌صورت <code>BINARY(16)</code> یا نوع بومی <code>uuid</code> در PostgreSQL؛ یا PK عددی داخلی + ستون <code>public_id</code> یکتا برای بیرون. در Laravel، <code>HasUuids</code>/<code>HasUlids</code> شناسه‌ی مرتب تولید می‌کنند.</p>
+        <p><strong>نکته:</strong> UUID جایگزین authorization نیست.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-4">
+      <summary>نرمال‌سازی چیست؟ فرم‌های 1NF، 2NF و 3NF را با یک مثال توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> فرایند سازمان‌دهی جداول بر اساس وابستگی‌های تابعی برای حذف افزونگی و ناهنجاری‌های درج/به‌روزرسانی/حذف؛ با تجزیه‌ی جداول به جداول کوچک‌تر به‌صورت lossless.</p>
+        <p><strong>مثال:</strong> <code>orders(order_id, date, customer_id, customer_name, products="P1:2,P7:1")</code></p>
+        <ul>
+          <li><strong>1NF:</strong> هر خانه یک مقدار اتمیک، بدون گروه تکرارشونده. ستون products را به سطرها می‌شکنیم: <code>(order_id, product_id, date, customer_id, customer_name, product_name, qty)</code> با کلید <code>(order_id, product_id)</code>.</li>
+          <li><strong>2NF:</strong> 1NF + هیچ ستون غیرکلیدی به <em>بخشی</em> از کلید ترکیبی وابسته نباشد. <code>date, customer_*</code> فقط به <code>order_id</code> و <code>product_name</code> فقط به <code>product_id</code> وابسته‌اند. تجزیه: <code>orders(order_id, date, customer_id, customer_name)</code>، <code>products(product_id, product_name)</code>، <code>order_items(order_id, product_id, qty)</code>.</li>
+          <li><strong>3NF:</strong> 2NF + بدون وابستگی تعدی (ستون غیرکلیدی به غیرکلیدی). در orders: <code>order_id → customer_id → customer_name</code>. تجزیه: <code>customers(customer_id, customer_name)</code> و <code>orders(order_id, date, customer_id)</code>.</li>
+        </ul>
+        <p><strong>نتیجه:</strong> نام مشتری و محصول هر کدام فقط در یک جا ثبت می‌شوند؛ تغییر نام در یک سطر انجام می‌شود و حذف یک سفارش اطلاعات محصول را از بین نمی‌برد.</p>
+        <p><strong>Trade-off:</strong> JOIN بیشتر هنگام خواندن؛ در صورت اثبات مشکل کارایی، denormalization کنترل‌شده.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-5">
+      <summary>تفاوت 3NF و BCNF چیست؟ مثالی بزنید که جدولی در 3NF باشد ولی در BCNF نباشد.</summary>
+      <div class="answer">
+        <p><strong>3NF:</strong> برای هر FD غیربدیهی <code>X → A</code>، یا X یک super key است، یا A یک <strong>prime attribute</strong> (عضو یک candidate key) است. <strong>BCNF:</strong> برای هر FD غیربدیهی <code>X → A</code>، X <strong>حتماً</strong> super key است. پس BCNF استثنای «prime attribute» را حذف می‌کند و سخت‌گیرانه‌تر است.</p>
+        <p><strong>مثال:</strong> <code>teaching(student, course, instructor)</code> با قواعد: هر استاد فقط یک درس می‌دهد (<code>instructor → course</code>) و هر دانشجو در هر درس یک استاد دارد (<code>student, course → instructor</code>).</p>
+        <ul>
+          <li>Candidate keyها: <code>(student, course)</code> و <code>(student, instructor)</code>. همه‌ی ستون‌ها prime هستند ⇒ 3NF برقرار است.</li>
+          <li>ولی <code>instructor → course</code> و instructor super key نیست ⇒ نقض BCNF. ناهنجاری: درسِ هر استاد به ازای هر دانشجو تکرار می‌شود.</li>
+          <li>تجزیه به BCNF: <code>instructors(instructor PK, course)</code> و <code>enrollments(student, instructor)</code>.</li>
+        </ul>
+        <p><strong>هزینه:</strong> FD <code>student, course → instructor</code> دیگر در یک جدول نیست و با UNIQUE ساده قابل اجبار نیست (dependency preservation از دست می‌رود). تجزیه به 3NF همیشه می‌تواند lossless و dependency-preserving باشد ولی BCNF نه؛ به همین دلیل در عمل 3NF هدف معمول است و BCNF وقتی که هزینه‌اش قابل قبول باشد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-6">
+      <summary>ناهنجاری‌های درج، به‌روزرسانی و حذف را با مثال توضیح دهید و بگویید نرمال‌سازی چگونه آن‌ها را برطرف می‌کند.</summary>
+      <div class="answer">
+        <p>جدول <code>enrollments(student_id, course_id, course_title, instructor_phone)</code> با کلید <code>(student_id, course_id)</code>:</p>
+        <ul>
+          <li><strong>Update anomaly:</strong> عنوان و تلفن استاد درس در همه‌ی سطرهای ثبت‌نام آن درس تکرار شده؛ تغییر تلفن نیازمند به‌روزرسانی ده‌ها سطر است و اگر یکی جا بماند، داده متناقض می‌شود.</li>
+          <li><strong>Insert anomaly:</strong> درس جدید را تا وقتی دانشجویی ثبت‌نام نکرده نمی‌توان ثبت کرد، چون student_id جزء کلید است و نمی‌تواند NULL باشد.</li>
+          <li><strong>Delete anomaly:</strong> اگر آخرین دانشجوی یک درس حذف شود، اطلاعات خود درس (عنوان، استاد) هم از بین می‌رود.</li>
+        </ul>
+        <p><strong>علت ریشه‌ای:</strong> دو واقعیت مستقل (اطلاعات درس و ثبت‌نام دانشجو) در یک جدول ترکیب شده‌اند؛ <code>course_id → course_title</code> وابستگی جزئی است (نقض 2NF).</p>
+        <p><strong>راه‌حل:</strong> تجزیه به <code>courses(course_id, course_title, instructor_id)</code>، <code>instructors(instructor_id, phone)</code> و <code>enrollments(student_id, course_id)</code>. حالا هر واقعیت یک بار ثبت می‌شود: درس مستقل از دانشجو درج می‌شود، تلفن در یک سطر به‌روز می‌شود و حذف ثبت‌نام اطلاعات درس را حذف نمی‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-7">
+      <summary>Denormalization چیست و در چه شرایطی توجیه دارد؟ ریسک‌های آن را چگونه مدیریت می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> افزودن عمدی افزونگی به Schema نرمال (کپی ستون، ستون تجمعی، جدول خلاصه) برای کاهش JOIN و محاسبه در زمان خواندن.</p>
+        <p><strong>شرایط توجیه:</strong></p>
+        <ul>
+          <li>کوئری پرتکرار و کند که با ایندکس و بازنویسی حل نشده و با اندازه‌گیری (EXPLAIN، APM) اثبات شده است.</li>
+          <li>خواندن بسیار بیشتر از نوشتن و داده‌ی تکراری کم‌تغییر.</li>
+          <li>گزارش‌گیری/OLAP (star schema، جداول خلاصه‌ی روزانه).</li>
+          <li>مثال: <code>posts.comments_count</code> برای لیست پست‌ها به جای <code>COUNT</code> روی هر پست؛ <code>orders.total</code>.</li>
+        </ul>
+        <p><strong>تفاوت با snapshot:</strong> قیمت در <code>order_items</code> denormalization نیست؛ واقعیت تاریخی متفاوتی است.</p>
+        <p><strong>مدیریت ریسک:</strong></p>
+        <ul>
+          <li>مشخص کردن <strong>source of truth</strong>.</li>
+          <li>همگام‌سازی در همان تراکنش (<code>increment</code> اتمیک)، با Model Event/Observer، trigger یا job دوره‌ای.</li>
+          <li>به‌روزرسانی اتمیک (<code>SET c = c + 1</code>) به جای read-modify-write برای جلوگیری از race.</li>
+          <li>دستور/job بازسازی (recalculate) برای اصلاح ناسازگاری‌ها و مانیتورینگ آن.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-8">
+      <summary>سناریو: مدیر می‌خواهد یک کاربر را حذف کند. کاربر سفارش، آدرس، نظر و توکن‌های ورود دارد. اکشن‌های ON DELETE را برای هر رابطه چگونه انتخاب می‌کنید؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>orders → users: <code>RESTRICT</code>.</strong> سفارش‌ها داده‌ی مالی و حقوقی‌اند و نباید با حذف کاربر از بین بروند. بنابراین کاربر دارای سفارش اصلاً hard delete نمی‌شود؛ به جای آن soft delete یا ناشناس‌سازی (anonymize: پاک کردن نام/ایمیل/تلفن و نگه‌داشتن سطر) انجام می‌شود که با حریم خصوصی هم سازگار است.</li>
+          <li><strong>addresses → users: <code>CASCADE</code>.</strong> آدرس بدون کاربر معنایی ندارد. سفارش‌ها هم وابسته‌ی آدرس نیستند چون snapshot آدرس را دارند.</li>
+          <li><strong>personal_access_tokens / sessions: <code>CASCADE</code>.</strong> باید فوراً حذف شوند تا دسترسی قطع شود.</li>
+          <li><strong>reviews → users:</strong> بستگی به سیاست کسب‌وکار دارد: <code>CASCADE</code> اگر نظرها باید حذف شوند؛ یا <code>SET NULL</code> (ستون nullable) و نمایش «کاربر حذف‌شده» اگر محتوای نظر برای دیگران ارزشمند است. در حالت دوم، ستون‌های تجمعی مثل امتیاز میانگین محصول دست‌نخورده می‌مانند.</li>
+        </ul>
+        <p><strong>نکات:</strong> CASCADE در دیتابیس eventهای Eloquent (<code>deleting</code>) را اجرا نمی‌کند، پس پاک کردن فایل‌ها (آواتار) یا به‌روزرسانی شمارنده‌ها باید در کد انجام شود. حذف کاربر را در یک تراکنش و ترجیحاً در یک Action/Service با log انجام دهید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-9">
+      <summary>کد/Schema زیر چه مشکلاتی دارد؟ <code>CREATE TABLE invoices (id INT, customer VARCHAR(100), amount FLOAT, created VARCHAR(20), tags VARCHAR(255));</code></summary>
+      <div class="answer">
+        <ul>
+          <li><strong>بدون PRIMARY KEY:</strong> <code>id</code> نه PK است نه auto-increment؛ سطر تکراری ممکن است و InnoDB یک کلید پنهان می‌سازد. → <code>id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY</code>.</li>
+          <li><strong><code>customer VARCHAR</code>:</strong> نام مشتری به جای FK؛ تکرار، ناهنجاری به‌روزرسانی و عدم یکپارچگی. → <code>customer_id</code> با FK به <code>customers</code> (و اگر snapshot نام لازم است، جداگانه و آگاهانه).</li>
+          <li><strong><code>amount FLOAT</code>:</strong> خطای گرد کردن در پول. → <code>DECIMAL(12,2)</code> یا عدد صحیح به واحد خرد + <code>currency</code>.</li>
+          <li><strong><code>created VARCHAR</code>:</strong> تاریخ به‌صورت رشته: بدون اعتبارسنجی، مرتب‌سازی و بازه‌گیری غلط یا کند. → <code>created_at TIMESTAMP</code> (UTC).</li>
+          <li><strong><code>tags VARCHAR</code> با مقادیر جداشده با کاما:</strong> نقض 1NF؛ جست‌وجو با <code>LIKE '%x%'</code> (بدون ایندکس)، بدون FK، حذف/تغییر نام تگ سخت. → جدول <code>tags</code> و pivot <code>invoice_tag</code>.</li>
+          <li><strong>همه‌ی ستون‌ها nullable</strong> و بدون CHECK (مثلاً <code>amount &gt;= 0</code>).</li>
+        </ul>
+        <pre><code class="language-sql">CREATE TABLE invoices (
+  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  customer_id BIGINT UNSIGNED NOT NULL,
+  amount      DECIMAL(12,2) NOT NULL CHECK (amount &gt;= 0),
+  currency    CHAR(3) NOT NULL DEFAULT 'IRR',
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
+  INDEX idx_invoices_customer_created (customer_id, created_at)
+);
+CREATE TABLE invoice_tag (
+  invoice_id BIGINT UNSIGNED NOT NULL, tag_id BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (invoice_id, tag_id),
+  FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+  FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);</code></pre>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-10">
+      <summary>زمان و تاریخ را چگونه در دیتابیس ذخیره می‌کنید تا کاربران در منطقه‌های زمانی مختلف دچار مشکل نشوند؟</summary>
+      <div class="answer">
+        <p><strong>اصل:</strong> لحظه‌های زمانی (instant) را در <strong>UTC</strong> ذخیره کن؛ تبدیل به منطقه‌ی زمانی کاربر فقط در لایه‌ی نمایش.</p>
+        <ul>
+          <li><strong>نوع داده:</strong> در PostgreSQL <code>timestamptz</code>؛ در MySQL <code>TIMESTAMP</code> (که به UTC تبدیل می‌کند و محدود به ۲۰۳۸ است) یا <code>DATETIME</code> با این قرارداد که همیشه UTC نوشته شود.</li>
+          <li><strong>تنظیمات:</strong> <code>config/app.php</code> با <code>'timezone' =&gt; 'UTC'</code>، time zone اتصال دیتابیس UTC، و ذخیره‌ی time zone هر کاربر (<code>users.timezone = 'Asia/Tehran'</code>).</li>
+          <li><strong>نمایش:</strong> <code>$order-&gt;created_at-&gt;setTimezone($user-&gt;timezone)</code>؛ و تبدیل ورودی کاربر از زمان محلی به UTC قبل از ذخیره یا کوئری بازه‌ای.</li>
+          <li><strong>فقط تاریخ</strong> (تولد، سررسید): <code>DATE</code> بدون time zone؛ تبدیل آن معنا ندارد.</li>
+          <li><strong>رویداد آینده با ساعت محلی</strong> (جلسه ساعت ۹ تهران): زمان محلی + شناسه‌ی time zone (نه offset ثابت مثل +03:30)، چون قوانین time zone ممکن است تغییر کنند.</li>
+          <li><strong>تقویم شمسی:</strong> فقط در نمایش؛ ذخیره میلادی/UTC.</li>
+        </ul>
+        <p><strong>اشتباهات رایج:</strong> ذخیره‌ی زمان محلی سرور، ترکیب داده‌ی UTC و محلی، گزارش «فروش روزانه» با مرز روز UTC به جای مرز روز تهران (باید بازه را بر اساس time zone گزارش محاسبه کرد).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-11">
+      <summary>مزایا و معایب Soft Delete را بیان کنید. اگر ایمیل کاربران UNIQUE باشد و کاربر soft-delete شده بخواهد دوباره ثبت‌نام کند، چه مشکلی پیش می‌آید و راه‌حل چیست؟</summary>
+      <div class="answer">
+        <p><strong>Soft delete:</strong> علامت‌گذاری سطر به‌عنوان حذف‌شده (<code>deleted_at</code>) به جای حذف فیزیکی؛ در Laravel با trait <code>SoftDeletes</code> و global scope.</p>
+        <p><strong>مزایا:</strong> امکان بازیابی، حفظ ارجاع داده‌ی تاریخی (سفارش‌های کاربر حذف‌شده)، audit.</p>
+        <p><strong>معایب:</strong> شکستن UNIQUE، بی‌اثر شدن FK/CASCADE دیتابیس، خطر فراموش کردن شرط در کوئری‌های خام/گزارش‌ها، رشد جدول، و تعارض با الزامات حذف داده‌ی شخصی.</p>
+        <p><strong>مشکل ایمیل:</strong> سطر حذف‌شده هنوز ایمیل را دارد، پس INSERT جدید با خطای duplicate key رد می‌شود (در حالی که <code>Rule::unique</code> در Laravel ممکن است با <code>withoutTrashed()</code> اجازه دهد و خطا در دیتابیس بروز کند).</p>
+        <p><strong>راه‌حل‌ها:</strong></p>
+        <ul>
+          <li>PostgreSQL: <strong>partial unique index</strong> <code>CREATE UNIQUE INDEX ... ON users(email) WHERE deleted_at IS NULL</code>.</li>
+          <li>MySQL: ستون generated که برای سطرهای حذف‌شده NULL است و UNIQUE روی آن (NULLها تکرارپذیرند).</li>
+          <li>هنگام soft delete ایمیل را تغییر دهید (<code>email = concat(email, '#deleted#', id)</code>) — ساده ولی داده را دستکاری می‌کند.</li>
+          <li>بازیابی (restore) حساب قبلی به جای ساخت حساب جدید، اگر کسب‌وکار اجازه دهد.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-12">
+      <summary>Polymorphic Association چیست؟ مزایا، معایب و جایگزین‌های آن را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> الگویی که در آن یک جدول (مثلاً <code>comments</code> یا <code>images</code>) با جفت ستون <code>commentable_type</code> و <code>commentable_id</code> می‌تواند به سطرهای چند جدول مختلف (posts، videos) اشاره کند. در Laravel: <code>$table-&gt;morphs('commentable')</code> و روابط <code>morphTo</code>/<code>morphMany</code>.</p>
+        <p><strong>مزایا:</strong> یک جدول و یک منطق مشترک برای همه‌ی انواع؛ افزودن نوع جدید بدون تغییر Schema؛ پشتیبانی کامل Eloquent (eager loading با <code>with('commentable')</code>).</p>
+        <p><strong>معایب:</strong></p>
+        <ul>
+          <li><strong>نبود Foreign Key:</strong> دیتابیس نمی‌تواند یکپارچگی ارجاعی را تضمین کند ⇒ رکوردهای یتیم و نبود CASCADE.</li>
+          <li>JOIN و گزارش‌گیری SQL سخت‌تر (JOIN شرطی بر اساس type).</li>
+          <li>ذخیره‌ی نام کلاس در دیتابیس، کد را به داده گره می‌زند؛ باید <code>Relation::enforceMorphMap</code> استفاده شود.</li>
+          <li>ایندکس ترکیبی <code>(type, id)</code> لازم است.</li>
+        </ul>
+        <p><strong>جایگزین‌ها:</strong> (۱) جدول جدا برای هر نوع؛ (۲) چند FK nullable (<code>post_id</code>، <code>video_id</code>) + CHECK «دقیقاً یکی NOT NULL»؛ (۳) جدول supertype مشترک که والدها به آن ارجاع دهند.</p>
+        <p><strong>جمع‌بندی:</strong> برای ویژگی‌های عمومی و کم‌ریسک (کامنت، تگ، فایل پیوست، لاگ فعالیت) polymorphic عملی است؛ برای داده‌ی حیاتی که یکپارچگی می‌خواهد، FK واقعی.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-13">
+      <summary>یک رابطه‌ی چندبه‌چند بین دانشجو و درس که نمره و تاریخ ثبت‌نام هم دارد را طراحی کنید و در Laravel پیاده کنید.</summary>
+      <div class="answer">
+        <p>M:N با <strong>جدول واسط</strong> پیاده می‌شود؛ چون رابطه attribute دارد (grade، enrolled_at)، جدول واسط عملاً یک موجودیت به نام <code>enrollments</code> است.</p>
+        <pre><code class="language-php">&lt;?php
+Schema::create('enrollments', function (Blueprint $table) {
+    $table-&gt;id();
+    $table-&gt;foreignId('student_id')-&gt;constrained()-&gt;cascadeOnDelete();
+    $table-&gt;foreignId('course_id')-&gt;constrained()-&gt;restrictOnDelete();
+    $table-&gt;decimal('grade', 4, 2)-&gt;nullable();
+    $table-&gt;timestamp('enrolled_at');
+    $table-&gt;unique(['student_id', 'course_id']);   // هر دانشجو یک بار در هر درس
+    $table-&gt;index('course_id');                    // برای course → students
+});
+
+class Student extends Model {
+    public function courses() {
+        return $this-&gt;belongsToMany(Course::class, 'enrollments')
+                    -&gt;withPivot('grade', 'enrolled_at')
+                    -&gt;using(Enrollment::class);    // Pivot model سفارشی (اختیاری)
+    }
+}
+
+$student-&gt;courses()-&gt;attach($courseId, ['enrolled_at' =&gt; now()]);
+$student-&gt;courses()-&gt;updateExistingPivot($courseId, ['grade' =&gt; 18.5]);</code></pre>
+        <p><strong>نکات:</strong></p>
+        <ul>
+          <li>UNIQUE ترکیبی از ثبت‌نام تکراری جلوگیری می‌کند (حتی در race condition).</li>
+          <li>ایندکس UNIQUE روی <code>(student_id, course_id)</code> کوئری‌های سمت دانشجو را پوشش می‌دهد؛ برای سمت درس ایندکس جدا لازم است.</li>
+          <li>اگر enrollment رفتار مستقل دارد (وضعیت، پرداخت شهریه)، آن را مدل کامل با روابط <code>belongsTo</code> در نظر بگیرید.</li>
+          <li><code>CHECK (grade BETWEEN 0 AND 20)</code> قاعده‌ی دامنه را اجبار می‌کند.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-14">
+      <summary>سناریو: تیم مالی می‌خواهد بداند قیمت هر محصول در هر تاریخ گذشته چه بوده و چه کسی آن را تغییر داده است. Schema را طراحی کنید.</summary>
+      <div class="answer">
+        <p>این یک نیاز <strong>temporal/history</strong> است: یک جدول تاریخچه با بازه‌ی اعتبار.</p>
+        <pre><code class="language-sql">CREATE TABLE product_prices (
+  id          BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  product_id  BIGINT UNSIGNED NOT NULL,
+  price       DECIMAL(12,2) NOT NULL CHECK (price &gt;= 0),
+  valid_from  TIMESTAMP NOT NULL,
+  valid_to    TIMESTAMP NULL,                 -- NULL = قیمت فعلی
+  changed_by  BIGINT UNSIGNED NOT NULL,
+  reason      VARCHAR(255) NULL,
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
+  FOREIGN KEY (changed_by) REFERENCES users(id),
+  INDEX idx_prices_product_from (product_id, valid_from)
+);
+
+-- قیمت در یک لحظه‌ی مشخص
+SELECT price FROM product_prices
+WHERE product_id = ? AND valid_from &lt;= ? AND (valid_to IS NULL OR valid_to &gt; ?);</code></pre>
+        <ul>
+          <li>تغییر قیمت = در یک <strong>تراکنش</strong>: بستن سطر فعلی (<code>valid_to = now()</code>) و درج سطر جدید. این از بازه‌های هم‌پوشان جلوگیری می‌کند. (در PostgreSQL می‌توان با exclusion constraint روی بازه‌ها هم‌پوشانی را در سطح دیتابیس منع کرد.)</li>
+          <li>جدول append-only است؛ به‌روزرسانی/حذف سطرهای قدیمی مجاز نیست (مجوز دیتابیس یا policy).</li>
+          <li>برای کارایی، قیمت فعلی را می‌توان در <code>products.price</code> هم نگه داشت (denormalization با source of truth مشخص).</li>
+          <li>سفارش‌ها همچنان <code>unit_price</code> snapshot دارند و به این جدول وابسته نیستند.</li>
+          <li>جایگزین عمومی‌تر: جدول audit با <code>old_values/new_values</code> برای همه‌ی ستون‌ها؛ ولی برای کوئری «قیمت در تاریخ X» جدول history اختصاصی ساده‌تر و سریع‌تر است.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-15">
+      <summary>انواع JOIN را با مثال توضیح دهید. تفاوت WHERE و HAVING چیست؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>INNER JOIN:</strong> فقط سطرهایی که در هر دو جدول مطابق دارند. «سفارش‌ها با نام مشتری».</li>
+          <li><strong>LEFT JOIN:</strong> همه‌ی سطرهای جدول چپ و مطابق‌های راست (یا NULL). «همه‌ی مشتریان با تعداد سفارش، حتی صفر» — با <code>COUNT(o.id)</code>.</li>
+          <li><strong>RIGHT JOIN:</strong> قرینه‌ی LEFT؛ معمولاً با جابه‌جایی جداول به LEFT تبدیل می‌شود.</li>
+          <li><strong>FULL OUTER JOIN:</strong> همه‌ی سطرهای هر دو؛ در MySQL با <code>UNION</code> شبیه‌سازی می‌شود.</li>
+          <li><strong>CROSS JOIN:</strong> ضرب دکارتی؛ مثلاً ساخت همه‌ی ترکیب‌های سایز × رنگ.</li>
+          <li><strong>SELF JOIN:</strong> جدول با خودش؛ کارمند و مدیر.</li>
+        </ul>
+        <pre><code class="language-sql">-- مشتریان بدون سفارش (anti-join)
+SELECT c.* FROM customers c LEFT JOIN orders o ON o.customer_id = c.id WHERE o.id IS NULL;</code></pre>
+        <p><strong>WHERE در برابر HAVING:</strong> <code>WHERE</code> سطرها را <em>قبل</em> از گروه‌بندی فیلتر می‌کند و نمی‌تواند از توابع تجمعی استفاده کند؛ <code>HAVING</code> گروه‌ها را <em>بعد</em> از <code>GROUP BY</code> فیلتر می‌کند و روی <code>COUNT/SUM</code> شرط می‌گذارد.</p>
+        <pre><code class="language-sql">SELECT customer_id, SUM(total) spent
+FROM orders WHERE status = 'paid'
+GROUP BY customer_id HAVING SUM(total) &gt; 1000;</code></pre>
+        <p><strong>نکته‌ی کارایی:</strong> هر شرطی که می‌تواند در WHERE باشد را در HAVING نگذارید، چون فیلتر زودتر یعنی سطرهای کمتر برای گروه‌بندی و امکان استفاده از ایندکس. و شرط روی جدول راست LEFT JOIN را در ON بگذارید، نه WHERE.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-16">
+      <summary>برای ستون وضعیت سفارش (pending، paid، shipped، cancelled)، ENUM دیتابیس، جدول lookup یا VARCHAR را انتخاب می‌کنید؟ دلیل بیاورید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>ENUM:</strong> فشرده و خوداعتبارسنج، ولی افزودن/تغییر مقدار نیاز به <code>ALTER TABLE</code> دارد، ترتیب مرتب‌سازی بر اساس ترتیب تعریف است، بین DBMSها قابل حمل نیست و نمی‌توان metadata (برچسب، رنگ، ترتیب) کنارش داشت.</li>
+          <li><strong>جدول lookup + FK:</strong> افزودن مقدار با INSERT، metadata قابل نگه‌داری، یکپارچگی با FK؛ هزینه: JOIN یا cache.</li>
+          <li><strong>VARCHAR + CHECK/validation + PHP Enum:</strong> خوانا در دیتابیس، منطق در کد متمرکز (<code>enum OrderStatus: string</code> با cast در مدل)، افزودن مقدار با تغییر کد.</li>
+        </ul>
+        <p><strong>انتخاب من:</strong> برای وضعیت سفارش، که مجموعه‌ای کوچک است و <strong>منطق برنامه</strong> (state machine، انتقال مجاز وضعیت‌ها) به آن وابسته است و کاربر ادمین نباید مقدار جدید اضافه کند، <code>VARCHAR(20)</code> + PHP backed enum + cast + در صورت امکان CHECK. ایندکس <code>(status, created_at)</code> برای لیست‌های ادمین.</p>
+        <p>برای مقادیری که کسب‌وکار پویا مدیریت می‌کند (روش ارسال، دلایل لغو با متن فارسی)، <strong>جدول lookup</strong>. ENUM دیتابیس را فقط برای مجموعه‌های واقعاً ثابت در نظر بگیرید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-database-design-17">
+      <summary>Migration زیر در production مشکل‌ساز است. چرا و چگونه آن را اصلاح می‌کنید؟</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+// جدول orders با 50 میلیون سطر
+Schema::table('orders', function (Blueprint $table) {
+    $table-&gt;renameColumn('amount', 'total');
+    $table-&gt;string('tracking_code');            // NOT NULL بدون default
+});
+foreach (Order::all() as $order) {              // داخل همان migration
+    $order-&gt;update(['tracking_code' =&gt; Str::random(10)]);
+}</code></pre>
+        <p><strong>مشکلات:</strong></p>
+        <ul>
+          <li><strong>rename ستون:</strong> کد در حال اجرا (نسخه‌ی قبلی در زمان deploy) هنوز <code>amount</code> را می‌خواند ⇒ خطا تا پایان deploy. باید Expand/Contract شود.</li>
+          <li><strong>ستون NOT NULL بدون default</strong> روی جدول پر: یا خطا می‌دهد یا مقدار پیش‌فرض ضمنی (رشته‌ی خالی) می‌گیرد و بسته به DBMS/نسخه ممکن است جدول را بازسازی و قفل کند.</li>
+          <li><strong><code>Order::all()</code></strong>: ۵۰ میلیون مدل در حافظه ⇒ memory exhaustion؛ و ۵۰ میلیون UPDATE تکی.</li>
+          <li><strong>استفاده از مدل Eloquent</strong> در migration: با تغییر آینده‌ی مدل (scope، cast، event) migration می‌شکند؛ eventها هم اجرا می‌شوند.</li>
+          <li>ترکیب تغییر Schema و داده در یک migration طولانی.</li>
+        </ul>
+        <p><strong>اصلاح:</strong></p>
+        <ol>
+          <li>Migration ۱: افزودن <code>total</code> و <code>tracking_code</code> به‌صورت <code>nullable()</code>.</li>
+          <li>Deploy کدی که در هر دو ستون <code>amount</code>/<code>total</code> می‌نویسد.</li>
+          <li>Backfill در یک command/job با <code>DB::table('orders')-&gt;whereNull('total')-&gt;chunkById(1000, ...)</code>.</li>
+          <li>Deploy کدی که فقط از <code>total</code> می‌خواند.</li>
+          <li>Migration نهایی: حذف <code>amount</code> و اعمال NOT NULL و UNIQUE روی <code>tracking_code</code>.</li>
+        </ol>
+      </div>
+    </details>
+  </section>
+
+  <!-- ===================== CHEATSHEET ===================== -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>فرایند</h3>
+      <ul>
+        <li>Requirements → Conceptual (چه) → Logical (چه ساختاری) → Physical (چگونه، روی DBMS).</li>
+        <li>اسم‌ها = موجودیت، فعل‌ها = رابطه، صفت‌ها = attribute.</li>
+        <li>کاردینالیتی (حداکثر) + مشارکت (حداقل: NOT NULL روی FK).</li>
+      </ul>
+      <h3>کلیدها</h3>
+      <ul>
+        <li>Super ⊇ Candidate (کمینه) → Primary (انتخاب‌شده) + Alternate (UNIQUE).</li>
+        <li>Surrogate PK + natural key با UNIQUE.</li>
+        <li>Auto-inc: کوچک، سریع، قابل حدس. UUIDv4: توزیع‌شده، ولی page split. UUIDv7/ULID: مرتب + توزیع‌شده.</li>
+        <li>UUID ≠ authorization.</li>
+      </ul>
+      <h3>روابط</h3>
+      <ul>
+        <li>1:1 → FK + UNIQUE.</li>
+        <li>1:N → FK در طرف چند.</li>
+        <li>M:N → pivot با PK/UNIQUE ترکیبی + ایندکس معکوس.</li>
+        <li>درخت: adjacency + <code>WITH RECURSIVE</code>، materialized path، closure table.</li>
+      </ul>
+      <h3>نرمال‌سازی</h3>
+      <ul>
+        <li>FD: X → Y. Partial (بخشی از کلید) → نقض 2NF. Transitive → نقض 3NF.</li>
+        <li>ناهنجاری‌ها: insert، update، delete.</li>
+        <li>1NF: اتمیک، بدون گروه تکراری (بدون CSV در ستون).</li>
+        <li>2NF: وابسته به <strong>کل</strong> کلید.</li>
+        <li>3NF: <strong>هیچ چیز جز</strong> کلید.</li>
+        <li>BCNF: هر determinant یک super key؛ ممکن است dependency preservation را از دست بدهد.</li>
+        <li>تجزیه باید lossless باشد.</li>
+        <li>Snapshot (قیمت/آدرس سفارش) ≠ افزونگی.</li>
+      </ul>
+      <h3>Denormalization</h3>
+      <ul>
+        <li>اول نرمال، بعد با اندازه‌گیری denormalize.</li>
+        <li>شمارنده، کپی ستون، جدول خلاصه، cache.</li>
+        <li>Source of truth + مکانیزم همگام‌سازی + job بازسازی.</li>
+      </ul>
+      <h3>Constraint و FK</h3>
+      <ul>
+        <li>NOT NULL پیش‌فرض؛ UNIQUE؛ CHECK (MySQL 8.0.16+)؛ DEFAULT.</li>
+        <li>RESTRICT: داده‌ی مالی/تاریخی. CASCADE: فرزند بی‌معنا بدون والد. SET NULL: رابطه‌ی اختیاری.</li>
+        <li>CASCADE دیتابیس eventهای Eloquent را اجرا نمی‌کند.</li>
+        <li>همه‌ی FKها ایندکس (PostgreSQL خودکار نمی‌سازد).</li>
+      </ul>
+      <h3>نوع داده</h3>
+      <ul>
+        <li>پول: <code>DECIMAL(p,s)</code> یا BIGINT واحد خرد؛ هرگز FLOAT.</li>
+        <li>زمان: UTC ذخیره، محلی نمایش؛ <code>timestamptz</code>؛ MySQL TIMESTAMP تا ۲۰۳۸.</li>
+        <li>VARCHAR با سقف واقعی؛ TEXT برای متن بلند؛ <code>utf8mb4</code>.</li>
+        <li>تلفن/کد ملی/کد پستی = رشته.</li>
+        <li>ENUM: تغییر سخت؛ lookup: پویا؛ VARCHAR + PHP Enum: منطق در کد.</li>
+        <li>JSON: داده‌ی متغیر کم‌کوئری؛ ایندکس با generated column / GIN.</li>
+      </ul>
+      <h3>الگوهای خاص</h3>
+      <ul>
+        <li>Soft delete: بازیابی و حفظ تاریخچه؛ ولی UNIQUE (partial index / generated column)، FK، فراموشی شرط.</li>
+        <li>Polymorphic: <code>morphs()</code>، بدون FK، <code>enforceMorphMap</code>.</li>
+        <li>Audit: ستون‌های created_by، جدول audit با old/new JSON، history با valid_from/valid_to.</li>
+      </ul>
+      <h3>ایندکس</h3>
+      <ul>
+        <li>WHERE، JOIN، ORDER BY، FKها؛ selectivity بالا.</li>
+        <li>Composite: leftmost prefix؛ برابری اول، بازه آخر.</li>
+        <li>Covering index؛ تابع روی ستون و <code>LIKE '%x'</code> ایندکس را می‌کشد.</li>
+        <li>EXPLAIN: type=ALL بد؛ Using filesort/temporary هشدار.</li>
+      </ul>
+      <h3>SQL</h3>
+      <ul>
+        <li>ترتیب: FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT.</li>
+        <li>LEFT JOIN + شرط WHERE روی جدول راست = INNER.</li>
+        <li>Anti-join: <code>LEFT JOIN ... IS NULL</code> یا <code>NOT EXISTS</code>؛ مراقب <code>NOT IN</code> با NULL.</li>
+        <li><code>COUNT(col)</code> NULLها را نمی‌شمارد، <code>COUNT(*)</code> می‌شمارد.</li>
+        <li>Window: <code>ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)</code>.</li>
+      </ul>
+      <h3>Laravel Migration</h3>
+      <ul>
+        <li><code>id()</code>، <code>foreignId()-&gt;constrained()-&gt;cascadeOnDelete()/nullOnDelete()/restrictOnDelete()</code>.</li>
+        <li><code>decimal('price', 12, 2)</code>، <code>ulid()</code>، <code>json()</code>، <code>softDeletes()</code>، <code>morphs()</code>.</li>
+        <li>Migration اجراشده را ویرایش نکن؛ down بنویس؛ Eloquent در migration نه.</li>
+        <li>Laravel 11+: <code>change()</code> همه‌ی modifierها را دوباره می‌خواهد.</li>
+        <li>Expand → migrate data (chunkById) → Contract.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

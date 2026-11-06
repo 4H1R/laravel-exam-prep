@@ -1,0 +1,1280 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CI/CD — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="cicd">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>CI/CD</h1>
+    <p class="lead">یکپارچه‌سازی و تحویل مداوم: از تعریف دقیق CI، Continuous Delivery و Continuous Deployment تا طراحی Pipeline کامل برای Laravel در GitHub Actions و GitLab CI، مدیریت Secretها، استراتژی‌های Deployment، استقرار بدون Downtime، Migrationهای امن، Rollback و متریک‌های DORA.</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="concepts" data-title="CI، Continuous Delivery و Continuous Deployment">
+    <h2>CI، Continuous Delivery و Continuous Deployment</h2>
+    <p>سه اصطلاحی که اغلب با هم قاطی می‌شوند، در واقع سه پله‌ی پشت‌سرهم از اتوماسیون‌اند. هرکدام روی پله‌ی قبلی ساخته می‌شود.</p>
+
+    <h3>Continuous Integration (CI)</h3>
+    <p><strong>CI</strong> یک <strong>روش کار</strong> است (نه فقط یک ابزار): همه‌ی اعضای تیم تغییرات کوچک خود را <strong>مکرراً (دست‌کم روزی یک بار)</strong> در شاخه‌ی اصلی مشترک (mainline) ادغام می‌کنند و <strong>هر ادغام به‌صورت خودکار build و تست می‌شود</strong>. هدف این است که مشکلات یکپارچه‌سازی (conflict، شکستن قرارداد بین ماژول‌ها، تست‌های شکسته) در چند دقیقه کشف شوند، نه در هفته‌ی آخر قبل از release.</p>
+    <ul>
+      <li>کد در یک مخزن مشترک با شاخه‌ی اصلی همیشه «سبز».</li>
+      <li>build و تست خودکار روی هر push و هر Pull Request.</li>
+      <li>اگر build شکست، <strong>اولویت تیم درست کردن فوری آن است</strong> («stop the line»).</li>
+    </ul>
+
+    <h3>Continuous Delivery (CD)</h3>
+    <p><strong>Continuous Delivery</strong> یعنی هر تغییری که از Pipeline عبور می‌کند، <strong>همیشه در وضعیت قابل‌انتشار (releasable)</strong> است و انتشار آن روی Production با <strong>یک تصمیم انسانی و یک کلیک</strong> انجام می‌شود. همه‌ی مراحل (build، تست، استقرار روی staging، تست‌های پذیرش) خودکارند؛ فقط «دکمه‌ی آخر» دستی است و آن هم یک تصمیم کسب‌وکاری است، نه یک کار فنی پرخطا.</p>
+
+    <h3>Continuous Deployment</h3>
+    <p><strong>Continuous Deployment</strong> یک قدم جلوتر است: هر تغییری که همه‌ی مراحل Pipeline را با موفقیت پشت سر بگذارد، <strong>بدون دخالت انسان</strong> روی Production مستقر می‌شود. پیش‌نیاز آن، تست خودکار بسیار قابل‌اعتماد، Monitoring قوی، Rollback خودکار یا سریع و معمولاً <strong>Feature Flag</strong> است.</p>
+
+    <pre class="diagram">  commit ──► build ──► unit/integration tests ──► staging ──► acceptance ──► [ production ]
+  └─────────── Continuous Integration ───────┘
+  └──────────────────────── Continuous Delivery ──────────────────────┘  (دکمه‌ی دستی)
+  └──────────────────────── Continuous Deployment ────────────────────────────────────┘  (خودکار)</pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>Continuous Integration</th><th>Continuous Delivery</th><th>Continuous Deployment</th></tr></thead>
+      <tbody>
+        <tr><td>هدف</td><td>کشف سریع خطای ادغام</td><td>همیشه آماده‌ی انتشار</td><td>انتشار خودکار هر تغییر سالم</td></tr>
+        <tr><td>خروجی</td><td>build سبز + گزارش تست</td><td>artifact تأییدشده روی staging</td><td>تغییر روی Production</td></tr>
+        <tr><td>انتشار در Production</td><td>خارج از دامنه</td><td>دستی (یک کلیک / Approval)</td><td>خودکار</td></tr>
+        <tr><td>پیش‌نیاز</td><td>تست خودکار، build خودکار</td><td>+ استقرار خودکار، محیط staging شبیه prod</td><td>+ اعتماد بالا به تست، Monitoring، Rollback، Feature Flag</td></tr>
+        <tr><td>ریسک هر انتشار</td><td>—</td><td>کم (تغییرات کوچک)</td><td>بسیار کم ولی نیازمند بلوغ بالا</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p>تفاوت کلیدی <strong>Delivery</strong> و <strong>Deployment</strong> فقط در یک چیز است: آیا رفتن به Production نیاز به تأیید انسانی دارد یا نه. در هر دو، کد <em>همیشه</em> قابل‌انتشار است. جمله‌ی طلایی: «Continuous Delivery یعنی می‌توانی هر لحظه منتشر کنی؛ Continuous Deployment یعنی واقعاً هر بار منتشر می‌کنی.»</p></div>
+
+    <div class="callout warn"><p>داشتن یک سرور Jenkins یا یک فایل <code>.github/workflows</code> به معنی «انجام CI» نیست. اگر برنچ‌ها هفته‌ها جدا بمانند و دیر merge شوند، فقط «build خودکار روی برنچ» دارید، نه Continuous Integration.</p></div>
+
+    <dl class="terms">
+      <dt>Pipeline</dt><dd>زنجیره‌ی خودکار مراحل (stage/job) که از commit تا انتشار اجرا می‌شود؛ معمولاً به‌صورت «Pipeline as Code» در مخزن نگهداری می‌شود.</dd>
+      <dt>Artifact</dt><dd>خروجی قابل‌استقرار build (فایل zip، Docker image، پکیج) که یک‌بار ساخته و بین محیط‌ها جابه‌جا می‌شود.</dd>
+      <dt>Mainline / Trunk</dt><dd>شاخه‌ی اصلی مشترک (<code>main</code>) که باید همیشه سالم و قابل‌انتشار باشد.</dd>
+      <dt>Release</dt><dd>در دسترس قرار دادن یک قابلیت برای کاربر؛ می‌تواند از Deployment (قرار دادن کد روی سرور) جدا باشد.</dd>
+    </dl>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="why" data-title="چرا CI/CD؟ حلقه‌ی بازخورد و Batchهای کوچک">
+    <h2>چرا CI/CD؟ حلقه‌ی بازخورد و Batchهای کوچک</h2>
+    <p>منطق اصلی CI/CD از دو ایده می‌آید: <strong>کوتاه کردن حلقه‌ی بازخورد (feedback loop)</strong> و <strong>کوچک کردن اندازه‌ی هر تغییر (batch size)</strong>.</p>
+
+    <h3>حلقه‌ی بازخورد کوتاه</h3>
+    <p>هزینه‌ی رفع یک باگ با فاصله‌ی زمانی بین ایجاد و کشف آن رابطه‌ی مستقیم دارد. اگر توسعه‌دهنده ۱۰ دقیقه بعد از push بفهمد تستی شکسته، هنوز context ذهنی را دارد و در چند دقیقه درستش می‌کند. اگر سه هفته بعد در QA یا Production کشف شود، باید ابتدا بفهمد کدام تغییر از میان ده‌ها تغییر مقصر است.</p>
+
+    <h3>Batch کوچک = ریسک کم</h3>
+    <ul>
+      <li><strong>Blast radius کوچک‌تر:</strong> یک deploy با ۳ commit اگر خراب شود، دامنه‌ی جست‌وجو محدود است؛ یک release ماهانه با ۲۰۰ commit این‌طور نیست.</li>
+      <li><strong>Rollback آسان‌تر:</strong> برگرداندن یک تغییر کوچک ساده و کم‌عارضه است.</li>
+      <li><strong>Merge conflict کمتر:</strong> برنچ‌های کوتاه‌عمر با main فاصله‌ی زیادی پیدا نمی‌کنند.</li>
+      <li><strong>Code review بهتر:</strong> PR با ۱۵۰ خط واقعاً review می‌شود؛ PR با ۳۰۰۰ خط فقط «Approve» می‌گیرد.</li>
+      <li><strong>ارزش زودتر به کاربر می‌رسد</strong> و بازخورد کسب‌وکاری هم سریع‌تر برمی‌گردد.</li>
+    </ul>
+
+    <h3>مزایای دیگر</h3>
+    <div class="grid-2">
+      <div class="card"><h4>فنی</h4><ul>
+        <li>تکرارپذیری: deploy یک اسکریپت است، نه یک «مراسم» دستی.</li>
+        <li>کاهش خطای انسانی (فراموش کردن migrate یا cache:clear).</li>
+        <li>کیفیت یکنواخت: lint، static analysis و تست برای همه اجباری است.</li>
+        <li>ثبت تاریخچه: هر deploy قابل ردیابی تا commit و PR است.</li>
+      </ul></div>
+      <div class="card"><h4>سازمانی</h4><ul>
+        <li>کاهش ترس از deploy؛ deploy به یک رویداد عادی تبدیل می‌شود.</li>
+        <li>Lead time کمتر از ایده تا Production.</li>
+        <li>شفافیت: همه وضعیت build و محیط‌ها را می‌بینند.</li>
+        <li>امکان اندازه‌گیری (متریک‌های DORA).</li>
+      </ul></div>
+    </div>
+
+    <div class="callout exam"><p>اگر پرسیدند «چرا deploy مکرر ریسک را <em>کم</em> می‌کند در حالی که تعداد deployها بیشتر شده؟» پاسخ: ریسک هر deploy متناسب با <strong>اندازه‌ی تغییر</strong> است نه تعداد deployها. تغییرات کوچک، تشخیص و Rollback سریع و تمرین مداوم فرایند، احتمال و اثر شکست را کاهش می‌دهند. «If it hurts, do it more often.»</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="pipeline-stages" data-title="مراحل یک Pipeline استاندارد">
+    <h2>مراحل یک Pipeline استاندارد</h2>
+    <p>ترتیب مراحل بر اساس اصل <strong>fail fast</strong> چیده می‌شود: کارهای سریع و ارزان که احتمال شکستشان بالاست اول اجرا می‌شوند تا بازخورد در کمترین زمان برسد.</p>
+
+    <pre class="diagram">checkout ─► install deps (cache) ─► lint/style ─► static analysis ─► tests (+DB) ─► security audit
+                                                                                       │
+                     deploy prod ◄── approval ◄── deploy staging ◄── build artifact/image ◄┘</pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>مرحله</th><th>ابزار در اکوسیستم Laravel</th><th>چه چیزی را می‌گیرد</th></tr></thead>
+      <tbody>
+        <tr><td>Checkout</td><td><code>actions/checkout</code> / clone خودکار GitLab</td><td>—</td></tr>
+        <tr><td>Install با Cache</td><td><code>composer install</code>، <code>npm ci</code></td><td>وابستگی ناسازگار، lock file خراب</td></tr>
+        <tr><td>Lint / Code Style</td><td><strong>Laravel Pint</strong> (<code>vendor/bin/pint --test</code>)</td><td>نقض استاندارد کدنویسی (PSR-12 / preset لاراول)</td></tr>
+        <tr><td>Static Analysis</td><td><strong>PHPStan</strong> + <strong>Larastan</strong></td><td>خطای نوع، متد ناموجود، null-safety، باگ‌های قابل کشف بدون اجرا</td></tr>
+        <tr><td>Tests</td><td>PHPUnit / Pest (<code>php artisan test</code>) با سرویس MySQL</td><td>رگرسیون رفتاری</td></tr>
+        <tr><td>Security Audit</td><td><code>composer audit</code>، <code>npm audit</code>، اسکن image (Trivy)، secret scanning</td><td>وابستگی دارای CVE شناخته‌شده، secret نشت‌کرده</td></tr>
+        <tr><td>Build Artifact</td><td><code>docker build</code> یا آرشیو release + <code>npm run build</code></td><td>مشکلات build</td></tr>
+        <tr><td>Deploy</td><td>Deployer، Envoyer، اسکریپت SSH، Kubernetes/Helm</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Pint</h3>
+    <p>Pint یک wrapper روی PHP-CS-Fixer با preset پیش‌فرض Laravel است. در CI با <code>--test</code> اجرا می‌شود تا فقط گزارش دهد و فایلی را تغییر ندهد (در صورت مغایرت exit code غیرصفر برمی‌گرداند).</p>
+    <pre><code class="language-bash">vendor/bin/pint --test        # در CI: فقط بررسی
+vendor/bin/pint --dirty       # در لوکال: فقط فایل‌های تغییرکرده را اصلاح کن</code></pre>
+
+    <h3>PHPStan و Larastan</h3>
+    <p>PHPStan کد را بدون اجرا تحلیل می‌کند. Larastan افزونه‌ای است که «جادو»ی Laravel (Facadeها، propertyهای Eloquent، relationها، Builder) را برای PHPStan قابل‌فهم می‌کند. سطح سخت‌گیری با <code>level</code> (۰ تا ۹/max) تعیین می‌شود. در پروژه‌ی قدیمی با <strong>baseline</strong> خطاهای فعلی را ثبت می‌کنند تا فقط خطای جدید جلوی merge را بگیرد.</p>
+    <pre><code class="language-yaml"># phpstan.neon
+includes:
+    - vendor/larastan/larastan/extension.neon
+parameters:
+    paths:
+        - app/
+    level: 6</code></pre>
+    <pre><code class="language-bash">vendor/bin/phpstan analyse --memory-limit=1G
+vendor/bin/phpstan analyse --generate-baseline   # ثبت خطاهای موجود در phpstan-baseline.neon</code></pre>
+
+    <h3>تست با پایگاه‌داده‌ی واقعی</h3>
+    <p>SQLite in-memory سریع است، اما رفتارش با MySQL/PostgreSQL فرق دارد (نوع داده‌ها، foreign key، JSON، collation، قفل‌ها). برای اطمینان، دست‌کم یک job باید با همان موتوری که در Production دارید اجرا شود؛ در CI این کار با <strong>service container</strong> انجام می‌شود.</p>
+
+    <div class="callout tip"><p>سریع‌ترین بررسی‌ها (Pint، PHPStan) را می‌توان به‌صورت <strong>job موازی</strong> کنار تست‌ها اجرا کرد. هر job که به خروجی دیگری نیاز ندارد نباید منتظر آن بماند؛ فقط مرحله‌ی build/deploy باید به همه‌ی بررسی‌ها وابسته (<code>needs</code>) باشد.</p></div>
+
+    <div class="callout exam"><p>اصل «<strong>Build once, deploy many</strong>»: artifact (مثلاً Docker image با tag برابر SHA کامیت) فقط یک بار ساخته می‌شود و <em>همان</em> artifact روی staging و سپس production مستقر می‌شود. تفاوت محیط‌ها فقط در پیکربندی (env vars/secrets) است. ساختن دوباره برای هر محیط یعنی چیزی که تست شده با چیزی که منتشر می‌شود الزاماً یکی نیست.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="github-actions" data-title="Workflow کامل GitHub Actions برای Laravel">
+    <h2>Workflow کامل GitHub Actions برای Laravel</h2>
+    <p>در GitHub Actions، هر <strong>workflow</strong> یک فایل YAML در <code>.github/workflows/</code> است که با یک یا چند <strong>event</strong> (<code>push</code>، <code>pull_request</code>، <code>workflow_dispatch</code>، <code>schedule</code>) فعال می‌شود. workflow شامل چند <strong>job</strong> است که به‌طور پیش‌فرض موازی و هرکدام روی یک <strong>runner</strong> تازه اجرا می‌شوند؛ هر job شامل چند <strong>step</strong> است که یا دستور shell (<code>run</code>) هستند یا یک <strong>action</strong> آماده (<code>uses</code>).</p>
+
+    <pre><code class="language-yaml"># .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# اگر روی همان برنچ push جدیدی آمد، اجرای قبلی لغو شود
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read          # اصل حداقل دسترسی برای GITHUB_TOKEN
+
+jobs:
+  quality:
+    name: Pint &amp; PHPStan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer:v2
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" &gt;&gt; "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: vendor/bin/pint --test
+      - run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+  tests:
+    name: Tests (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: &gt;-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: testing
+      DB_USERNAME: root
+      DB_PASSWORD: password
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, pdo_mysql, bcmath, intl, redis
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" &gt;&gt; "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-php${{ matrix.php }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php${{ matrix.php }}-
+
+      - run: composer install --no-interaction --prefer-dist --no-progress
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci &amp;&amp; npm run build      # برای تست‌هایی که manifest ویت را لازم دارند
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - run: php artisan migrate --force
+      - run: php artisan test
+
+      - name: Security audit
+        run: composer audit
+
+  build-image:
+    needs: [quality, tests]
+    if: github.event_name == 'push' &amp;&amp; github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    needs: build-image
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - run: ./scripts/deploy.sh staging ${{ github.sha }}
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://example.com
+    steps:
+      - run: ./scripts/deploy.sh production ${{ github.sha }}
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}</code></pre>
+
+    <h3>نکات این workflow</h3>
+    <ul>
+      <li><strong>Matrix:</strong> job تست برای هر نسخه‌ی PHP یک‌بار جداگانه و موازی اجرا می‌شود. <code>fail-fast: false</code> باعث می‌شود شکست یک نسخه بقیه را لغو نکند تا تصویر کامل را ببینید.</li>
+      <li><strong>Service container:</strong> MySQL کنار job بالا می‌آید. چون job مستقیماً روی runner (نه داخل container) اجرا می‌شود، با <code>127.0.0.1</code> و پورت map شده به آن وصل می‌شویم. گزینه‌های <code>--health-cmd</code> باعث می‌شوند stepها تا سالم شدن MySQL منتظر بمانند.</li>
+      <li><strong>Cache:</strong> کلید cache به <code>hashFiles('composer.lock')</code> وابسته است؛ با تغییر lock file کلید عوض می‌شود و <code>restore-keys</code> نزدیک‌ترین cache قبلی را بازیابی می‌کند. ما پوشه‌ی cache خود Composer (دانلودها) را cache می‌کنیم؛ <code>composer install</code> همچنان اجرا می‌شود و صحت نصب را تضمین می‌کند.</li>
+      <li><strong>متغیرهای env در سطح job</strong> بر مقادیر <code>.env</code> اولویت دارند، چون Laravel متغیرهای محیطی موجود را با مقدار فایل <code>.env</code> بازنویسی نمی‌کند.</li>
+      <li><strong><code>concurrency</code></strong> اجرای قدیمی روی همان برنچ را لغو می‌کند و در دقیقه‌های runner صرفه‌جویی می‌شود.</li>
+      <li><strong><code>environment: production</code></strong> اجازه می‌دهد قوانین حفاظتی (reviewer اجباری، محدودیت برنچ) و secretهای مخصوص آن محیط اعمال شوند.</li>
+      <li><strong>tag تصویر = <code>github.sha</code>:</strong> تغییرناپذیر و قابل ردیابی تا کامیت؛ همان tag روی staging و production می‌رود.</li>
+    </ul>
+
+    <div class="callout warn"><p>اکشن‌های شخص ثالث را دست‌کم با major version (<code>@v4</code>) و در محیط‌های حساس با <strong>commit SHA کامل</strong> pin کنید؛ tag یک action ممکن است جابه‌جا شود و کد مخرب در Pipeline شما اجرا کند. همچنین مراقب رویداد <code>pull_request_target</code> باشید: در context مخزن اصلی و با دسترسی به secretها اجرا می‌شود و checkout کردن کد PR از fork در آن یک آسیب‌پذیری شناخته‌شده است.</p></div>
+
+    <div class="callout exam"><p>اجزای اصلی را بتوانید نام ببرید: <strong>Workflow → Event (on) → Job → Step → Action/Run</strong>، به‌علاوه‌ی <strong>Runner</strong> (ماشین اجراکننده)، <code>needs</code> (وابستگی و ترتیب jobها)، <code>matrix</code>، <code>services</code>، <code>secrets</code> و <code>environment</code>.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="gitlab-ci" data-title="معادل در GitLab CI">
+    <h2>معادل در GitLab CI</h2>
+    <p>در GitLab، Pipeline در فایل <code>.gitlab-ci.yml</code> در ریشه‌ی مخزن تعریف می‌شود. مفاهیم معادل‌اند ولی نام‌ها فرق دارند: <strong>stages</strong> ترتیب اجرا را تعیین می‌کنند، jobهای یک stage موازی اجرا می‌شوند و هر job روی یک <strong>GitLab Runner</strong> (معمولاً با executor داکر) داخل image مشخص‌شده اجرا می‌شود.</p>
+
+    <pre><code class="language-yaml"># .gitlab-ci.yml
+stages: [quality, test, build, deploy]
+
+default:
+  image: registry.example.com/ci/php:8.3   # image آماده با extensionها و Composer
+
+variables:
+  COMPOSER_CACHE_DIR: "$CI_PROJECT_DIR/.composer-cache"
+
+.composer: &amp;composer
+  cache:
+    key:
+      files: [composer.lock]
+    paths: [.composer-cache/]
+  before_script:
+    - composer install --no-interaction --prefer-dist --no-progress
+
+pint:
+  stage: quality
+  &lt;&lt;: *composer
+  script:
+    - vendor/bin/pint --test
+
+phpstan:
+  stage: quality
+  &lt;&lt;: *composer
+  script:
+    - vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+tests:
+  stage: test
+  &lt;&lt;: *composer
+  parallel:
+    matrix:
+      - PHP_VERSION: ["8.3", "8.4"]
+  image: registry.example.com/ci/php:$PHP_VERSION
+  services:
+    - name: mysql:8.0
+      alias: mysql
+  variables:
+    MYSQL_DATABASE: testing
+    MYSQL_ROOT_PASSWORD: password
+    DB_CONNECTION: mysql
+    DB_HOST: mysql          # در GitLab سرویس با alias در دسترس است، نه 127.0.0.1
+    DB_DATABASE: testing
+    DB_USERNAME: root
+    DB_PASSWORD: password
+  script:
+    - cp .env.example .env
+    - php artisan key:generate
+    - php artisan migrate --force
+    - php artisan test --log-junit report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
+build-image:
+  stage: build
+  image: docker:27
+  services: [docker:27-dind]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+
+deploy-staging:
+  stage: deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  environment:
+    name: staging
+  script:
+    - ./scripts/deploy.sh staging "$CI_COMMIT_SHA"
+
+deploy-production:
+  stage: deploy
+  needs: [deploy-staging]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual          # Continuous Delivery: دکمه‌ی دستی
+  environment:
+    name: production
+    url: https://example.com
+  script:
+    - ./scripts/deploy.sh production "$CI_COMMIT_SHA"</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>مفهوم</th><th>GitHub Actions</th><th>GitLab CI</th></tr></thead>
+      <tbody>
+        <tr><td>فایل تعریف</td><td><code>.github/workflows/*.yml</code></td><td><code>.gitlab-ci.yml</code></td></tr>
+        <tr><td>ترتیب</td><td><code>needs</code> بین jobها</td><td><code>stages</code> (+ <code>needs</code> برای DAG)</td></tr>
+        <tr><td>شرط اجرا</td><td><code>if:</code> و فیلتر <code>on:</code></td><td><code>rules:</code></td></tr>
+        <tr><td>Matrix</td><td><code>strategy.matrix</code></td><td><code>parallel.matrix</code></td></tr>
+        <tr><td>دیتابیس کمکی</td><td><code>services</code> (روی localhost با port map)</td><td><code>services</code> (با hostname/alias)</td></tr>
+        <tr><td>Secret</td><td>Repository/Environment Secrets</td><td>CI/CD Variables (Masked / Protected)</td></tr>
+        <tr><td>تأیید دستی</td><td>Environment با Required reviewers</td><td><code>when: manual</code> + Protected Environment</td></tr>
+        <tr><td>استفاده‌ی مجدد</td><td>Reusable workflows، Composite actions</td><td><code>include</code>، <code>extends</code>، YAML anchors</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout note"><p>Docker-in-Docker (<code>dind</code>) نیازمند runner با حالت privileged است که ریسک امنیتی دارد. جایگزین‌هایی مثل Kaniko یا Buildah امکان build image بدون privileged را می‌دهند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="runners-artifacts-cache" data-title="Runner، Artifact و Cache">
+    <h2>Runner، Artifact و Cache</h2>
+
+    <h3>Runner</h3>
+    <p><strong>Runner</strong> ماشین یا عاملی است که jobها را اجرا می‌کند.</p>
+    <div class="grid-2">
+      <div class="card"><h4>Hosted / Shared</h4><ul>
+        <li>توسط GitHub/GitLab مدیریت می‌شود؛ هر job روی ماشین تمیز و یک‌بارمصرف.</li>
+        <li>بدون نگهداری، ولی هزینه بر اساس دقیقه و دسترسی محدود به شبکه‌ی داخلی.</li>
+      </ul></div>
+      <div class="card"><h4>Self-hosted</h4><ul>
+        <li>روی زیرساخت خودتان؛ دسترسی به شبکه‌ی داخلی، سخت‌افزار دلخواه، cache محلی.</li>
+        <li>مسئولیت به‌روزرسانی، امنیت و ایزوله‌سازی با شماست. هرگز برای مخزن عمومی با PR از fork استفاده نکنید.</li>
+      </ul></div>
+    </div>
+
+    <h3>Artifact در برابر Cache</h3>
+    <p>این دو هر دو «ذخیره‌ی فایل بین اجراها» به نظر می‌رسند، اما هدف و ضمانتشان کاملاً متفاوت است:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>Artifact</th><th>Cache</th></tr></thead>
+      <tbody>
+        <tr><td>هدف</td><td>انتقال <strong>خروجی</strong> بین jobها/stageها و نگهداری نتیجه</td><td><strong>تسریع</strong> اجرای بعدی با استفاده‌ی مجدد از وابستگی‌ها</td></tr>
+        <tr><td>نمونه</td><td>build فرانت (<code>public/build</code>)، گزارش تست، coverage، فایل release</td><td>پوشه‌ی cache Composer، <code>~/.npm</code>، لایه‌های Docker</td></tr>
+        <tr><td>ضمانت وجود</td><td>تضمین‌شده برای jobهای بعدی همان pipeline</td><td>«best effort»؛ ممکن است نباشد (cache miss) و job باید بدون آن هم درست کار کند</td></tr>
+        <tr><td>دامنه</td><td>یک اجرای pipeline مشخص</td><td>بین اجراهای مختلف و برنچ‌ها، بر اساس key</td></tr>
+        <tr><td>قابل دانلود برای انسان</td><td>بله</td><td>معمولاً نه</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p>قاعده‌ی ساده: «اگر نبودنش باعث <strong>کندی</strong> شود ← Cache؛ اگر نبودنش باعث <strong>شکست</strong> شود ← Artifact.» هرگز برای درستی pipeline به cache تکیه نکنید.</p></div>
+
+    <div class="callout warn"><p>cache کردن مستقیم پوشه‌ی <code>vendor/</code> با کلید نادرست (مثلاً بدون hash فایل lock یا نسخه‌ی PHP) می‌تواند وابستگی‌های کهنه یا ناسازگار را وارد build کند. کلید cache باید هر چیزی را که روی خروجی اثر دارد (OS، نسخه‌ی PHP، hash فایل lock) شامل شود.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="secrets-protection" data-title="Secretها، Environment Protection و Branch Protection">
+    <h2>Secretها، Environment Protection و Branch Protection</h2>
+
+    <h3>مدیریت Secret</h3>
+    <ul>
+      <li><strong>هرگز</strong> رمز، API key یا فایل <code>.env</code> واقعی را در مخزن commit نکنید؛ فقط <code>.env.example</code> بدون مقدار حساس.</li>
+      <li>Secretها را در بخش امن پلتفرم (GitHub Secrets، GitLab CI/CD Variables با گزینه‌ی <strong>Masked</strong> و <strong>Protected</strong>) یا یک Secret Manager بیرونی (Vault، AWS Secrets Manager) نگه دارید.</li>
+      <li>Secretها فقط از طریق env var به stepهایی که لازم دارند داده شوند، نه سراسری.</li>
+      <li>پلتفرم مقادیر secret را در لاگ ماسک می‌کند، اما اگر مقدار تبدیل شود (base64، بخشی از آن) ماسک کار نمی‌کند؛ پس هرگز آن را <code>echo</code> نکنید.</li>
+      <li>به‌جای کلیدهای بلندمدت ابری، از <strong>OIDC</strong> استفاده کنید: runner یک توکن کوتاه‌مدت از ارائه‌دهنده‌ی ابری می‌گیرد (در GitHub با <code>permissions: id-token: write</code>).</li>
+      <li>Secretها به‌طور پیش‌فرض به workflowهایی که از PR یک fork اجرا می‌شوند داده نمی‌شوند؛ این رفتار را دور نزنید.</li>
+      <li><strong>Least privilege:</strong> کلید deploy فقط به همان سرور/محیط دسترسی داشته باشد و <code>GITHUB_TOKEN</code> با <code>permissions</code> محدود شود.</li>
+      <li>Secret scanning (مثل GitHub secret scanning یا gitleaks) را در pipeline و pre-commit فعال کنید.</li>
+    </ul>
+
+    <div class="callout warn"><p>اگر secretی نشت کرد (در commit یا لاگ)، حذف commit <strong>کافی نیست</strong>؛ تاریخچه‌ی git، forkها و cacheها ممکن است آن را نگه داشته باشند. اولین اقدام <strong>Revoke/Rotate</strong> فوری است، سپس پاک‌سازی تاریخچه و بررسی لاگ‌های دسترسی.</p></div>
+
+    <h3>Environment Protection</h3>
+    <p>در GitHub، یک <strong>Environment</strong> (مثلاً <code>production</code>) می‌تواند secretهای مخصوص خود و قوانین حفاظتی داشته باشد:</p>
+    <ul>
+      <li><strong>Required reviewers:</strong> job تا تأیید افراد مشخص متوقف می‌ماند (پیاده‌سازی Continuous Delivery).</li>
+      <li><strong>Wait timer:</strong> تأخیر اجباری قبل از اجرا.</li>
+      <li><strong>Deployment branches/tags:</strong> فقط از <code>main</code> یا tagهای <code>v*</code> اجازه‌ی deploy باشد.</li>
+    </ul>
+    <p>در GitLab معادل آن <strong>Protected Environments</strong> و <strong>Protected Variables</strong> است؛ متغیر protected فقط در pipelineهای برنچ/tag محافظت‌شده در دسترس است، پس یک برنچ دلخواه نمی‌تواند secret تولید را بخواند.</p>
+
+    <h3>Branch Protection و Required Checks</h3>
+    <ul>
+      <li>جلوگیری از push مستقیم به <code>main</code>؛ تغییر فقط از طریق PR/MR.</li>
+      <li><strong>Required status checks:</strong> PR فقط وقتی merge می‌شود که jobهای مشخص (tests، phpstan، pint) سبز باشند.</li>
+      <li>برنچ PR باید با main به‌روز باشد (یا استفاده از <strong>merge queue</strong> تا ترکیب نهایی تست شود).</li>
+      <li>حداقل تعداد Approval، و رد شدن Approval با push جدید.</li>
+      <li><strong>CODEOWNERS:</strong> review اجباری صاحبان بخش‌های حساس (مثلاً migrationها یا پیکربندی CI).</li>
+      <li>منع force-push و حذف برنچ اصلی؛ امضای commit در صورت نیاز.</li>
+    </ul>
+
+    <div class="callout exam"><p>Branch protection <strong>کنترل پیشگیرانه</strong> روی ورود کد است؛ Environment protection <strong>کنترل روی خروج کد</strong> به محیط‌ها. ترکیب این دو تضمین می‌کند هیچ کدی بدون review و تست سبز به main نمی‌رسد و هیچ deployی بدون مجوز به Production نمی‌رود.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="environments" data-title="محیط‌ها و Promotion">
+    <h2>محیط‌ها و Promotion</h2>
+    <p>یک زنجیره‌ی معمول: <strong>local → CI → dev → staging → production</strong>. گاهی محیط‌های موقت <strong>Preview/Review App</strong> برای هر PR ساخته و بعد از merge حذف می‌شوند.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>محیط</th><th>هدف</th><th>ویژگی</th></tr></thead>
+      <tbody>
+        <tr><td>dev / integration</td><td>یکپارچه‌سازی اولیه، تست تیمی</td><td>داده‌ی ساختگی، ناپایدار، deploy خودکار از main</td></tr>
+        <tr><td>staging / pre-prod</td><td>آخرین بررسی قبل از Production</td><td>تا حد ممکن شبیه Production (نسخه‌ی PHP، MySQL، Redis، queue، پیکربندی)</td></tr>
+        <tr><td>production</td><td>کاربران واقعی</td><td>دسترسی محدود، Monitoring و Alerting کامل</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Promotion</h3>
+    <p><strong>Promotion</strong> یعنی <em>همان artifact</em> پس از موفقیت در یک محیط، به محیط بعدی «ترفیع» داده شود. چیزی که بین محیط‌ها فرق می‌کند فقط <strong>پیکربندی</strong> است (اصل سوم Twelve-Factor App: config در محیط، نه در کد).</p>
+    <pre class="diagram">  build ──► image:3f9c2ab
+                 │
+                 ├──► staging     (.env staging: DB_HOST=stg-db, APP_DEBUG=false)
+                 │       │  smoke tests ✓  +  approval ✓
+                 └──────►└──► production  (.env prod: DB_HOST=prod-db)</pre>
+
+    <ul>
+      <li><strong>Parity:</strong> هرچه staging به production شبیه‌تر باشد، «روی staging کار می‌کرد» کمتر رخ می‌دهد. Docker به یکسان‌سازی runtime کمک زیادی می‌کند.</li>
+      <li><strong>داده:</strong> کپی داده‌ی Production در staging باید ناشناس‌سازی (anonymize) شود.</li>
+      <li><strong>Smoke test</strong> بعد از هر deploy: چند درخواست حیاتی (health check، login، صفحه‌ی اصلی) به‌صورت خودکار.</li>
+      <li>در Laravel، <code>APP_ENV</code> و <code>APP_DEBUG=false</code> در staging و production حتماً تنظیم شوند؛ <code>APP_DEBUG=true</code> در محیط عمومی جزئیات حساس را افشا می‌کند.</li>
+    </ul>
+
+    <div class="callout tip"><p>staging را با همان فرایند و اسکریپتی deploy کنید که production را؛ بدین ترتیب خود فرایند deploy هم ده‌ها بار قبل از Production تست می‌شود.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="deployment-strategies" data-title="استراتژی‌های Deployment">
+    <h2>استراتژی‌های Deployment</h2>
+
+    <h3>Recreate</h3>
+    <p>همه‌ی نمونه‌های نسخه‌ی قدیم متوقف و سپس نسخه‌ی جدید راه‌اندازی می‌شود. ساده‌ترین روش است و هیچ‌وقت دو نسخه هم‌زمان اجرا نمی‌شوند، اما <strong>Downtime</strong> دارد. برای ابزار داخلی یا وقتی دو نسخه نمی‌توانند هم‌زمان کار کنند مناسب است.</p>
+
+    <h3>Rolling Update</h3>
+    <p>نمونه‌ها یکی‌یکی (یا دسته‌دسته) با نسخه‌ی جدید جایگزین می‌شوند و Load Balancer فقط به نمونه‌های سالم ترافیک می‌دهد. پیش‌فرض Kubernetes Deployment است (<code>maxSurge</code>/<code>maxUnavailable</code>). بدون Downtime و بدون نیاز به ظرفیت دوبرابر، اما در طول rollout <strong>دو نسخه هم‌زمان</strong> سرویس می‌دهند و rollback هم یک rolling دیگر است.</p>
+
+    <h3>Blue-Green</h3>
+    <p>دو محیط کامل و یکسان: <strong>Blue</strong> (فعلی، زنده) و <strong>Green</strong> (نسخه‌ی جدید). نسخه‌ی جدید روی Green مستقر و تست می‌شود و سپس Router/Load Balancer <strong>یک‌باره</strong> ترافیک را به Green می‌برد. Rollback = برگرداندن سوییچ به Blue (چند ثانیه).</p>
+    <pre class="diagram">             ┌──► Blue  (v1)  ◄── ترافیک فعلی
+  Router ────┤
+             └──► Green (v2)  ◄── تست، سپس سوییچ</pre>
+    <p>هزینه‌ی آن ظرفیت دوبرابر و چالش <strong>پایگاه‌داده‌ی مشترک</strong> است: هر دو نسخه به یک دیتابیس وصل‌اند، پس schema باید با هر دو سازگار باشد.</p>
+
+    <h3>Canary Release</h3>
+    <p>نسخه‌ی جدید ابتدا برای درصد کوچکی از ترافیک (مثلاً ۱٪ ← ۵٪ ← ۲۵٪ ← ۱۰۰٪) فعال می‌شود و در هر مرحله <strong>متریک‌ها</strong> (نرخ خطا، latency، متریک کسب‌وکاری) با نسخه‌ی قدیم مقایسه می‌شوند. اگر بدتر بود، به‌صورت خودکار یا دستی برمی‌گردد. ریسک را به کمترین تعداد کاربر محدود می‌کند، اما به routing وزن‌دار (Ingress، service mesh) و Monitoring دقیق نیاز دارد.</p>
+
+    <h3>Feature Flags (Feature Toggles)</h3>
+    <p>کد جدید deploy می‌شود ولی پشت یک شرط خاموش است و در زمان اجرا (بدون deploy مجدد) برای همه، گروهی از کاربران یا درصدی روشن می‌شود. بدین ترتیب <strong>Deployment از Release جدا می‌شود</strong>. در Laravel، پکیج رسمی <strong>Laravel Pennant</strong> این کار را انجام می‌دهد:</p>
+    <pre><code class="language-php">&lt;?php
+use Laravel\Pennant\Feature;
+use Illuminate\Support\Lottery;
+
+// AppServiceProvider::boot()
+Feature::define('new-checkout', fn (User $user) =&gt; match (true) {
+    $user-&gt;isInternal() =&gt; true,
+    default =&gt; Lottery::odds(1, 20),   // حدود ۵٪ کاربران
+});
+
+// در کد
+if (Feature::active('new-checkout')) {
+    return $this-&gt;newCheckout($cart);
+}
+return $this-&gt;legacyCheckout($cart);</code></pre>
+    <p>Pennant نتیجه‌ی ارزیابی را برای هر scope (مثلاً کاربر) ذخیره می‌کند تا هر کاربر تجربه‌ی ثابتی داشته باشد.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>استراتژی</th><th>Downtime</th><th>دو نسخه هم‌زمان</th><th>هزینه‌ی زیرساخت</th><th>سرعت Rollback</th><th>پیچیدگی</th></tr></thead>
+      <tbody>
+        <tr><td>Recreate</td><td>دارد</td><td>خیر</td><td>کم</td><td>کند (deploy مجدد)</td><td>کم</td></tr>
+        <tr><td>Rolling</td><td>ندارد</td><td>بله (موقت)</td><td>کم</td><td>متوسط</td><td>متوسط</td></tr>
+        <tr><td>Blue-Green</td><td>ندارد</td><td>خیر (سوییچ یکباره)</td><td>دوبرابر</td><td>بسیار سریع</td><td>متوسط</td></tr>
+        <tr><td>Canary</td><td>ندارد</td><td>بله (کنترل‌شده)</td><td>کم تا متوسط</td><td>سریع</td><td>زیاد</td></tr>
+        <tr><td>Feature Flag</td><td>ندارد</td><td>دو مسیر کد</td><td>کم</td><td>آنی (خاموش کردن flag)</td><td>بدهی فنی flagها</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout warn"><p>Feature Flag بدهی فنی تولید می‌کند: هر flag باید مالک و تاریخ حذف داشته باشد. flagهای قدیمی که هرگز پاک نشده‌اند مسیرهای کد ترکیبی و تست‌نشده می‌سازند.</p></div>
+
+    <div class="callout exam"><p>تفاوت <strong>Canary</strong> و <strong>A/B Testing</strong>: Canary برای کاهش <em>ریسک فنی</em> یک نسخه‌ی جدید است (آیا خطا یا کندی دارد؟)؛ A/B Testing برای سنجش <em>اثر کسب‌وکاری</em> دو نسخه از یک قابلیت (کدام نرخ تبدیل بیشتری دارد؟). ابزار مسیریابی شاید مشترک باشد، هدف متفاوت است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="zero-downtime-laravel" data-title="استقرار بدون Downtime در Laravel">
+    <h2>استقرار بدون Downtime در Laravel</h2>
+    <p>روش کلاسیک روی سرورهای VM (که Deployer و Envoyer هم از آن استفاده می‌کنند) <strong>release directory + symlink</strong> است. هر release در پوشه‌ی جداگانه آماده می‌شود و در انتها یک symlink به‌صورت اتمیک به آن اشاره می‌کند. وب‌سرور همیشه از <code>current</code> سرو می‌کند.</p>
+
+    <pre class="diagram">/var/www/app
+├── current  ──►  releases/20261107103000      (symlink)
+├── releases
+│   ├── 20261105091500
+│   ├── 20261106140000
+│   └── 20261107103000
+│       ├── storage  ──►  ../../shared/storage
+│       └── .env     ──►  ../../shared/.env
+└── shared
+    ├── storage/          (لاگ‌ها، فایل‌های آپلود، sessionهای فایلی)
+    └── .env</pre>
+
+    <h3>مراحل</h3>
+    <ol>
+      <li>ساخت پوشه‌ی جدید در <code>releases/</code> و قرار دادن کد (git clone یا انتقال artifact ساخته‌شده در CI).</li>
+      <li>نصب وابستگی‌ها: <code>composer install --no-dev --optimize-autoloader --no-interaction</code> (asset فرانت ترجیحاً در CI build شده است).</li>
+      <li>لینک کردن منابع مشترک: <code>storage</code> و <code>.env</code> از <code>shared/</code>.</li>
+      <li><code>php artisan migrate --force</code> — گزینه‌ی <code>--force</code> لازم است چون Laravel در محیط production برای اجرای migration تأیید تعاملی می‌خواهد.</li>
+      <li><code>php artisan optimize</code> — cache کردن config، route، view و event برای کارایی.</li>
+      <li><strong>سوییچ اتمیک symlink</strong> <code>current</code> به release جدید.</li>
+      <li><strong>Reload</strong> کردن PHP-FPM (نه restart) تا OPcache کد جدید را بارگذاری کند.</li>
+      <li><code>php artisan queue:restart</code> (یا <code>horizon:terminate</code>) تا workerها با کد جدید بالا بیایند.</li>
+      <li>حذف releaseهای قدیمی (مثلاً نگه داشتن ۵ تای آخر برای rollback).</li>
+    </ol>
+
+    <pre><code class="language-bash">#!/usr/bin/env bash
+set -euo pipefail
+
+APP=/var/www/app
+RELEASE=$APP/releases/$(date +%Y%m%d%H%M%S)
+
+mkdir -p "$RELEASE"
+tar -xzf /tmp/build.tar.gz -C "$RELEASE"          # artifact ساخته‌شده در CI
+
+cd "$RELEASE"
+composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+
+rm -rf storage
+ln -s "$APP/shared/storage" storage
+ln -s "$APP/shared/.env" .env
+
+php artisan migrate --force
+php artisan optimize
+
+# سوییچ اتمیک: ابتدا لینک موقت، سپس rename (rename در یک filesystem اتمیک است)
+ln -sfn "$RELEASE" "$APP/current_tmp"
+mv -Tf "$APP/current_tmp" "$APP/current"
+
+sudo systemctl reload php8.3-fpm
+php artisan queue:restart
+
+# نگه داشتن ۵ release آخر
+ls -1dt "$APP"/releases/* | tail -n +6 | xargs -r rm -rf</code></pre>
+
+    <h3>چرا این جزئیات مهم‌اند؟</h3>
+    <ul>
+      <li><strong><code>ln -sfn</code> به‌تنهایی اتمیک نیست</strong> (ابتدا لینک قبلی را حذف و سپس لینک جدید می‌سازد)؛ ترکیب لینک موقت + <code>mv -T</code> که از <code>rename()</code> استفاده می‌کند اتمیک است.</li>
+      <li><strong>OPcache و realpath cache:</strong> با <code>opcache.validate_timestamps=0</code> در Production، PHP تغییر فایل‌ها را نمی‌بیند؛ reload کردن FPM لازم است. در Nginx هم با <code>fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;</code> مسیر واقعی (بعد از resolve شدن symlink) به PHP داده می‌شود.</li>
+      <li><strong>queue:restart:</strong> workerها فرایندهای بلندمدت‌اند و کد قدیمی را در حافظه دارند. این دستور یک سیگنال در cache ثبت می‌کند؛ هر worker بعد از اتمام job فعلی خارج می‌شود و Supervisor/systemd آن را با کد جدید بالا می‌آورد. پس driver cache باید بین سرورها مشترک باشد (مثلاً Redis).</li>
+      <li><strong>config:cache:</strong> بعد از cache شدن config، فایل <code>.env</code> دیگر خوانده نمی‌شود و <code>env()</code> بیرون از فایل‌های <code>config/</code> مقدار <code>null</code> برمی‌گرداند؛ پس در کد همیشه از <code>config()</code> استفاده کنید.</li>
+      <li><strong>ترتیب migrate و switch:</strong> migration قبل از سوییچ اجرا می‌شود، پس برای چند ثانیه <strong>کد قدیم روی schema جدید</strong> کار می‌کند. migration باید backward-compatible باشد (بخش بعد).</li>
+    </ul>
+
+    <h3>ابزارها</h3>
+    <dl class="terms">
+      <dt>Deployer</dt><dd>ابزار PHP متن‌باز با recipe آماده برای Laravel (<code>recipe/laravel.php</code>)؛ ساختار releases/shared/current، <code>dep deploy</code> و <code>dep rollback</code> را پیاده می‌کند.</dd>
+      <dt>Envoyer</dt><dd>سرویس تجاری رسمی Laravel برای zero-downtime deployment با همین الگو، به‌همراه health check و rollback از طریق داشبورد.</dd>
+      <dt>Envoy</dt><dd>task runner لاراول با سینتکس شبیه Blade برای اجرای دستورات روی سرورها از طریق SSH؛ خودش ساختار release را تحمیل نمی‌کند.</dd>
+      <dt>Forge / Cloud / Vapor</dt><dd>سرویس‌های رسمی provisioning و میزبانی که deploy را خودکار می‌کنند.</dd>
+    </dl>
+
+    <h3>Maintenance Mode در برابر Zero-Downtime</h3>
+    <p><code>php artisan down</code> برنامه را در حالت نگهداری (پاسخ 503) قرار می‌دهد؛ گزینه‌ی <code>--secret</code> اجازه‌ی دسترسی توسعه‌دهنده را با یک توکن می‌دهد و <code>--render</code> یک view از پیش رندرشده نمایش می‌دهد. این روش برای تغییرات بزرگ و ناسازگار قابل قبول است، اما هدف استقرار zero-downtime این است که به آن نیازی نباشد. در محیط چندسروری، driver حالت نگهداری را می‌توان روی cache تنظیم کرد تا روی همه‌ی سرورها اعمال شود.</p>
+
+    <div class="callout note"><p>در دنیای container، معادل همین الگو <strong>rolling update</strong> در Kubernetes یا ECS است: image جدید ساخته می‌شود، podهای جدید پس از گذراندن readiness probe ترافیک می‌گیرند و podهای قدیمی با SIGTERM به‌آرامی خاموش می‌شوند. migration معمولاً به‌صورت یک Job جداگانه (نه در entrypoint هر container) اجرا می‌شود.</p></div>
+
+    <div class="callout exam"><p>اگر پرسیدند «چرا بعد از deploy کد قدیمی هنوز اجرا می‌شود؟» سه مظنون اصلی: <strong>OPcache</strong> (FPM reload نشده)، <strong>queue worker</strong>ها (queue:restart اجرا نشده) و <strong>cacheهای Laravel</strong> (config/route cache از release قبلی یا نیاز به اجرای مجدد optimize).</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="migration-safety" data-title="Migrationهای امن و Rollback">
+    <h2>Migrationهای امن و Rollback</h2>
+    <p>در هر استقرار بدون Downtime، دوره‌ای وجود دارد که <strong>کد نسخه‌ی قدیم و جدید هم‌زمان با یک دیتابیس کار می‌کنند</strong> (rolling، blue-green، canary یا حتی چند ثانیه بین migrate و switch). پس هر تغییر schema باید با هر دو نسخه‌ی کد سازگار باشد.</p>
+
+    <h3>الگوی Expand / Contract (Parallel Change)</h3>
+    <p>هر تغییر ناسازگار به چند deploy کوچک و سازگار شکسته می‌شود. مثال: تغییر نام ستون <code>name</code> به <code>full_name</code>.</p>
+    <ol>
+      <li><strong>Expand:</strong> ستون جدید <code>full_name</code> را nullable اضافه کن. کد را طوری deploy کن که در <em>هر دو</em> ستون بنویسد ولی هنوز از <code>name</code> بخواند.</li>
+      <li><strong>Migrate data:</strong> داده‌های قدیمی را به‌صورت دسته‌ای (chunk) در ستون جدید کپی کن (با job یا command، نه یک UPDATE عظیم که جدول را قفل کند).</li>
+      <li><strong>Switch reads:</strong> کد را deploy کن که از <code>full_name</code> بخواند (و همچنان در هر دو بنویسد).</li>
+      <li><strong>Contract:</strong> بعد از اطمینان، نوشتن در <code>name</code> را حذف کن و در deploy بعدی ستون <code>name</code> را drop کن.</li>
+    </ol>
+
+    <pre><code class="language-php">&lt;?php
+// مرحله‌ی Expand — سازگار با کد قدیم
+return new class extends Migration {
+    public function up(): void
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table-&gt;string('full_name')-&gt;nullable()-&gt;after('name');
+        });
+    }
+};
+
+// Backfill دسته‌ای (در یک command یا job جداگانه)
+User::query()
+    -&gt;whereNull('full_name')
+    -&gt;chunkById(1000, function ($users) {
+        foreach ($users as $user) {
+            $user-&gt;updateQuietly(['full_name' =&gt; $user-&gt;name]);
+        }
+    });</code></pre>
+
+    <h3>قواعد Migration سازگار با عقب (Backward-compatible)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>تغییر</th><th>امن؟</th><th>روش امن</th></tr></thead>
+      <tbody>
+        <tr><td>افزودن جدول جدید</td><td>بله</td><td>—</td></tr>
+        <tr><td>افزودن ستون nullable یا با default</td><td>معمولاً بله</td><td>روی جدول بزرگ، رفتار قفل‌گذاری موتور را بررسی کنید</td></tr>
+        <tr><td>افزودن ستون NOT NULL بدون default</td><td>خیر</td><td>ابتدا nullable، backfill، سپس NOT NULL</td></tr>
+        <tr><td>حذف ستون</td><td>خیر</td><td>ابتدا کد را از ستون جدا کنید، در deploy بعد drop</td></tr>
+        <tr><td>تغییر نام ستون/جدول</td><td>خیر</td><td>Expand/Contract</td></tr>
+        <tr><td>تغییر نوع ستون</td><td>خطرناک</td><td>ستون جدید + backfill</td></tr>
+        <tr><td>افزودن index روی جدول بزرگ</td><td>بسته به موتور</td><td>Online DDL در MySQL 8 یا ابزارهایی مثل gh-ost / pt-online-schema-change</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout warn"><p>Eloquent وقتی ستونی را که در مدل وجود ندارد نمی‌خواند مشکلی ندارد، اما اگر ستونی که کد قدیم هنوز در INSERT استفاده می‌کند drop شود، کد قدیم در همان چند ثانیه‌ی deploy خطا می‌دهد. <strong>ترتیب همیشه: اول کد، بعد schema</strong> برای حذف‌ها؛ <strong>اول schema، بعد کد</strong> برای افزودن‌ها.</p></div>
+
+    <h3>استراتژی‌های Rollback</h3>
+    <ul>
+      <li><strong>Rollback کد:</strong> در الگوی symlink، برگرداندن <code>current</code> به release قبلی (<code>dep rollback</code>)؛ در container، deploy مجدد tag قبلی image (<code>kubectl rollout undo</code>). چون artifactها تغییرناپذیرند، این کار سریع و قابل اعتماد است.</li>
+      <li><strong>Roll forward:</strong> به‌جای برگشت، یک اصلاح سریع (hotfix) از همان pipeline منتشر می‌شود. وقتی pipeline سریع است و تغییرات کوچک‌اند، اغلب گزینه‌ی ترجیحی است.</li>
+      <li><strong>Feature flag kill switch:</strong> سریع‌ترین «rollback»؛ قابلیت معیوب بدون deploy خاموش می‌شود.</li>
+      <li><strong>Rollback دیتابیس:</strong> متد <code>down()</code> و <code>migrate:rollback</code> در Production خطرناک است، چون ممکن است داده‌ی نوشته‌شده بعد از deploy از بین برود (مثلاً drop ستون جدید). با Expand/Contract، کد قدیم روی schema جدید هم کار می‌کند و <strong>نیازی به rollback دیتابیس نیست</strong>.</li>
+      <li>قبل از migrationهای پرخطر <strong>backup</strong> بگیرید و بازیابی آن را تمرین کرده باشید.</li>
+    </ul>
+
+    <div class="callout exam"><p>جمله‌ی کلیدی برای پاسخ: «کد را می‌توان برگرداند، داده را نه. بنابراین migrationها را طوری طراحی می‌کنیم که هیچ‌وقت لازم نباشد برگردند: افزایشی، سازگار با نسخه‌ی قبلی، و حذف‌ها با تأخیر در deploy بعدی.»</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="versioning-releases" data-title="Versioning، Tag و Release">
+    <h2>Versioning، Tag و Release</h2>
+
+    <h3>Semantic Versioning (SemVer)</h3>
+    <p>قالب <code>MAJOR.MINOR.PATCH</code>:</p>
+    <ul>
+      <li><strong>MAJOR:</strong> تغییر ناسازگار با نسخه‌ی قبلی (breaking change) در API عمومی.</li>
+      <li><strong>MINOR:</strong> قابلیت جدید سازگار با قبل.</li>
+      <li><strong>PATCH:</strong> رفع باگ سازگار با قبل.</li>
+      <li>پیش‌انتشار: <code>2.0.0-rc.1</code>، <code>2.0.0-beta.2</code>. نسخه‌ی <code>0.x</code> یعنی API هنوز پایدار نیست.</li>
+    </ul>
+    <p>محدودیت‌های Composer مستقیماً روی SemVer بنا شده‌اند: <code>^11.0</code> یعنی <code>&gt;=11.0 &lt;12.0</code> و <code>~11.2</code> یعنی <code>&gt;=11.2 &lt;12.0</code>. همین دلیل اهمیت رعایت SemVer در پکیج‌هاست.</p>
+
+    <h3>Tag و Release</h3>
+    <pre><code class="language-bash">git tag -a v1.4.0 -m "Release 1.4.0"     # annotated tag (نویسنده، تاریخ، پیام)
+git push origin v1.4.0                    # می‌تواند pipeline انتشار را trigger کند</code></pre>
+    <ul>
+      <li>از <strong>annotated tag</strong> برای release استفاده کنید؛ tag نباید بعد از انتشار جابه‌جا شود.</li>
+      <li>Pipeline می‌تواند با push یک tag به شکل <code>v*</code> فعال شود و image را با tag نسخه منتشر کند.</li>
+      <li>برای اپلیکیشن‌های وب داخلی (نه کتابخانه)، بسیاری از تیم‌ها به‌جای SemVer از SHA کامیت یا CalVer (تاریخ‌محور) استفاده می‌کنند؛ مهم <strong>یکتایی و قابل ردیابی بودن</strong> است.</li>
+    </ul>
+
+    <h3>Changelog و Conventional Commits</h3>
+    <p>با قرارداد <strong>Conventional Commits</strong> (<code>feat:</code>، <code>fix:</code>، <code>chore:</code>، و <code>BREAKING CHANGE:</code> یا <code>feat!:</code>) می‌توان نسخه‌ی بعدی و changelog را خودکار تولید کرد (ابزارهایی مثل release-please یا semantic-release): <code>fix</code> ← PATCH، <code>feat</code> ← MINOR، breaking ← MAJOR. فایل <code>CHANGELOG.md</code> برای انسان نوشته می‌شود (قالب «Keep a Changelog»: Added / Changed / Fixed / Removed / Security) و نباید فقط dump لاگ git باشد.</p>
+    <pre><code class="language-plaintext">feat(orders): add bulk export to CSV
+fix(auth): prevent session fixation on login
+feat(api)!: remove deprecated v1 endpoints
+
+BREAKING CHANGE: /api/v1/* endpoints are removed, use /api/v2.</code></pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="dora-trunk" data-title="متریک‌های DORA و Trunk-Based Development">
+    <h2>متریک‌های DORA و Trunk-Based Development</h2>
+
+    <h3>چهار متریک DORA</h3>
+    <p>پژوهش DORA (DevOps Research and Assessment) چهار متریک را معرفی کرد که با هم <strong>سرعت (throughput)</strong> و <strong>پایداری (stability)</strong> تحویل نرم‌افزار را می‌سنجند. یافته‌ی مهم این پژوهش: تیم‌های برتر در هر دو بُعد هم‌زمان بهترند؛ سرعت و پایداری با هم در تضاد نیستند.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متریک</th><th>تعریف</th><th>بُعد</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Deployment Frequency</strong></td><td>تعداد دفعات deploy موفق روی Production در بازه‌ی زمانی</td><td>سرعت</td></tr>
+        <tr><td><strong>Lead Time for Changes</strong></td><td>زمان از commit تا اجرای آن در Production</td><td>سرعت</td></tr>
+        <tr><td><strong>Change Failure Rate</strong></td><td>درصد deployهایی که باعث خرابی شده و نیاز به hotfix/rollback داشته‌اند</td><td>پایداری</td></tr>
+        <tr><td><strong>Time to Restore Service</strong> (MTTR)</td><td>مدت زمان بازگرداندن سرویس پس از یک خرابی؛ در گزارش‌های جدیدتر با نام Failed Deployment Recovery Time</td><td>پایداری</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>متریک‌ها برای بهبود فرایند تیم‌اند، نه ارزیابی افراد. اگر هدف شوند (Goodhart's Law)، تیم‌ها آن‌ها را بازی می‌دهند؛ مثلاً deployهای خالی برای بالا بردن frequency.</p></div>
+
+    <h3>Trunk-Based Development</h3>
+    <p>همه‌ی توسعه‌دهندگان مستقیماً روی trunk (<code>main</code>) یا روی <strong>برنچ‌های بسیار کوتاه‌عمر</strong> (چند ساعت تا یکی دو روز) کار می‌کنند و دست‌کم روزانه merge می‌کنند. این در واقع شرط لازم برای CI به معنای واقعی است.</p>
+    <ul>
+      <li>کار ناتمام پشت <strong>Feature Flag</strong> merge می‌شود.</li>
+      <li>تغییرات بزرگ با <strong>Branch by Abstraction</strong> انجام می‌شوند: ابتدا یک interface روی پیاده‌سازی قدیم، سپس پیاده‌سازی جدید پشت همان interface، و در نهایت سوییچ و حذف قدیمی.</li>
+      <li>release از روی trunk (یا یک release branch کوتاه که فقط hotfix می‌گیرد).</li>
+    </ul>
+    <div class="grid-2">
+      <div class="card"><h4>Trunk-Based</h4><ul>
+        <li>برنچ‌های کوتاه، merge روزانه</li>
+        <li>conflict کم، بازخورد سریع</li>
+        <li>نیازمند تست خودکار قوی و Feature Flag</li>
+        <li>مناسب SaaS و Continuous Delivery</li>
+      </ul></div>
+      <div class="card"><h4>GitFlow</h4><ul>
+        <li>برنچ‌های <code>develop</code>، <code>feature/*</code>، <code>release/*</code>، <code>hotfix/*</code></li>
+        <li>برنچ‌های طولانی، merge دیر و پرتعارض</li>
+        <li>مناسب نرم‌افزار نسخه‌دار با چند نسخه‌ی پشتیبانی‌شده</li>
+        <li>با CI/CD سریع در تضاد است</li>
+      </ul></div>
+    </div>
+    <div class="callout exam"><p>رابطه‌ی Trunk-Based با CI: «Integration» یعنی ادغام در trunk مشترک. اگر کد روزها در feature branch بماند، هر چقدر هم روی آن build خودکار اجرا شود، با کد بقیه یکپارچه نشده است. پس Trunk-Based Development شیوه‌ی عملی اجرای CI است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="anti-patterns-gitops" data-title="Anti-patternهای Pipeline و GitOps">
+    <h2>Anti-patternهای Pipeline و GitOps</h2>
+
+    <h3>Anti-patternهای رایج</h3>
+    <ul>
+      <li><strong>Flaky tests:</strong> تست‌هایی که بدون تغییر کد گاهی رد و گاهی قبول می‌شوند. اعتماد به pipeline را از بین می‌برند و تیم عادت می‌کند «دوباره اجرا کن». علت‌های رایج در Laravel: وابستگی به زمان واقعی (به‌جای <code>$this-&gt;travelTo()</code> یا <code>Carbon::setTestNow()</code>)، وابستگی به ترتیب اجرای تست‌ها و داده‌ی باقی‌مانده (به‌جای <code>RefreshDatabase</code>)، فراخوانی سرویس خارجی واقعی (به‌جای <code>Http::fake()</code>)، داده‌ی تصادفی بدون seed، و race condition در تست‌های موازی. درمان: قرنطینه‌ی موقت و رفع ریشه‌ای، نه نادیده گرفتن.</li>
+      <li><strong>Pipeline کند:</strong> اگر بازخورد بیش از حدود ۱۰ دقیقه طول بکشد، توسعه‌دهنده سراغ کار دیگری می‌رود و context switch گران می‌شود. راه‌حل: cache، اجرای موازی jobها، تست موازی (<code>php artisan test --parallel</code>)، اجرای تست‌های کند/E2E در مرحله‌ی جدا.</li>
+      <li><strong>مراحل دستی:</strong> «بعد از deploy یادت باشد cache را پاک کنی» یعنی دیر یا زود فراموش می‌شود. هر کار تکراری باید در اسکریپت باشد.</li>
+      <li><strong>build جداگانه برای هر محیط:</strong> نقض «build once, deploy many».</li>
+      <li><strong>نادیده گرفتن شکست:</strong> <code>continue-on-error: true</code> روی تست‌ها، <code>|| true</code> در اسکریپت، یا merge با build قرمز.</li>
+      <li><strong>Secret در مخزن یا لاگ.</strong></li>
+      <li><strong>Pipeline خارج از کد:</strong> پیکربندی کلیک‌شده در UI که نسخه‌بندی و review نمی‌شود؛ به‌جایش Pipeline as Code.</li>
+      <li><strong>وابستگی شناور:</strong> <code>composer update</code> در CI به‌جای <code>composer install</code> از روی lock، یا image پایه با tag <code>latest</code>؛ build غیرقابل‌تکرار می‌شود.</li>
+      <li><strong>Staging متفاوت با Production:</strong> SQLite در staging و MySQL در production، یا نسخه‌ی متفاوت PHP.</li>
+    </ul>
+
+    <h3>GitOps</h3>
+    <p><strong>GitOps</strong> مدلی برای Continuous Deployment (به‌ویژه در Kubernetes) است که در آن <strong>Git تنها منبع حقیقت (single source of truth) برای وضعیت مطلوب زیرساخت و برنامه</strong> است. وضعیت به‌صورت declarative (مانیفست‌های Kubernetes، Helm chart، Kustomize) در یک مخزن نگهداری می‌شود و یک <strong>agent داخل کلاستر</strong> (مثل Argo CD یا Flux) به‌طور مداوم وضعیت واقعی را با Git مقایسه و همگام (reconcile) می‌کند.</p>
+    <pre class="diagram">  CI: test ─► build image:sha ─► PR در مخزن config (image tag = sha)
+                                              │ merge
+                                              ▼
+  Kubernetes cluster ◄── pull &amp; reconcile ── Argo CD / Flux  (مقایسه‌ی مداوم Git با کلاستر)</pre>
+    <div class="grid-2">
+      <div class="card"><h4>Push-based (CI/CD کلاسیک)</h4><ul>
+        <li>Pipeline با credential کلاستر دستور deploy را می‌فرستد.</li>
+        <li>CI باید به Production دسترسی داشته باشد.</li>
+        <li>تغییر دستی روی کلاستر (drift) تشخیص داده نمی‌شود.</li>
+      </ul></div>
+      <div class="card"><h4>Pull-based (GitOps)</h4><ul>
+        <li>agent داخل کلاستر تغییرات را از Git می‌کشد.</li>
+        <li>credential کلاستر بیرون از آن نیست.</li>
+        <li>drift تشخیص و اصلاح می‌شود؛ تاریخچه و audit در Git؛ rollback = <code>git revert</code>.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-cicd-1">
+      <summary>Continuous Integration، Continuous Delivery و Continuous Deployment را تعریف و با هم مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>Continuous Integration:</strong> روشی که در آن توسعه‌دهندگان تغییرات کوچک خود را مکرراً (حداقل روزانه) در شاخه‌ی اصلی مشترک ادغام می‌کنند و هر ادغام به‌صورت خودکار build و تست می‌شود. هدف: کشف سریع خطاهای یکپارچه‌سازی و نگه داشتن main در وضعیت سالم.</p>
+        <p><strong>Continuous Delivery:</strong> ادامه‌ی CI؛ هر تغییری که از Pipeline عبور کند، artifact قابل‌انتشار تولید می‌کند و به‌طور خودکار تا محیط staging مستقر و تست می‌شود. انتشار در Production با یک <strong>تأیید دستی</strong> (یک کلیک) انجام می‌شود.</p>
+        <p><strong>Continuous Deployment:</strong> حذف همان تأیید دستی؛ هر تغییر سبز به‌طور خودکار به Production می‌رود.</p>
+        <ul>
+          <li><strong>تفاوت اصلی Delivery و Deployment:</strong> وجود یا عدم وجود گیت انسانی قبل از Production. در هر دو، کد همیشه قابل‌انتشار است.</li>
+          <li><strong>پیش‌نیازهای Continuous Deployment:</strong> تست خودکار بسیار قابل اعتماد، Monitoring و Alerting، rollback سریع، Feature Flag برای جدا کردن release از deploy و migrationهای backward-compatible.</li>
+          <li><strong>انتخاب:</strong> سازمان‌های دارای الزامات قانونی یا نیاز به هماهنگی کسب‌وکاری معمولاً Continuous Delivery را انتخاب می‌کنند؛ تیم‌های SaaS بالغ به Continuous Deployment می‌رسند.</li>
+        </ul>
+        <p>جمع‌بندی: CI دغدغه‌ی <strong>کیفیت ادغام</strong> است، Delivery دغدغه‌ی <strong>آمادگی دائمی برای انتشار</strong>، و Deployment دغدغه‌ی <strong>اتوماسیون کامل انتشار</strong>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-2">
+      <summary>چرا تغییرات کوچک و deploy مکرر ریسک را کاهش می‌دهد؟ آیا deploy بیشتر به معنای خرابی بیشتر نیست؟</summary>
+      <div class="answer">
+        <p><strong>پاسخ کوتاه:</strong> ریسک هر deploy به <strong>اندازه‌ی تغییر (batch size)</strong> وابسته است، نه به تعداد deployها.</p>
+        <ul>
+          <li><strong>Blast radius کوچک:</strong> deploy با چند commit فقط چند نقطه‌ی احتمالی خرابی دارد؛ release ماهانه با صدها تغییر، ترکیب‌های پیش‌بینی‌نشده‌ی زیادی دارد.</li>
+          <li><strong>تشخیص سریع:</strong> اگر بعد از یک deploy کوچک نرخ خطا بالا رفت، مقصر تقریباً مشخص است؛ MTTR پایین می‌آید.</li>
+          <li><strong>Rollback ساده:</strong> برگرداندن یک تغییر کوچک اثر جانبی کمی دارد.</li>
+          <li><strong>حلقه‌ی بازخورد کوتاه:</strong> توسعه‌دهنده وقتی هنوز context را دارد از مشکل مطلع می‌شود.</li>
+          <li><strong>تمرین فرایند:</strong> وقتی deploy روزانه انجام شود، خودکار، قابل اعتماد و کم‌استرس می‌شود؛ deployهای نادر دستی و پراشتباه می‌مانند.</li>
+          <li><strong>Review بهتر:</strong> PRهای کوچک واقعاً بررسی می‌شوند.</li>
+        </ul>
+        <p>پژوهش DORA هم نشان می‌دهد تیم‌هایی که بیشتر deploy می‌کنند، <strong>Change Failure Rate</strong> پایین‌تر و زمان بازیابی کوتاه‌تری دارند؛ یعنی سرعت و پایداری مکمل‌اند. شرط آن اتوماسیون، تست خودکار و Monitoring است؛ deploy مکرر دستی و بدون تست واقعاً خطرناک است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-3">
+      <summary>یک Pipeline کامل برای یک پروژه‌ی Laravel طراحی کنید. چه مراحلی دارد و ترتیب آن‌ها بر چه اساسی است؟</summary>
+      <div class="answer">
+        <p>ترتیب مراحل بر اساس اصل <strong>fail fast</strong> است: بررسی‌های سریع و ارزان اول، کارهای کند و پرهزینه بعد، و هر مرحله فقط وقتی اجرا شود که پیش‌نیازش سبز باشد.</p>
+        <ol>
+          <li><strong>Checkout</strong> کد.</li>
+          <li><strong>نصب وابستگی‌ها با cache:</strong> <code>composer install --prefer-dist --no-interaction</code> از روی <code>composer.lock</code> (هرگز <code>update</code>) و <code>npm ci</code>؛ cache با کلید hash فایل lock.</li>
+          <li><strong>Code style:</strong> <code>vendor/bin/pint --test</code>.</li>
+          <li><strong>Static analysis:</strong> PHPStan با Larastan (با baseline برای پروژه‌ی قدیمی).</li>
+          <li><strong>تست‌ها:</strong> <code>php artisan test</code> با سرویس MySQL هم‌نسخه‌ی Production، به‌صورت matrix روی نسخه‌های PHP پشتیبانی‌شده؛ گزارش JUnit و coverage به‌عنوان artifact.</li>
+          <li><strong>امنیت:</strong> <code>composer audit</code>، <code>npm audit</code>، secret scanning و اسکن image.</li>
+          <li><strong>Build artifact:</strong> Docker image (یا آرشیو release شامل <code>public/build</code>) با tag برابر SHA کامیت، push به registry. فقط روی main.</li>
+          <li><strong>Deploy staging</strong> خودکار + smoke test.</li>
+          <li><strong>Deploy production</strong> با همان artifact، پس از approval (Continuous Delivery) یا خودکار.</li>
+        </ol>
+        <p><strong>نکات طراحی:</strong> مراحل 3 تا 6 به هم وابسته نیستند و موازی اجرا می‌شوند؛ build فقط به همه‌ی آن‌ها <code>needs</code> دارد. با <code>concurrency</code> اجراهای قدیمی لغو می‌شوند. secretها فقط در jobهای deploy و در scope محیط مربوط تعریف می‌شوند. هدف زمانی کل بازخورد PR زیر حدود ۱۰ دقیقه است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-4">
+      <summary>تفاوت Artifact و Cache در CI را توضیح دهید و برای هرکدام در یک پروژه‌ی Laravel مثال بزنید.</summary>
+      <div class="answer">
+        <p><strong>Artifact</strong> خروجی یک job است که برای استفاده در jobهای بعدی همان pipeline یا برای نگهداری و دانلود ذخیره می‌شود و وجودش <strong>تضمین‌شده</strong> است. <strong>Cache</strong> داده‌ای است که برای <strong>تسریع</strong> اجراهای بعدی نگه داشته می‌شود و ممکن است وجود نداشته باشد (best effort).</p>
+        <ul>
+          <li><strong>مثال Artifact:</strong> خروجی <code>npm run build</code> (پوشه‌ی <code>public/build</code>) که job بسته‌بندی release به آن نیاز دارد؛ گزارش JUnit تست‌ها؛ گزارش coverage؛ فایل tar نهایی release.</li>
+          <li><strong>مثال Cache:</strong> پوشه‌ی cache دانلودهای Composer با کلید <code>hashFiles('composer.lock')</code>، cache npm، cache لایه‌های Docker (<code>type=gha</code>).</li>
+        </ul>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Artifact</th><th>Cache</th></tr></thead>
+          <tbody>
+            <tr><td>هدف</td><td>انتقال خروجی / نتیجه</td><td>سرعت</td></tr>
+            <tr><td>نبودنش</td><td>job شکست می‌خورد</td><td>job کندتر می‌شود</td></tr>
+            <tr><td>دامنه</td><td>یک pipeline</td><td>بین pipelineها با key</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>اشتباه رایج:</strong> تکیه بر cache برای درستی (مثلاً فرض کنیم <code>vendor/</code> از cache می‌آید و <code>composer install</code> را اجرا نکنیم)، یا کلید cache ناقص که وابستگی ناسازگار نسخه‌ی دیگر PHP را بازیابی کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-5">
+      <summary>Secretها را در Pipeline چگونه مدیریت می‌کنید؟ اگر یک API key در لاگ CI یا تاریخچه‌ی git نشت کند چه اقدامی انجام می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>اصول مدیریت secret:</strong></p>
+        <ul>
+          <li>هیچ secretی در مخزن نباشد؛ فقط <code>.env.example</code>. فایل <code>.env</code> در <code>.gitignore</code>.</li>
+          <li>نگهداری در مخزن امن پلتفرم (GitHub Secrets/Environment Secrets، GitLab Masked &amp; Protected Variables) یا Secret Manager (Vault).</li>
+          <li><strong>Scope محدود:</strong> secret تولید فقط در environment <code>production</code> که قوانین حفاظتی دارد؛ در دسترس PRهای fork نباشد.</li>
+          <li><strong>Least privilege:</strong> کلید deploy فقط برای یک سرور/محیط؛ <code>permissions</code> حداقلی برای <code>GITHUB_TOKEN</code>.</li>
+          <li>ترجیح <strong>credential کوتاه‌مدت با OIDC</strong> به کلید بلندمدت.</li>
+          <li>عدم چاپ secret در لاگ (ماسک کردن خودکار با تبدیل مقدار دور زده می‌شود).</li>
+          <li>Secret scanning در CI و pre-commit hook.</li>
+        </ul>
+        <p><strong>واکنش به نشت (به ترتیب):</strong></p>
+        <ol>
+          <li><strong>Revoke و rotate فوری</strong> کلید؛ این مهم‌ترین قدم است، چون باید فرض کنیم کلید دیده شده است.</li>
+          <li>به‌روزرسانی مقدار جدید در Secret store و deploy مجدد سرویس‌های وابسته.</li>
+          <li>بررسی لاگ‌های دسترسی سرویس مربوطه برای استفاده‌ی غیرمجاز در بازه‌ی نشت.</li>
+          <li>پاک کردن لاگ CI و در صورت نیاز بازنویسی تاریخچه‌ی git (مثلاً با git filter-repo)؛ اما این جایگزین rotate نیست، چون clone و forkها ممکن است آن را داشته باشند.</li>
+          <li>Postmortem: چرا رخ داد و چه کنترلی (scanning، ماسک، review) جلوی تکرارش را می‌گیرد.</li>
+        </ol>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-6">
+      <summary>یک workflow در GitHub Actions با push روی هر برنچ، <code>composer update</code> اجرا می‌کند، secret را echo می‌کند، تست‌ها را با <code>continue-on-error</code> اجرا می‌کند و با <code>git pull</code> روی سرور deploy می‌کند. این workflow چه مشکلاتی دارد و چگونه اصلاحش می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>workflow مورد بحث:</strong></p>
+        <pre><code class="language-yaml">on: [push]
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: composer update
+      - run: echo "Using key ${{ secrets.PROD_API_KEY }}"
+      - run: php artisan test
+        continue-on-error: true
+      - run: ssh deploy@prod "cd /var/www &amp;&amp; git pull &amp;&amp; php artisan migrate"</code></pre>
+        <p><strong>مشکلات و اصلاح:</strong></p>
+        <ol>
+          <li><strong><code>composer update</code></strong> به‌جای <code>composer install</code>: نسخه‌های جدیدتر از lock نصب می‌شوند؛ build غیرقابل‌تکرار و کد تست‌شده با کد Production متفاوت است. اصلاح: <code>composer install --no-interaction --prefer-dist</code> و cache با hash فایل lock.</li>
+          <li><strong>چاپ secret در لاگ:</strong> حتی با ماسک، الگوی خطرناکی است. secret فقط به‌صورت env به step لازم داده شود.</li>
+          <li><strong><code>continue-on-error: true</code> روی تست‌ها:</strong> تست قرمز جلوی deploy را نمی‌گیرد؛ عملاً تست بی‌اثر است. باید حذف شود.</li>
+          <li><strong>deploy روی هر push به هر برنچ:</strong> هر feature branch مستقیماً Production را تغییر می‌دهد. deploy باید job جداگانه با <code>needs</code>، شرط <code>if: github.ref == 'refs/heads/main'</code> و <code>environment: production</code> با approval باشد.</li>
+          <li><strong><code>php artisan migrate</code> بدون <code>--force</code></strong> در production منتظر تأیید تعاملی می‌ماند و در عمل اجرا نمی‌شود.</li>
+          <li><strong>deploy با <code>git pull</code> در پوشه‌ی زنده:</strong> Downtime و حالت نیمه‌به‌روز؛ composer install، optimize، reload FPM و queue:restart ندارد؛ rollback ندارد. اصلاح: release directory + symlink (Deployer) یا image تغییرناپذیر.</li>
+          <li><strong>نبود مراحل کیفیت:</strong> Pint، PHPStan، سرویس دیتابیس برای تست، <code>composer audit</code>، و همچنین <code>.env</code> و <code>key:generate</code> برای تست.</li>
+          <li><strong>بدون <code>permissions</code> و <code>concurrency</code>:</strong> توکن با دسترسی پیش‌فرض و احتمال دو deploy هم‌زمان.</li>
+        </ol>
+        <p>نسخه‌ی اصلاح‌شده دو job دارد: <code>test</code> روی <code>push</code> و <code>pull_request</code>، و <code>deploy</code> با <code>needs: test</code>، شرط برنچ main، <code>environment: production</code> و اسکریپت deploy اتمیک.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-7">
+      <summary>استراتژی‌های Rolling، Blue-Green و Canary را مقایسه کنید. هرکدام در چه شرایطی مناسب‌تر است؟</summary>
+      <div class="answer">
+        <p><strong>Rolling:</strong> نمونه‌ها به‌تدریج با نسخه‌ی جدید جایگزین می‌شوند و Load Balancer فقط به نمونه‌های سالم (readiness) ترافیک می‌دهد. نیاز به ظرفیت اضافه‌ی کمی دارد و پیش‌فرض Kubernetes است. عیب: در طول rollout دو نسخه هم‌زمان سرویس می‌دهند و rollback هم تدریجی است.</p>
+        <p><strong>Blue-Green:</strong> دو محیط کامل؛ نسخه‌ی جدید روی محیط غیرفعال مستقر و تست می‌شود، سپس ترافیک یک‌باره سوییچ می‌شود. Rollback در چند ثانیه با برگرداندن سوییچ. عیب: هزینه‌ی زیرساخت دوبرابر (حداقل موقتاً)، و دیتابیس مشترک باید با هر دو نسخه سازگار باشد؛ sessionها و jobهای در حال اجرا هم باید مدیریت شوند.</p>
+        <p><strong>Canary:</strong> نسخه‌ی جدید به درصد کمی از ترافیک داده و با مقایسه‌ی متریک‌ها (نرخ خطا، p95 latency، متریک کسب‌وکاری) مرحله‌به‌مرحله افزایش می‌یابد. کمترین تعداد کاربر در معرض ریسک قرار می‌گیرد. عیب: نیازمند routing وزن‌دار، Monitoring دقیق با تفکیک نسخه، و پیچیدگی عملیاتی.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Rolling</th><th>Blue-Green</th><th>Canary</th></tr></thead>
+          <tbody>
+            <tr><td>هزینه</td><td>کم</td><td>بالا</td><td>متوسط</td></tr>
+            <tr><td>Rollback</td><td>متوسط</td><td>آنی</td><td>سریع</td></tr>
+            <tr><td>در معرض ریسک</td><td>به‌تدریج همه</td><td>همه پس از سوییچ</td><td>درصد کم</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>انتخاب:</strong> Rolling برای اکثر سرویس‌های stateless با ریسک معمولی؛ Blue-Green وقتی rollback آنی و تست کامل قبل از سوییچ مهم است؛ Canary برای سرویس‌های پرترافیک و حساس که خطا هزینه‌ی بالایی دارد و Monitoring بالغ وجود دارد. در همه‌ی آن‌ها migrationها باید Expand/Contract باشند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-8">
+      <summary>مراحل یک Deployment بدون Downtime برای اپلیکیشن Laravel روی سرور را توضیح دهید. هر مرحله چرا لازم است؟</summary>
+      <div class="answer">
+        <p>الگوی استاندارد (Deployer/Envoyer): پوشه‌های <code>releases/</code>، <code>shared/</code> و symlink <code>current</code>.</p>
+        <ol>
+          <li><strong>ساخت release جدید</strong> در پوشه‌ی جدا؛ release فعلی دست‌نخورده سرویس می‌دهد.</li>
+          <li><strong><code>composer install --no-dev --optimize-autoloader</code></strong>: بدون پکیج‌های توسعه و با classmap بهینه.</li>
+          <li><strong>لینک <code>storage</code> و <code>.env</code></strong> از shared تا آپلودها، لاگ‌ها و پیکربندی بین releaseها حفظ شوند.</li>
+          <li><strong><code>php artisan migrate --force</code></strong>؛ <code>--force</code> چون production تأیید تعاملی می‌خواهد. migration باید با کد قدیم سازگار باشد، چون تا سوییچ، کد قدیم روی schema جدید اجرا می‌شود.</li>
+          <li><strong><code>php artisan optimize</code></strong>: cache کردن config، route، view و event.</li>
+          <li><strong>سوییچ اتمیک symlink</strong> (لینک موقت + <code>mv -T</code>) تا هیچ درخواستی به نیمه‌ی راه نخورد.</li>
+          <li><strong>reload PHP-FPM:</strong> با <code>opcache.validate_timestamps=0</code> فایل‌های جدید دیده نمی‌شوند؛ reload به‌صورت graceful درخواست‌های جاری را قطع نمی‌کند. در Nginx از <code>$realpath_root</code> استفاده شود.</li>
+          <li><strong><code>php artisan queue:restart</code></strong>: workerها کد قدیم را در حافظه دارند؛ پس از اتمام job جاری خارج و توسط Supervisor با کد جدید راه‌اندازی می‌شوند.</li>
+          <li><strong>health check / smoke test</strong> و پاک کردن releaseهای قدیمی (نگه داشتن چند عدد برای rollback).</li>
+        </ol>
+        <p><strong>Rollback:</strong> برگرداندن symlink به release قبلی + reload FPM + queue:restart؛ چون migrationها backward-compatible هستند، نیاز به rollback دیتابیس نیست.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-9">
+      <summary>یک سناریو: باید ستون <code>name</code> جدول <code>users</code> (با ۲۰ میلیون رکورد) را به <code>full_name</code> تغییر نام دهید، بدون Downtime و در حالی که rolling deploy دارید. چه می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>مشکل:</strong> <code>renameColumn</code> در یک migration، کد نسخه‌ی قدیم را که هنوز روی برخی سرورها اجرا می‌شود فوراً می‌شکند؛ روی جدول بزرگ هم ممکن است قفل طولانی ایجاد کند.</p>
+        <p><strong>راه‌حل: الگوی Expand/Contract در چند deploy:</strong></p>
+        <ol>
+          <li><strong>Deploy 1 (Expand):</strong> migration افزودن ستون nullable <code>full_name</code>. کد جدید در هر دو ستون می‌نویسد (مثلاً در یک model event یا accessor/mutator) و هنوز از <code>name</code> می‌خواند. این deploy با کد قدیم کاملاً سازگار است.</li>
+          <li><strong>Backfill:</strong> یک artisan command یا job که با <code>chunkById</code> و دسته‌های کوچک (مثلاً ۱۰۰۰ تایی)، با فاصله و قابلیت ادامه، <code>full_name</code> را از <code>name</code> پر کند؛ نه یک <code>UPDATE</code> سنگین که جدول را قفل و replication را عقب بیندازد.</li>
+          <li><strong>Deploy 2:</strong> خواندن از <code>full_name</code>؛ همچنان نوشتن در هر دو (تا اگر rollback شد، نسخه‌ی قبلی داده‌ی درست داشته باشد).</li>
+          <li><strong>Deploy 3:</strong> توقف نوشتن در <code>name</code>؛ در صورت نیاز تبدیل <code>full_name</code> به NOT NULL.</li>
+          <li><strong>Deploy 4 (Contract):</strong> drop ستون <code>name</code>، پس از اطمینان از اینکه هیچ کد، گزارش یا سرویس دیگری از آن استفاده نمی‌کند.</li>
+        </ol>
+        <p><strong>نکات تکمیلی:</strong> روی جدول بزرگ، رفتار DDL موتور (Online DDL در MySQL 8 یا ابزارهایی مثل gh-ost/pt-online-schema-change) را بررسی کنید؛ backup بگیرید؛ replication lag را مانیتور کنید. هزینه‌ی این روش، چند deploy و کمی کد موقت است، در عوض در هر لحظه rollback کد امن است و هیچ‌وقت نیاز به rollback دیتابیس پیدا نمی‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-10">
+      <summary>بلافاصله بعد از یک deploy، نرخ خطای 500 در Production بالا رفته است. به‌عنوان مسئول deploy قدم‌به‌قدم چه می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>اولویت: کاهش اثر روی کاربر (mitigate)، نه پیدا کردن ریشه.</strong></p>
+        <ol>
+          <li><strong>تأیید و ارتباط:</strong> با داشبورد (نرخ خطا، latency) و error tracker (Sentry) تأیید کنید که شروع مشکل با زمان deploy منطبق است. در کانال incident اعلام کنید و deployهای دیگر را متوقف کنید.</li>
+          <li><strong>Mitigation سریع:</strong>
+            <ul>
+              <li>اگر تغییر پشت Feature Flag است: خاموش کردن flag (سریع‌ترین).</li>
+              <li>در غیر این صورت <strong>rollback</strong> به artifact قبلی: <code>dep rollback</code>/سوییچ symlink + reload FPM + <code>queue:restart</code>، یا <code>kubectl rollout undo</code>، یا برگرداندن سوییچ blue-green، یا توقف canary.</li>
+              <li>اگر migration ناسازگار اجرا شده، rollback کد کافی نیست؛ اینجاست که اهمیت migrationهای backward-compatible معلوم می‌شود.</li>
+            </ul>
+          </li>
+          <li><strong>تأیید بازیابی:</strong> بررسی متریک‌ها تا بازگشت به حالت عادی.</li>
+          <li><strong>تحلیل:</strong> روی release معیوب در staging یا با لاگ‌ها و stack traceها ریشه را پیدا کنید (کلید config جدید که در production تنظیم نشده، cache کهنه، وابستگی، کوئری کند و…).</li>
+          <li><strong>Roll forward:</strong> اصلاح با تست رگرسیون جدید از مسیر عادی pipeline (نه hotfix دستی روی سرور).</li>
+          <li><strong>Postmortem بدون سرزنش:</strong> چرا تست‌ها یا canary آن را نگرفتند؟ اقدامات اصلاحی مثل تست جدید، smoke test بعد از deploy، rollback خودکار بر اساس نرخ خطا.</li>
+        </ol>
+        <p>این سناریو مستقیماً روی دو متریک DORA اثر دارد: <strong>Change Failure Rate</strong> و <strong>Time to Restore</strong>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-11">
+      <summary>Feature Flag چیست و چگونه «Deployment» را از «Release» جدا می‌کند؟ مزایا و معایب آن را بنویسید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Feature Flag یک شرط در کد است که مسیر اجرای یک قابلیت را در <strong>زمان اجرا</strong> و بدون deploy مجدد کنترل می‌کند. مقدار آن از پیکربندی، دیتابیس یا سرویس مدیریت flag خوانده می‌شود و می‌تواند به کاربر، گروه یا درصدی از ترافیک وابسته باشد.</p>
+        <p><strong>جدایی Deploy و Release:</strong> Deploy یعنی قرار دادن کد روی سرور (رویداد فنی)؛ Release یعنی فعال کردن قابلیت برای کاربر (تصمیم کسب‌وکاری). با flag، کد ناتمام یا جدید خاموش deploy می‌شود و بعداً برای کارمندان، سپس ۵٪ کاربران و در نهایت همه روشن می‌شود.</p>
+        <pre><code class="language-php">if (Feature::active('new-checkout')) {   // Laravel Pennant
+    return $this-&gt;newCheckout($cart);
+}</code></pre>
+        <p><strong>مزایا:</strong></p>
+        <ul>
+          <li>امکان Trunk-Based Development: کد ناتمام بدون شکستن main merge می‌شود.</li>
+          <li><strong>Kill switch:</strong> rollback آنی قابلیت معیوب.</li>
+          <li>انتشار تدریجی، تست در Production برای کاربران داخلی، A/B testing.</li>
+        </ul>
+        <p><strong>معایب:</strong></p>
+        <ul>
+          <li><strong>بدهی فنی:</strong> flagهای قدیمی که پاک نمی‌شوند کد را پیچیده می‌کنند.</li>
+          <li>ترکیب‌های زیاد flagها، تست را دشوار می‌کند (هر دو مسیر باید تست شوند).</li>
+          <li>flag روی تغییرات schema کمکی نمی‌کند؛ migration همچنان باید سازگار باشد.</li>
+        </ul>
+        <p><strong>بهترین روش:</strong> هر flag مالک و تاریخ انقضا داشته باشد و پس از انتشار کامل حذف شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-12">
+      <summary>متریک‌های DORA را نام ببرید و توضیح دهید هرکدام چه چیزی را می‌سنجد و چگونه می‌توان آن را بهبود داد.</summary>
+      <div class="answer">
+        <p>DORA چهار متریک برای سنجش عملکرد تحویل نرم‌افزار معرفی کرده است؛ دو تا <strong>سرعت</strong> و دو تا <strong>پایداری</strong>:</p>
+        <ol>
+          <li><strong>Deployment Frequency:</strong> هر چند وقت یک‌بار با موفقیت در Production deploy می‌کنیم. بهبود: batch کوچک، اتوماسیون کامل deploy، حذف approvalهای غیرضروری.</li>
+          <li><strong>Lead Time for Changes:</strong> زمان از commit تا اجرا در Production. بهبود: pipeline سریع (cache، موازی‌سازی)، PRهای کوچک و review سریع، Trunk-Based Development.</li>
+          <li><strong>Change Failure Rate:</strong> درصد deployهایی که به خرابی، hotfix یا rollback منجر می‌شوند. بهبود: تست خودکار بهتر، static analysis، staging شبیه production، canary، migrationهای امن.</li>
+          <li><strong>Time to Restore Service:</strong> مدت زمان بازگرداندن سرویس پس از خرابی. بهبود: Monitoring و Alerting خوب (کاهش MTTD)، rollback یک‌کلیکی، Feature Flag، runbook.</li>
+        </ol>
+        <p><strong>نکته‌ی کلیدی:</strong> این چهار با هم معنا دارند. بالا بردن frequency با بالا رفتن failure rate پیشرفت نیست. پژوهش DORA نشان داده تیم‌های برتر در هر چهار متریک هم‌زمان بهترند. متریک‌ها برای بهبود فرایند تیم استفاده شوند، نه رتبه‌بندی افراد، وگرنه بازی داده می‌شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-13">
+      <summary>Trunk-Based Development را با GitFlow مقایسه کنید. چرا گفته می‌شود Trunk-Based پیش‌نیاز CI واقعی است؟</summary>
+      <div class="answer">
+        <p><strong>Trunk-Based Development:</strong> همه روی یک شاخه‌ی اصلی کار می‌کنند و برنچ‌ها بسیار کوتاه‌عمرند (ساعت‌ها تا یکی دو روز). کار ناتمام پشت Feature Flag و تغییرات بزرگ با Branch by Abstraction انجام می‌شود.</p>
+        <p><strong>GitFlow:</strong> مدل چندشاخه‌ای با <code>main</code>، <code>develop</code>، <code>feature/*</code>، <code>release/*</code> و <code>hotfix/*</code>. feature branchها ممکن است هفته‌ها زنده بمانند و release از طریق برنچ release آماده می‌شود.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Trunk-Based</th><th>GitFlow</th></tr></thead>
+          <tbody>
+            <tr><td>عمر برنچ</td><td>کوتاه</td><td>بلند</td></tr>
+            <tr><td>Merge conflict</td><td>کم و کوچک</td><td>زیاد و بزرگ (merge hell)</td></tr>
+            <tr><td>سازگاری با CD</td><td>بالا</td><td>پایین</td></tr>
+            <tr><td>پیش‌نیاز</td><td>تست خودکار قوی، Feature Flag</td><td>فرایند release رسمی</td></tr>
+            <tr><td>مناسب</td><td>SaaS، وب‌اپ با یک نسخه‌ی زنده</td><td>نرم‌افزار نسخه‌دار با چند نسخه‌ی پشتیبانی‌شده</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>چرا پیش‌نیاز CI است:</strong> «Integration» یعنی ادغام کد با کد بقیه‌ی تیم در شاخه‌ی مشترک. اجرای تست روی یک feature branch جدا، فقط آن برنچ را تست می‌کند، نه ترکیبش با کار بقیه. هرچه برنچ طولانی‌تر بماند، یکپارچه‌سازی دیرتر و دردناک‌تر است. پس بدون merge مکرر به trunk، فقط «build خودکار» داریم، نه Continuous Integration.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-14">
+      <summary>تیم شما با «Flaky test» مواجه است و توسعه‌دهندگان عادت کرده‌اند pipeline را دوباره اجرا کنند. علت‌های احتمالی در Laravel و راه‌حل شما چیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> تست flaky بدون تغییر کد، گاهی قبول و گاهی رد می‌شود. خطر اصلی‌اش <strong>از بین رفتن اعتماد به pipeline</strong> است: وقتی قرمز شدن «عادی» شود، شکست‌های واقعی هم نادیده گرفته می‌شوند.</p>
+        <p><strong>علت‌های رایج:</strong></p>
+        <ul>
+          <li><strong>زمان:</strong> وابستگی به <code>now()</code>، تغییر روز یا timezone. راه‌حل: <code>$this-&gt;travelTo(...)</code> یا <code>Carbon::setTestNow()</code>.</li>
+          <li><strong>وضعیت مشترک و ترتیب:</strong> داده‌ی باقی‌مانده از تست دیگر. راه‌حل: trait <code>RefreshDatabase</code>، عدم استفاده از state استاتیک.</li>
+          <li><strong>سرویس خارجی:</strong> فراخوانی واقعی API. راه‌حل: <code>Http::fake()</code>، <code>Queue::fake()</code>، <code>Mail::fake()</code>، <code>Http::preventStrayRequests()</code>.</li>
+          <li><strong>داده‌ی تصادفی:</strong> factory که گاهی مقدار مرزی یا تکراری unique تولید می‌کند.</li>
+          <li><strong>ترتیب نتایج:</strong> فرض ترتیب در کوئری بدون <code>orderBy</code>.</li>
+          <li><strong>Race condition:</strong> در تست‌های موازی یا async، یا انتظار با <code>sleep</code>.</li>
+        </ul>
+        <p><strong>فرایند:</strong></p>
+        <ol>
+          <li>شناسایی با گزارش تاریخچه‌ی تست‌ها (کدام تست با کد یکسان نتیجه‌ی متفاوت دارد).</li>
+          <li><strong>قرنطینه‌ی موقت</strong> (خارج کردن از required checks) با ثبت تیکت و مالک؛ نه حذف بی‌صدا.</li>
+          <li>بازتولید با اجرای مکرر یا ترتیب تصادفی، و رفع ریشه.</li>
+          <li>سیاست تیمی: retry خودکار راه‌حل نیست و فقط مشکل را پنهان می‌کند.</li>
+        </ol>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-15">
+      <summary>اصل «Build once, deploy many» را توضیح دهید. Promotion بین محیط‌ها چگونه باید انجام شود و تفاوت محیط‌ها کجا تعریف می‌شود؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> artifact قابل‌استقرار (مثلاً Docker image یا آرشیو release) <strong>فقط یک بار</strong> در CI ساخته و با شناسه‌ی تغییرناپذیر (SHA کامیت یا نسخه) در registry ذخیره می‌شود. <em>همان</em> artifact ابتدا روی staging و پس از موفقیت روی production مستقر می‌شود.</p>
+        <p><strong>چرا:</strong></p>
+        <ul>
+          <li>چیزی که تست شده دقیقاً همان چیزی است که منتشر می‌شود؛ build مجدد ممکن است وابستگی، image پایه یا ابزار build متفاوتی بگیرد.</li>
+          <li>rollback سریع: artifact قبلی آماده است.</li>
+          <li>ردیابی: از روی نسخه‌ی در حال اجرا، commit و PR مشخص است.</li>
+        </ul>
+        <p><strong>تفاوت محیط‌ها:</strong> فقط در <strong>پیکربندی</strong>، که طبق اصل Twelve-Factor در محیط اجرا تزریق می‌شود (env vars، secretها، فایل <code>.env</code> مشترک در سرور، ConfigMap/Secret در Kubernetes)، نه در کد یا image. بنابراین image نباید <code>.env</code> داشته باشد و <code>config:cache</code> باید در محیط مقصد (زمان deploy یا start) اجرا شود.</p>
+        <p><strong>Promotion:</strong> deploy خودکار به staging ← smoke/acceptance test ← approval (در Continuous Delivery) ← deploy همان tag به production. هرگز «build برای production» جداگانه نداشته باشید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-16">
+      <summary>GitOps چیست و چه تفاوتی با Pipelineهای push-based معمول دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> GitOps رویکردی است که در آن <strong>وضعیت مطلوب</strong> سیستم (مانیفست‌های Kubernetes، Helm/Kustomize، نسخه‌ی imageها) به‌صورت declarative در Git نگهداری می‌شود و یک agent داخل کلاستر (Argo CD، Flux) به‌طور مداوم وضعیت واقعی را با Git مقایسه و <strong>reconcile</strong> می‌کند.</p>
+        <p><strong>جریان کار:</strong> CI کد را تست و image را با tag SHA می‌سازد، سپس tag جدید را در مخزن پیکربندی commit یا PR می‌کند. با merge، agent تغییر را می‌کشد و اعمال می‌کند.</p>
+        <p><strong>تفاوت با push-based:</strong></p>
+        <ul>
+          <li>در push-based، CI با credential کلاستر مستقیماً <code>kubectl apply</code> یا SSH اجرا می‌کند؛ CI به Production دسترسی دارد و سطح حمله بزرگ‌تر است. در GitOps credential داخل کلاستر می‌ماند.</li>
+          <li><strong>Drift detection:</strong> تغییر دستی روی کلاستر شناسایی و به وضعیت Git برگردانده می‌شود.</li>
+          <li><strong>Audit و rollback:</strong> هر تغییر یک commit با نویسنده و review است؛ rollback = <code>git revert</code>.</li>
+        </ul>
+        <p><strong>معایب:</strong> بیشتر مناسب Kubernetes و زیرساخت declarative است؛ مدیریت secret در Git نیازمند ابزار جداگانه (Sealed Secrets، External Secrets) است؛ و migrationهای دیتابیس و کارهای ترتیبی نیاز به طراحی دقیق (hook یا Job) دارند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-cicd-17">
+      <summary>بعد از deploy، تغییر یک مقدار در فایل <code>.env</code> سرور اثری ندارد و در جایی از کد <code>env('PAYMENT_KEY')</code> مقدار <code>null</code> برمی‌گرداند. علت چیست و درست آن چیست؟</summary>
+      <div class="answer">
+        <p><strong>علت:</strong> در فرایند deploy دستور <code>php artisan optimize</code> (یا <code>config:cache</code>) اجرا شده است. این دستور همه‌ی فایل‌های <code>config/</code> را ارزیابی و نتیجه را در یک فایل PHP در <code>bootstrap/cache</code> ذخیره می‌کند. از آن پس Laravel فایل <code>.env</code> را <strong>بارگذاری نمی‌کند</strong>؛ بنابراین:</p>
+        <ul>
+          <li>هر فراخوانی <code>env()</code> بیرون از فایل‌های config مقدار <code>null</code> (یا default) برمی‌گرداند (مگر آنکه آن متغیر واقعاً در environment فرایند تعریف شده باشد).</li>
+          <li>تغییر <code>.env</code> تا زمان cache مجدد config اثری ندارد.</li>
+        </ul>
+        <p><strong>راه درست:</strong></p>
+        <pre><code class="language-php">&lt;?php
+// config/services.php
+'payment' =&gt; [
+    'key' =&gt; env('PAYMENT_KEY'),
+],
+
+// در کد برنامه
+$key = config('services.payment.key');</code></pre>
+        <ul>
+          <li><code>env()</code> <strong>فقط</strong> داخل فایل‌های <code>config/</code>؛ در بقیه‌ی کد همیشه <code>config()</code>.</li>
+          <li>پس از تغییر پیکربندی، <code>php artisan config:cache</code> (یا deploy مجدد) و reload PHP-FPM و <code>queue:restart</code>، چون workerها هم config قدیمی را در حافظه دارند.</li>
+          <li>Larastan می‌تواند فراخوانی <code>env()</code> بیرون از config را گزارش کند و در CI جلوی آن را بگیرد.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>تعاریف</h4>
+      <ul>
+        <li><strong>CI:</strong> merge مکرر (روزانه) به main + build و تست خودکار هر تغییر.</li>
+        <li><strong>Continuous Delivery:</strong> همیشه قابل‌انتشار؛ Production با تأیید دستی.</li>
+        <li><strong>Continuous Deployment:</strong> هر تغییر سبز خودکار به Production.</li>
+        <li><strong>Deploy ≠ Release:</strong> Feature Flag این دو را جدا می‌کند.</li>
+      </ul>
+      <h4>مراحل Pipeline (fail fast)</h4>
+      <ul>
+        <li>checkout ← install (cache) ← Pint ← PHPStan/Larastan ← tests + MySQL ← audit ← build image ← staging ← prod.</li>
+        <li><code>composer install</code> نه <code>update</code>؛ <code>npm ci</code> نه <code>npm install</code>.</li>
+        <li><code>pint --test</code>، <code>phpstan analyse</code>، <code>php artisan test</code>، <code>composer audit</code>.</li>
+        <li><strong>Build once, deploy many</strong>؛ tag image = SHA.</li>
+      </ul>
+      <h4>GitHub Actions</h4>
+      <ul>
+        <li>Workflow ← on ← jobs ← steps (uses/run)؛ runner.</li>
+        <li><code>needs</code>، <code>strategy.matrix</code>، <code>services</code> (localhost + port)، <code>concurrency</code>، <code>permissions</code>، <code>environment</code>.</li>
+        <li>cache key = OS + PHP + <code>hashFiles('composer.lock')</code>.</li>
+      </ul>
+      <h4>GitLab CI</h4>
+      <ul>
+        <li><code>stages</code>، <code>rules</code>، <code>parallel.matrix</code>، <code>services</code> با alias، <code>when: manual</code>، Protected/Masked variables.</li>
+      </ul>
+      <h4>Artifact vs Cache</h4>
+      <ul>
+        <li>Artifact = خروجی، تضمینی، بین jobها. نبودش ← شکست.</li>
+        <li>Cache = سرعت، best effort. نبودش ← کندی.</li>
+      </ul>
+      <h4>امنیت</h4>
+      <ul>
+        <li>Secret در store پلتفرم، scope محدود، OIDC، بدون echo.</li>
+        <li>نشت ← اول rotate، بعد پاک‌سازی.</li>
+        <li>Branch protection + required checks + CODEOWNERS؛ Environment protection + reviewers.</li>
+        <li>pin کردن actionها؛ مراقب <code>pull_request_target</code>.</li>
+      </ul>
+      <h4>استراتژی‌ها</h4>
+      <ul>
+        <li>Recreate: downtime، ساده.</li>
+        <li>Rolling: تدریجی، دو نسخه هم‌زمان، ارزان.</li>
+        <li>Blue-Green: سوییچ آنی، rollback آنی، هزینه ×۲.</li>
+        <li>Canary: درصد کم + مقایسه‌ی متریک؛ پیچیده.</li>
+        <li>Feature Flag (Pennant): kill switch؛ بدهی فنی.</li>
+      </ul>
+      <h4>Zero-downtime Laravel</h4>
+      <ul>
+        <li>releases/ + shared/ (storage، .env) + symlink current.</li>
+        <li>composer --no-dev -o ← migrate --force ← optimize ← switch اتمیک ← reload FPM ← queue:restart.</li>
+        <li><code>$realpath_root</code> در Nginx؛ <code>validate_timestamps=0</code> ⇒ reload لازم.</li>
+        <li>بعد از config:cache: <code>env()</code> فقط در config/.</li>
+        <li>Deployer (<code>dep rollback</code>)، Envoyer، Envoy.</li>
+      </ul>
+      <h4>Migration امن</h4>
+      <ul>
+        <li>Expand ← backfill (chunkById) ← switch reads ← Contract.</li>
+        <li>افزودن: اول schema بعد کد. حذف: اول کد بعد schema.</li>
+        <li>کد را می‌شود برگرداند، داده را نه ⇒ roll forward، بدون <code>migrate:rollback</code> در prod.</li>
+      </ul>
+      <h4>Release</h4>
+      <ul>
+        <li>SemVer: MAJOR (breaking)، MINOR (feature)، PATCH (fix).</li>
+        <li>Annotated tag، Conventional Commits، CHANGELOG.</li>
+      </ul>
+      <h4>DORA</h4>
+      <ul>
+        <li>سرعت: Deployment Frequency، Lead Time for Changes.</li>
+        <li>پایداری: Change Failure Rate، Time to Restore.</li>
+      </ul>
+      <h4>Anti-pattern</h4>
+      <ul>
+        <li>Flaky test، pipeline کند (&gt;۱۰ دقیقه)، مرحله‌ی دستی، build per env، <code>continue-on-error</code>، secret در repo، <code>latest</code>.</li>
+        <li>Trunk-Based = شرط CI واقعی؛ GitFlow = برنچ‌های بلند.</li>
+        <li>GitOps: Git = منبع حقیقت؛ pull + reconcile (Argo CD/Flux)؛ drift detection.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

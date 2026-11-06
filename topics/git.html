@@ -1,0 +1,1148 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Git — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="git">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Git</h1>
+    <p class="lead">مدل داخلی Git (اشیا، index، HEAD و refها)، merge و rebase، بازنویسی و بازگردانی تاریخچه، کار با remote، tag و SemVer، workflowهای تیمی، Pull Request، Conventional Commits و ابزارهای بازیابی مثل reflog و bisect؛ با تمرکز بر اینکه هر دستور «دقیقاً چه چیزی را جابه‌جا می‌کند».</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="core-model" data-title="مدل داخلی Git">
+    <h2>مدل داخلی Git</h2>
+    <p><strong>Git</strong> یک سیستم کنترل نسخه‌ی <strong>توزیع‌شده (Distributed VCS)</strong> است: هر clone یک کپی کامل از کل تاریخچه دارد و بیشتر عملیات (commit، log، diff، branch) کاملاً محلی و بدون شبکه انجام می‌شوند. برخلاف سیستم‌های متمرکز مثل SVN، سرور مرکزی (مثلاً GitHub یا GitLab) فقط یک «قرارداد تیمی» است، نه یک نیاز فنی.</p>
+
+    <h3>Snapshot، نه diff</h3>
+    <p>Git در هر commit یک <strong>snapshot</strong> از کل پروژه ذخیره می‌کند، نه فهرست تغییرات نسبت به نسخه‌ی قبل. فایل‌هایی که تغییر نکرده‌اند دوباره ذخیره نمی‌شوند؛ commit جدید فقط به همان شیء قبلی اشاره می‌کند. diffی که در <code>git log -p</code> می‌بینید در لحظه محاسبه می‌شود. (در packfileها برای فشرده‌سازی از delta استفاده می‌شود، اما این جزئیات ذخیره‌سازی است، نه مدل مفهومی.)</p>
+
+    <h3>اشیای Git (Object Database)</h3>
+    <p>پوشه‌ی <code>.git/objects</code> یک پایگاه داده‌ی <strong>content-addressable</strong> است: کلید هر شیء، hash محتوای آن است. اگر محتوا یک بیت تغییر کند، hash هم تغییر می‌کند؛ بنابراین تاریخچه عملاً <strong>تغییرناپذیر (immutable)</strong> است و «ویرایش» یک commit یعنی ساختن commit جدید با hash جدید.</p>
+    <dl class="terms">
+      <dt>blob</dt><dd>محتوای خام یک فایل (بدون نام و مجوز). دو فایل با محتوای یکسان فقط یک blob دارند.</dd>
+      <dt>tree</dt><dd>معادل یک پوشه: فهرستی از نام‌ها، modeها و اشاره‌گر به blobها و treeهای دیگر.</dd>
+      <dt>commit</dt><dd>اشاره به یک tree ریشه + اشاره به commit(های) والد + author، committer، تاریخ و پیام. commit معمولی یک والد، merge commit دو (یا بیشتر) والد و commit اول هیچ والدی ندارد.</dd>
+      <dt>tag (annotated)</dt><dd>شیئی که به یک commit اشاره می‌کند و نام، پیام، tagger و در صورت نیاز امضا دارد.</dd>
+      <dt>SHA</dt><dd>شناسه‌ی هر شیء؛ به‌طور پیش‌فرض SHA-1 با ۴۰ کاراکتر hex (Git از قالب SHA-256 هم به‌صورت اختیاری پشتیبانی می‌کند). معمولاً ۷ تا ۱۲ کاراکتر اول برای ارجاع کافی است.</dd>
+    </dl>
+
+    <pre class="diagram">commit a1b2c3 ──► tree (root)
+   │                ├── blob  composer.json
+   │                ├── tree  app/
+   │                │     └── blob  User.php
+   │                └── blob  README.md
+   ▼ parent
+commit 9f8e7d ──► tree (root, نسخه‌ی قبلی)</pre>
+
+    <h3>Refها و HEAD</h3>
+    <ul>
+      <li><strong>ref</strong> یک نام خوانا برای یک hash است. branchها در <code>refs/heads/</code>، remote-tracking branchها در <code>refs/remotes/origin/</code> و tagها در <code>refs/tags/</code> قرار دارند.</li>
+      <li><strong>branch</strong> فقط یک اشاره‌گر متحرک به یک commit است (یک فایل کوچک حاوی یک hash). ساختن branch تقریباً هزینه‌ای ندارد؛ به همین دلیل branchهای کوتاه‌عمر در Git رایج‌اند.</li>
+      <li><strong>HEAD</strong> اشاره‌گر به «جایی که الان هستید» است. معمولاً HEAD به یک branch اشاره می‌کند (<code>ref: refs/heads/main</code>) و با هر commit، همان branch جلو می‌رود.</li>
+      <li><strong>Detached HEAD</strong>: وقتی HEAD مستقیماً به یک commit (نه یک branch) اشاره کند؛ مثلاً بعد از <code>git switch --detach v1.2.0</code> یا <code>git checkout &lt;sha&gt;</code>. commitهایی که در این حالت می‌سازید به هیچ branchی وصل نیستند و اگر قبل از رفتن branch نسازید، فقط از طریق reflog قابل بازیابی‌اند.</li>
+    </ul>
+    <pre><code class="language-bash">git cat-file -t a1b2c3      # نوع شیء: commit
+git cat-file -p a1b2c3      # محتوای commit: tree، parent، author، پیام
+git rev-parse HEAD          # hash کامل commit فعلی
+cat .git/HEAD               # ref: refs/heads/main
+git log --oneline --graph --all --decorate</code></pre>
+
+    <h3>ارجاع نسبی به commitها</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نحو</th><th>معنی</th></tr></thead>
+      <tbody>
+        <tr><td><code>HEAD~1</code> / <code>HEAD~3</code></td><td>یک / سه نسل عقب‌تر، همیشه از مسیر والد اول</td></tr>
+        <tr><td><code>HEAD^2</code></td><td>والد دوم یک merge commit (branchی که merge شده)</td></tr>
+        <tr><td><code>main..feature</code></td><td>commitهایی که در feature هستند ولی در main نیستند</td></tr>
+        <tr><td><code>main...feature</code></td><td>commitهایی که فقط در یکی از دو طرف هستند (symmetric difference)</td></tr>
+        <tr><td><code>@{u}</code></td><td>upstream branch فعلی (مثلاً <code>origin/main</code>)</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p>جمله‌ی کلیدی برای پاسخ تشریحی: «در Git هر commit یک snapshot تغییرناپذیر است که با hash محتوایش شناخته می‌شود؛ branch و tag فقط اشاره‌گر به commitها هستند و HEAD نشان می‌دهد الان روی کدام اشاره‌گر هستیم.» تقریباً همه‌ی دستورات Git (reset، rebase، merge، checkout) را می‌شود با این جمله توضیح داد: یا commit جدید می‌سازند، یا اشاره‌گرها را جابه‌جا می‌کنند، یا index و working tree را با یک commit هماهنگ می‌کنند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="three-areas" data-title="سه ناحیه و چرخه روزمره">
+    <h2>سه ناحیه و چرخه روزمره</h2>
+    <p>درک تفاوت سه ناحیه پایه‌ی فهم دستورات <code>add</code>، <code>commit</code>، <code>reset</code> و <code>restore</code> است:</p>
+    <pre class="diagram">Working Tree ──(git add)──► Index / Staging ──(git commit)──► Repository (.git)
+     ▲                              │                                  │
+     └────(git restore file)────────┘                                  │
+     ▲                                                                 │
+     └──────────────(git switch / git restore --source)────────────────┘</pre>
+    <dl class="terms">
+      <dt>Working Tree</dt><dd>فایل‌هایی که روی دیسک می‌بینید و ویرایش می‌کنید.</dd>
+      <dt>Index (Staging Area)</dt><dd>«پیش‌نویس commit بعدی». در واقع یک فایل باینری (<code>.git/index</code>) است که snapshot مورد نظر برای commit بعدی را نگه می‌دارد.</dd>
+      <dt>Repository</dt><dd>پایگاه داده‌ی اشیا و refها؛ commitها اینجا دائمی می‌شوند.</dd>
+    </dl>
+
+    <h3>چرا staging area وجود دارد؟</h3>
+    <p>staging به شما اجازه می‌دهد از میان تغییرات working tree فقط بخشی را انتخاب کنید و <strong>commitهای اتمیک</strong> بسازید؛ مثلاً رفع یک باگ و یک refactor را که هم‌زمان انجام داده‌اید، در دو commit جدا ثبت کنید. با <code>git add -p</code> حتی می‌شود بخش‌هایی (hunk) از یک فایل را stage کرد.</p>
+
+    <pre><code class="language-bash">git status -sb                 # وضعیت کوتاه + branch
+git add -p app/Services/OrderService.php   # stage انتخابی hunkها
+git diff                       # working tree در برابر index (تغییرات unstaged)
+git diff --staged              # index در برابر HEAD (آنچه commit می‌شود)
+git commit -m "fix(order): prevent double charge on retry"
+git commit --amend --no-edit   # افزودن تغییرات stage‌شده به آخرین commit (hash عوض می‌شود)
+git log --oneline -n 10
+git show HEAD --stat</code></pre>
+
+    <div class="callout warn"><p><code>git diff</code> بدون آرگومان تغییرات <strong>stage‌شده</strong> را نشان نمی‌دهد. اگر فایلی را add کرده‌اید و diff خالی است، از <code>git diff --staged</code> (معادل <code>--cached</code>) استفاده کنید.</p></div>
+
+    <h3>.gitignore</h3>
+    <p>فایل <code>.gitignore</code> به Git می‌گوید فایل‌های <strong>untracked</strong> را نادیده بگیرد. نکات مهم:</p>
+    <ul>
+      <li><code>.gitignore</code> روی فایل‌هایی که <strong>از قبل track شده‌اند</strong> اثری ندارد. برای خارج کردن آن‌ها: <code>git rm --cached .env</code> و سپس commit (فایل روی دیسک می‌ماند).</li>
+      <li>الگوها: <code>/vendor</code> فقط در ریشه، <code>logs/</code> فقط پوشه، <code>*.log</code> همه‌جا، <code>**/cache</code> در هر عمق، و <code>!</code> برای استثنا (مثلاً <code>!.gitkeep</code>). اگر پوشه‌ی والد ignore شده باشد، با <code>!</code> نمی‌توان فایلی درون آن را برگرداند.</li>
+      <li>سه سطح: <code>.gitignore</code> در repo (مشترک تیم)، <code>.git/info/exclude</code> (فقط همین clone) و فایل global با <code>core.excludesFile</code> (برای فایل‌های IDE و سیستم‌عامل مثل <code>.idea/</code> و <code>.DS_Store</code>).</li>
+      <li>برای فهمیدن اینکه چرا یک فایل ignore شده: <code>git check-ignore -v path/to/file</code>.</li>
+    </ul>
+    <pre><code class="language-plaintext"># .gitignore نمونه برای پروژه‌ی Laravel
+/vendor
+/node_modules
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+.env
+.env.backup
+.phpunit.result.cache
+/.phpunit.cache
+.idea/
+.vscode/</code></pre>
+    <div class="callout exam"><p>اگر یک secret (مثلاً کلید API داخل <code>.env</code>) commit و push شد، اضافه کردن آن به <code>.gitignore</code> کافی نیست. ترتیب درست: <strong>۱) فوراً کلید را revoke/rotate کنید</strong> (چون باید فرض کرد لو رفته است)، ۲) فایل را با <code>git rm --cached</code> از tracking خارج کنید، ۳) در صورت لزوم تاریخچه را با ابزاری مثل <code>git filter-repo</code> یا BFG پاک‌سازی و با هماهنگی تیم force-push کنید، ۴) با secret scanning (مثلاً gitleaks در pre-commit و CI) از تکرار جلوگیری کنید. <code>.env.example</code> بدون مقادیر حساس commit می‌شود.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="branching-merge" data-title="Branch و Merge">
+    <h2>Branch و Merge</h2>
+    <p>از Git 2.23 دستور <code>git switch</code> برای تعویض branch و <code>git restore</code> برای بازگرداندن فایل‌ها معرفی شدند تا وظایف چندگانه‌ی <code>checkout</code> تفکیک شود. <code>checkout</code> هنوز کار می‌کند.</p>
+    <pre><code class="language-bash">git switch -c feature/invoice-pdf      # ساخت و رفتن به branch جدید
+git switch main
+git branch -vv                          # branchها + upstream + ahead/behind
+git branch -d feature/invoice-pdf       # حذف امن (فقط اگر merge شده باشد)
+git branch -D experiment                # حذف اجباری</code></pre>
+
+    <h3>Fast-forward merge</h3>
+    <p>اگر branch مقصد (مثلاً <code>main</code>) از زمان جدا شدن feature هیچ commit جدیدی نگرفته باشد، Git فقط اشاره‌گر <code>main</code> را جلو می‌برد؛ <strong>هیچ commit جدیدی ساخته نمی‌شود</strong> و تاریخچه خطی می‌ماند.</p>
+    <pre class="diagram">قبل:    A ── B ── C   (main)
+                   └── D ── E   (feature)
+
+بعد از git merge feature  (fast-forward):
+        A ── B ── C ── D ── E   (main, feature)</pre>
+
+    <h3>Three-way merge</h3>
+    <p>اگر هر دو branch commit جدید داشته باشند، Git سه snapshot را مقایسه می‌کند: <strong>merge base</strong> (نزدیک‌ترین جد مشترک)، نوک branch فعلی و نوک branch دیگر. نتیجه یک <strong>merge commit</strong> با دو والد است.</p>
+    <pre class="diagram">        A ── B ── C ── F ────── M   (main)
+                   \           /
+                    D ── E ───┘     (feature)
+
+merge base = C ؛ M دو والد دارد: F (والد اول) و E (والد دوم)</pre>
+    <p>منطق three-way برای هر بخش از فایل: اگر فقط یک طرف نسبت به base تغییر داده باشد، تغییر همان طرف برداشته می‌شود؛ اگر هر دو طرف یک ناحیه را به شکل متفاوت تغییر داده باشند، <strong>conflict</strong> رخ می‌دهد. استراتژی پیش‌فرض merge در نسخه‌های جدید Git، <code>ort</code> است.</p>
+
+    <h3>گزینه‌های مهم merge</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دستور</th><th>نتیجه</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td><code>git merge feature</code></td><td>اگر ممکن باشد fast-forward، وگرنه merge commit</td><td>پیش‌فرض</td></tr>
+        <tr><td><code>git merge --no-ff feature</code></td><td>همیشه merge commit، حتی اگر ff ممکن باشد</td><td>حفظ مرز feature در تاریخچه (رایج در Git Flow)</td></tr>
+        <tr><td><code>git merge --ff-only feature</code></td><td>فقط ff؛ در غیر این صورت خطا</td><td>اطمینان از تاریخچه‌ی خطی</td></tr>
+        <tr><td><code>git merge --squash feature</code></td><td>همه‌ی تغییرات در index قرار می‌گیرند؛ باید خودتان commit کنید و هیچ ارتباط والدی با feature ثبت نمی‌شود</td><td>یک commit تمیز به ازای هر feature</td></tr>
+        <tr><td><code>git merge --abort</code></td><td>بازگشت به وضعیت قبل از merge</td><td>وقتی conflictها پیچیده شد</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout warn"><p>بعد از <code>--squash</code>، Git نمی‌داند که feature «merge شده است». بنابراین <code>git branch -d feature</code> خطا می‌دهد و اگر روی همان branch ادامه دهید و دوباره merge کنید، ممکن است conflictهای تکراری ببینید. بعد از squash-merge، branch را حذف کنید و برای کار بعدی branch تازه بسازید.</p></div>
+
+    <div class="callout exam"><p>تفاوت ff و three-way را همیشه با «آیا commit جدید ساخته می‌شود؟» و «تعداد والدها» توضیح دهید: ff فقط اشاره‌گر را جابه‌جا می‌کند؛ three-way یک commit با دو والد می‌سازد که بر پایه‌ی merge base محاسبه شده است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="conflicts" data-title="Conflict و حل آن">
+    <h2>Conflict و حل آن</h2>
+    <p><strong>Conflict</strong> زمانی رخ می‌دهد که Git نتواند به‌صورت خودکار تصمیم بگیرد؛ معمولاً وقتی دو طرف خطوط یکسانی را نسبت به merge base به شکل متفاوت تغییر داده‌اند، یا یک طرف فایلی را حذف و طرف دیگر آن را ویرایش کرده است. conflict یک خطا نیست؛ Git از شما تصمیم‌گیری انسانی می‌خواهد.</p>
+
+    <pre><code class="language-php">&lt;?php
+class PriceCalculator
+{
+    public function total(Order $order): int
+    {
+&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+        return $order-&gt;subtotal() + $this-&gt;tax($order);
+||||||| base
+        return $order-&gt;subtotal();
+=======
+        return $order-&gt;subtotal() - $order-&gt;discount();
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; feature/discount
+    }
+}</code></pre>
+    <p>بخش میانی (<code>|||||||</code>) فقط وقتی نمایش داده می‌شود که <code>merge.conflictStyle</code> روی <code>diff3</code> یا <code>zdiff3</code> تنظیم شده باشد و بسیار مفید است، چون نشان می‌دهد هر طرف <em>چه چیزی را</em> عوض کرده است. پاسخ درست در این مثال احتمالاً ترکیب هر دو است: <code>subtotal() - discount() + tax()</code>؛ یعنی حل conflict نیازمند فهم منطق کسب‌وکار است، نه انتخاب مکانیکی یک طرف.</p>
+
+    <h3>مراحل حل conflict</h3>
+    <ol>
+      <li><code>git status</code> را ببینید تا فایل‌های unmerged را بشناسید.</li>
+      <li>هر فایل را باز کنید، منطق هر دو طرف را بفهمید و نسخه‌ی نهایی را بنویسید (markerها را حذف کنید).</li>
+      <li>تست‌ها و lint را اجرا کنید؛ کدی که کامپایل یا اجرا نشود ممکن است از نظر Git «حل‌شده» باشد.</li>
+      <li><code>git add &lt;file&gt;</code> برای علامت‌گذاری به‌عنوان resolved.</li>
+      <li>در merge: <code>git commit</code>؛ در rebase: <code>git rebase --continue</code>؛ در cherry-pick: <code>git cherry-pick --continue</code>.</li>
+      <li>در صورت سردرگمی: <code>git merge --abort</code> یا <code>git rebase --abort</code>.</li>
+    </ol>
+
+    <pre><code class="language-bash">git config --global merge.conflictStyle zdiff3
+git checkout --ours   composer.lock    # نسخه‌ی branch فعلی
+git checkout --theirs composer.lock    # نسخه‌ی branch دیگر
+git mergetool                           # ابزار گرافیکی
+git config --global rerere.enabled true # به خاطر سپردن حل conflictهای تکراری</code></pre>
+
+    <div class="callout warn"><p>در <strong>rebase</strong> معنای ours/theirs برعکس به نظر می‌رسد: چون rebase commitهای شما را روی branch مقصد replay می‌کند، <code>--ours</code> یعنی branch پایه (مثلاً main) و <code>--theirs</code> یعنی commit شما که در حال اعمال است.</p></div>
+
+    <div class="callout tip"><p>برای <code>composer.lock</code> یا <code>package-lock.json</code>، به‌جای ویرایش دستی، یکی از دو نسخه را بردارید و دوباره <code>composer update &lt;package&gt;</code> (یا <code>composer install</code>) اجرا کنید تا lock file سازگار تولید شود. ویرایش دستی hash محتوا (<code>content-hash</code>) را خراب می‌کند.</p></div>
+
+    <h3>پیشگیری از conflict</h3>
+    <ul>
+      <li>branchهای کوتاه‌عمر و PRهای کوچک؛ هرچه branch بیشتر عمر کند، فاصله و احتمال conflict بیشتر است.</li>
+      <li>به‌روز کردن مرتب branch با main (rebase یا merge).</li>
+      <li>formatter مشترک (مثلاً Laravel Pint) تا تغییرات سلیقه‌ای فاصله‌گذاری conflict نسازند.</li>
+      <li>تقسیم فایل‌های بزرگ و پرتغییر (God class، فایل route عظیم).</li>
+      <li>هماهنگی تیمی برای تغییرات گسترده (rename سراسری، جابه‌جایی پوشه‌ها).</li>
+    </ul>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="rebase" data-title="Rebase در برابر Merge">
+    <h2>Rebase در برابر Merge</h2>
+    <p><strong>Rebase</strong> یعنی «commitهای branch من را بردار و یکی‌یکی روی یک پایه‌ی جدید دوباره اعمال کن». چون والد هر commit عوض می‌شود، <strong>commitهای جدید با hash جدید</strong> ساخته می‌شوند؛ یعنی rebase تاریخچه را بازنویسی می‌کند. commitهای قدیمی حذف نمی‌شوند؛ فقط دیگر branchی به آن‌ها اشاره نمی‌کند (و تا مدتی در reflog باقی می‌مانند).</p>
+    <pre class="diagram">قبل:     A ── B ── C ── F        (main)
+                    └── D ── E    (feature)
+
+git switch feature &amp;&amp; git rebase main
+
+بعد:     A ── B ── C ── F                (main)
+                         └── D' ── E'    (feature)   ← D' و E' hash جدید دارند</pre>
+
+    <div class="grid-2">
+      <div class="card"><h4>Merge</h4><ul>
+        <li>تاریخچه‌ی واقعی را حفظ می‌کند (چه کسی، چه زمانی، از کجا).</li>
+        <li>غیرمخرب است؛ هیچ commit موجودی تغییر نمی‌کند.</li>
+        <li>برای branchهای مشترک امن است.</li>
+        <li>تاریخچه ممکن است با merge commitهای زیاد شلوغ و غیرخطی شود.</li>
+        <li>conflictها یک‌جا و یک‌بار حل می‌شوند.</li>
+      </ul></div>
+      <div class="card"><h4>Rebase</h4><ul>
+        <li>تاریخچه‌ی خطی و خوانا؛ <code>git log</code> و <code>git bisect</code> ساده‌تر.</li>
+        <li>تاریخچه بازنویسی می‌شود (hash جدید).</li>
+        <li>روی branch مشترک خطرناک است.</li>
+        <li>ممکن است مجبور شوید یک conflict را برای چند commit پشت سر هم حل کنید.</li>
+        <li>اطلاعات «این کار موازی انجام شده بود» از بین می‌رود.</li>
+      </ul></div>
+    </div>
+
+    <h3>قانون طلایی rebase</h3>
+    <div class="callout exam"><p><strong>هرگز commitهایی را که push شده‌اند و دیگران ممکن است روی آن‌ها کار کرده باشند rebase نکنید.</strong> اگر main یا یک branch مشترک را rebase کنید، همکاران شما commitهای قدیمی (با hash قدیمی) را دارند و commitهای شما با hash جدید آمده‌اند؛ Git این‌ها را commitهای متفاوتی می‌بیند، در pull بعدی تاریخچه دوبرابر می‌شود و conflictهای گیج‌کننده رخ می‌دهد. rebase برای <strong>تمیز کردن کار محلی/شخصی</strong> قبل از اشتراک‌گذاری است.</p></div>
+
+    <h3>الگوهای رایج</h3>
+    <pre><code class="language-bash"># به‌روز کردن branch شخصی با آخرین main
+git fetch origin
+git rebase origin/main
+# بعد از rebase یک branch که قبلاً push شده (فقط branch شخصی!):
+git push --force-with-lease
+
+# pull بدون ساختن merge commitهای بی‌معنی
+git pull --rebase
+git config --global pull.rebase true
+
+# جابه‌جایی پایه‌ی یک branch: commitهای feature که روی old-base بودند را روی main بگذار
+git rebase --onto main old-base feature</code></pre>
+
+    <h3>کدام را انتخاب کنیم؟</h3>
+    <ul>
+      <li><strong>Rebase</strong> برای همگام‌سازی branch شخصی با main و تمیز کردن commitها قبل از PR.</li>
+      <li><strong>Merge</strong> برای وارد کردن یک feature تمام‌شده به main (یا squash-merge در PR)، و هر جا که branch مشترک است.</li>
+      <li>بسیاری از تیم‌ها ترکیبی کار می‌کنند: «rebase محلی، merge در PR».</li>
+    </ul>
+    <div class="callout note"><p><code>git pull</code> به‌صورت پیش‌فرض <code>fetch + merge</code> است. اگر شما و همکارتان هم‌زمان روی یک branch commit کنید، pull معمولی یک merge commit بی‌معنی مثل «Merge branch 'main' of origin» می‌سازد. <code>pull --rebase</code> commitهای محلی شما را روی آخرین نسخه‌ی remote قرار می‌دهد. این مورد قانون طلایی را نقض نمی‌کند، چون فقط commitهای <em>push‌نشده‌ی</em> خودتان بازنویسی می‌شوند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="history-editing" data-title="Interactive Rebase و Cherry-pick">
+    <h2>Interactive Rebase و Cherry-pick</h2>
+    <p><code>git rebase -i</code> ابزار اصلی «ویرایش تاریخچه‌ی محلی» است: تغییر ترتیب commitها، ادغام (squash)، ویرایش پیام، تقسیم یا حذف commit. هدف این است که قبل از PR، تاریخچه یک داستان منطقی و قابل review بگوید، نه سابقه‌ی آزمون و خطای شما.</p>
+    <pre><code class="language-bash">git rebase -i HEAD~4
+# یا: همه‌ی commitهای branch نسبت به main
+git rebase -i origin/main</code></pre>
+    <pre><code class="language-plaintext">pick   3f1a2b1 feat(invoice): add PDF generation service
+fixup  8c9d0e2 fix typo
+squash 1a2b3c4 feat(invoice): add download endpoint
+reword 7e6f5d4 wip
+drop   4d5e6f7 debug dump
+# p, pick   = commit را نگه دار
+# r, reword = نگه دار ولی پیام را ویرایش کن
+# e, edit   = توقف برای ویرایش (مثلاً تقسیم commit)
+# s, squash = با commit قبلی ادغام کن و پیام‌ها را ترکیب کن
+# f, fixup  = مثل squash ولی پیام این commit دور ریخته می‌شود
+# d, drop   = حذف commit</code></pre>
+
+    <h3>fixup و autosquash</h3>
+    <p>اگر در review مشخص شد یک commit قبلی ایراد دارد، به‌جای commit «fix review comments» می‌توانید یک fixup commit هدفمند بسازید و Git خودش در rebase آن را سر جایش قرار دهد:</p>
+    <pre><code class="language-bash">git commit --fixup=3f1a2b1
+git rebase -i --autosquash origin/main</code></pre>
+
+    <h3>Squash: مزایا و معایب</h3>
+    <ul>
+      <li><strong>مزیت:</strong> تاریخچه‌ی main تمیز، یک commit به ازای هر feature/PR، revert ساده‌ی کل feature.</li>
+      <li><strong>عیب:</strong> جزئیات مفید از بین می‌رود؛ اگر یک PR بزرگ squash شود، <code>git bisect</code> فقط به یک commit بزرگ می‌رسد و نمی‌تواند دقیق‌تر شود.</li>
+      <li>قاعده‌ی خوب: commitهای «wip»، «fix typo» و «address review» را squash کنید، اما commitهای منطقی و مستقل (مثلاً «migration»، «refactor»، «feature») را جدا نگه دارید.</li>
+    </ul>
+
+    <h3>Cherry-pick</h3>
+    <p><code>git cherry-pick &lt;sha&gt;</code> تغییرات (diff) یک commit مشخص را روی branch فعلی اعمال می‌کند و یک <strong>commit جدید با hash جدید</strong> می‌سازد. کاربرد اصلی: بردن یک hotfix از main به یک release branch قدیمی (backport)، یا نجات یک commit از branchی که قرار نیست merge شود.</p>
+    <pre><code class="language-bash">git switch release/2.4
+git cherry-pick -x a1b2c3d     # -x: افزودن "(cherry picked from commit ...)" به پیام
+git cherry-pick A^..C          # بازه‌ای از commitها (شامل A)
+git cherry-pick --continue | --abort</code></pre>
+    <div class="callout warn"><p>cherry-pick زیاد نشانه‌ی بوی بد در workflow است: یک تغییر با دو hash متفاوت در دو branch وجود دارد و merge بعدی ممکن است conflict یا تغییر تکراری ایجاد کند. اگر یک commit به چند branch نیاز دارد، معمولاً بهتر است آن را روی پایه‌ی مشترک بسازید و merge کنید.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="undo" data-title="reset، revert، restore و stash">
+    <h2>reset، revert، restore و stash</h2>
+    <p>کلید فهم این دستورات این است که هر کدام روی کدام ناحیه اثر می‌گذارد: <strong>اشاره‌گر branch/HEAD</strong>، <strong>index</strong> یا <strong>working tree</strong>.</p>
+
+    <h3>git reset: جابه‌جا کردن branch</h3>
+    <p><code>git reset &lt;commit&gt;</code> branch فعلی (و HEAD) را به commit دیگری منتقل می‌کند. سه حالت آن فقط در این تفاوت دارند که index و working tree را هم به‌روز می‌کنند یا نه:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>حالت</th><th>Branch/HEAD</th><th>Index</th><th>Working Tree</th><th>کاربرد نمونه</th></tr></thead>
+      <tbody>
+        <tr><td><code>--soft</code></td><td>جابه‌جا</td><td>دست‌نخورده</td><td>دست‌نخورده</td><td>ادغام چند commit آخر در یک commit: تغییرات stage‌شده می‌مانند</td></tr>
+        <tr><td><code>--mixed</code> (پیش‌فرض)</td><td>جابه‌جا</td><td>reset می‌شود</td><td>دست‌نخورده</td><td>برگرداندن commit و unstage کردن تغییرات برای commit مجدد</td></tr>
+        <tr><td><code>--hard</code></td><td>جابه‌جا</td><td>reset می‌شود</td><td>reset می‌شود</td><td>دور ریختن کامل تغییرات (خطرناک)</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-bash">git reset --soft HEAD~3      # سه commit آخر را "باز کن"، همه stage‌شده بمانند
+git commit -m "feat(cart): add coupon support"
+git reset HEAD~1             # آخرین commit را بردار، تغییرات در working tree بمانند
+git reset --hard origin/main # branch محلی را دقیقاً مثل remote کن (تغییرات محلی از بین می‌رود)</code></pre>
+    <div class="callout warn"><p><code>git reset --hard</code> تغییرات <strong>commit‌نشده</strong> را برای همیشه حذف می‌کند (reflog فقط commitها را نگه می‌دارد، نه تغییرات working tree). commitهایی که با reset «گم» شده‌اند از طریق <code>git reflog</code> قابل بازیابی‌اند.</p></div>
+
+    <h3>git revert: خنثی‌سازی امن</h3>
+    <p><code>git revert &lt;sha&gt;</code> یک <strong>commit جدید</strong> می‌سازد که دقیقاً عکس تغییرات commit هدف است. تاریخچه بازنویسی نمی‌شود، بنابراین روی branchهای مشترک و push‌شده (مثل main) روش صحیح است.</p>
+    <pre><code class="language-bash">git revert a1b2c3d
+git revert --no-commit A..C &amp;&amp; git commit -m "revert: roll back coupon feature"
+git revert -m 1 &lt;merge-sha&gt;   # revert یک merge commit: والد اول به‌عنوان mainline</code></pre>
+    <div class="callout note"><p>نکته‌ی ظریف: اگر یک merge را revert کنید و بعداً بخواهید همان branch (پس از اصلاح) را دوباره merge کنید، Git فکر می‌کند آن commitها قبلاً merge شده‌اند و تغییرات قبلی را نمی‌آورد. راه‌حل معمول «revert کردن آن revert» قبل از merge مجدد است.</p></div>
+
+    <h3>git restore و checkout برای فایل‌ها</h3>
+    <pre><code class="language-bash">git restore app/Models/User.php            # دور ریختن تغییرات unstaged فایل (از index)
+git restore --staged app/Models/User.php   # unstage (معادل قدیمی: git reset HEAD file)
+git restore --source=HEAD~2 config/app.php # آوردن نسخه‌ی فایل از یک commit دیگر
+git checkout -- app/Models/User.php        # نحو قدیمی معادل git restore</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>دستور</th><th>تاریخچه را بازنویسی می‌کند؟</th><th>روی branch مشترک</th><th>سطح</th></tr></thead>
+      <tbody>
+        <tr><td><code>reset</code></td><td>بله (اشاره‌گر branch را عقب می‌برد)</td><td>ممنوع (بعد از push)</td><td>commit / branch</td></tr>
+        <tr><td><code>revert</code></td><td>خیر (commit جدید)</td><td>روش صحیح</td><td>commit</td></tr>
+        <tr><td><code>restore</code></td><td>خیر</td><td>بی‌ارتباط</td><td>فایل (index / working tree)</td></tr>
+        <tr><td><code>commit --amend</code></td><td>بله (commit آخر جایگزین می‌شود)</td><td>ممنوع (بعد از push)</td><td>commit آخر</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>git stash</h3>
+    <p><strong>stash</strong> تغییرات commit‌نشده (working tree و index) را در یک پشته ذخیره و working tree را تمیز می‌کند؛ مثلاً وقتی وسط کار هستید و باید فوراً روی hotfix کار کنید.</p>
+    <pre><code class="language-bash">git stash push -m "wip: coupon validation"   # ذخیره (فایل‌های untracked شامل نمی‌شوند)
+git stash -u                                   # شامل فایل‌های untracked
+git stash list                                 # stash@{0}, stash@{1}, ...
+git stash show -p stash@{1}
+git stash pop                                  # اعمال و حذف از پشته (اگر conflict نشود)
+git stash apply stash@{1}                      # اعمال بدون حذف
+git stash drop stash@{1}
+git stash branch feature/coupon stash@{0}      # ساخت branch از روی stash</code></pre>
+    <div class="callout tip"><p>stash برای ذخیره‌ی طولانی‌مدت مناسب نیست؛ stashها نام branch ندارند، فراموش می‌شوند و push نمی‌شوند. برای کار نیمه‌تمام طولانی، یک commit «wip» روی branch خودتان بسازید و بعداً با <code>reset --soft</code> یا interactive rebase تمیزش کنید. جایگزین دیگر <code>git worktree add ../hotfix main</code> است که یک working tree دوم در کنار اولی می‌سازد.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="remotes" data-title="Remote: fetch، pull، push">
+    <h2>Remote: fetch، pull، push</h2>
+    <p><strong>remote</strong> یک نام مستعار برای URL یک repository دیگر است (معمولاً <code>origin</code>). Git برای هر branch راه دور یک <strong>remote-tracking branch</strong> مثل <code>origin/main</code> نگه می‌دارد که «آخرین چیزی است که از remote دیده‌ایم» و فقط با fetch به‌روز می‌شود.</p>
+    <pre class="diagram">  Remote (GitHub)                    Local
+  ┌──────────────┐   git fetch    ┌────────────────────┐
+  │ main ── F    │ ─────────────► │ origin/main ── F   │
+  └──────────────┘                │ main        ── C   │ ← هنوز عقب است
+          ▲                       └────────────────────┘
+          │ git push                       │ git merge / rebase origin/main
+          └────────────────────────────────┘</pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>دستور</th><th>چه کاری می‌کند</th></tr></thead>
+      <tbody>
+        <tr><td><code>git fetch</code></td><td>commitها و refهای جدید را دانلود و <code>origin/*</code> را به‌روز می‌کند. هیچ تغییری در branchهای محلی یا working tree نمی‌دهد؛ همیشه امن است.</td></tr>
+        <tr><td><code>git pull</code></td><td><code>fetch</code> + ادغام upstream در branch فعلی (merge به‌صورت پیش‌فرض، یا rebase با <code>--rebase</code>/<code>pull.rebase</code>).</td></tr>
+        <tr><td><code>git push</code></td><td>commitهای محلی را به remote می‌فرستد. فقط اگر fast-forward باشد پذیرفته می‌شود؛ وگرنه rejected (non-fast-forward).</td></tr>
+        <tr><td><code>git push -u origin feature/x</code></td><td>push و تنظیم upstream تا بعداً <code>git push</code>/<code>git pull</code> بدون آرگومان کار کند.</td></tr>
+        <tr><td><code>git fetch --prune</code></td><td>حذف remote-tracking branchهایی که روی سرور حذف شده‌اند.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>force push و force-with-lease</h3>
+    <p>بعد از rebase یا amend، تاریخچه‌ی محلی با remote واگرا شده و push معمولی رد می‌شود. <code>git push --force</code> بی‌قیدوشرط تاریخچه‌ی remote را بازنویسی می‌کند و اگر همکار شما در این فاصله commitی push کرده باشد، <strong>کار او پاک می‌شود</strong>.</p>
+    <p><code>--force-with-lease</code> فقط زمانی بازنویسی می‌کند که branch روی remote هنوز همان جایی باشد که <code>origin/feature</code> محلی شما نشان می‌دهد؛ یعنی «فقط اگر از آخرین fetch من کسی چیزی push نکرده باشد». اگر کسی push کرده باشد، push رد می‌شود.</p>
+    <pre><code class="language-bash">git push --force-with-lease
+git push --force-with-lease --force-if-includes   # محافظت بیشتر وقتی fetch خودکار پس‌زمینه دارید</code></pre>
+    <div class="callout warn"><p>محدودیت <code>--force-with-lease</code>: اگر بعد از push همکار، شما (یا IDE شما به‌صورت خودکار) <code>git fetch</code> کرده باشید، <code>origin/feature</code> به‌روز شده و lease پاس می‌شود؛ در حالی که commit او را هرگز در branch محلی خود نیاورده‌اید. گزینه‌ی <code>--force-if-includes</code> بررسی می‌کند که نوک remote واقعاً در تاریخچه‌ی محلی شما وجود داشته باشد.</p></div>
+    <div class="callout exam"><p>در پاسخ به «fetch و pull چه تفاوتی دارند؟» حتماً بگویید: fetch فقط اطلاعات را می‌آورد و remote-tracking branchها را به‌روز می‌کند (امن، قابل بررسی با <code>git log main..origin/main</code>)؛ pull علاوه بر آن، تغییرات را در branch فعلی ادغام می‌کند و ممکن است merge commit یا conflict ایجاد کند. روی main و branchهای محافظت‌شده، force push باید در تنظیمات سرور (branch protection) ممنوع باشد.</p></div>
+
+    <h3>fork و upstream</h3>
+    <pre><code class="language-bash">git remote -v
+git remote add upstream https://github.com/laravel/framework.git
+git fetch upstream
+git rebase upstream/12.x</code></pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="tags-semver" data-title="Tag و SemVer">
+    <h2>Tag و SemVer</h2>
+    <p><strong>tag</strong> یک اشاره‌گر ثابت به یک commit است (برخلاف branch جلو نمی‌رود) و معمولاً برای علامت‌گذاری releaseها استفاده می‌شود.</p>
+    <div class="grid-2">
+      <div class="card"><h4>Lightweight tag</h4><ul>
+        <li>فقط یک ref به commit، بدون شیء جداگانه.</li>
+        <li><code>git tag v1.4.0-tmp</code></li>
+        <li>مناسب علامت‌گذاری شخصی و موقت.</li>
+      </ul></div>
+      <div class="card"><h4>Annotated tag</h4><ul>
+        <li>شیء کامل: نام tagger، تاریخ، پیام، امکان امضای GPG/SSH.</li>
+        <li><code>git tag -a v1.4.0 -m "Release 1.4.0"</code></li>
+        <li>روش توصیه‌شده برای releaseها؛ <code>git describe</code> به‌طور پیش‌فرض فقط این نوع را در نظر می‌گیرد.</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-bash">git tag -a v2.3.0 -m "Release 2.3.0"
+git tag -s v2.3.0 -m "Signed release"     # امضا‌شده
+git push origin v2.3.0                     # tagها با push معمولی ارسال نمی‌شوند
+git push --follow-tags                     # ارسال annotated tagهای مرتبط با commitهای push‌شده
+git tag -l "v2.*"
+git describe --tags                        # مثلاً v2.3.0-5-g1a2b3c4 (۵ commit بعد از tag)
+git push origin --delete v2.3.0-rc1</code></pre>
+    <div class="callout warn"><p>tag منتشرشده را جابه‌جا نکنید. Composer و سایر package managerها نسخه را از tag می‌خوانند و کسی که <code>v2.3.0</code> را قبلاً نصب کرده، کد متفاوتی از کسی دارد که بعداً نصب می‌کند. اگر release اشتباه بود، نسخه‌ی patch جدید (<code>v2.3.1</code>) منتشر کنید.</p></div>
+
+    <h3>Semantic Versioning</h3>
+    <p>در SemVer، نسخه به شکل <code>MAJOR.MINOR.PATCH</code> است و معنای هر جزء یک <strong>قرارداد با مصرف‌کننده‌ی API عمومی</strong> است:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>جزء</th><th>کِی افزایش می‌یابد</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td><strong>MAJOR</strong></td><td>تغییر ناسازگار با نسخه‌ی قبل (breaking change)</td><td>حذف یک متد public، تغییر signature، تغییر قالب پاسخ API</td></tr>
+        <tr><td><strong>MINOR</strong></td><td>قابلیت جدید سازگار با قبل</td><td>افزودن endpoint یا پارامتر اختیاری</td></tr>
+        <tr><td><strong>PATCH</strong></td><td>رفع باگ سازگار با قبل</td><td>اصلاح محاسبه‌ی اشتباه</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>با افزایش MINOR، PATCH صفر می‌شود؛ با افزایش MAJOR هر دو صفر می‌شوند: <code>1.9.4 → 2.0.0</code>.</li>
+      <li>Pre-release: <code>2.0.0-alpha.1</code>، <code>2.0.0-rc.2</code>؛ اولویت آن‌ها از نسخه‌ی نهایی <code>2.0.0</code> کمتر است.</li>
+      <li>Build metadata بعد از <code>+</code> (مثل <code>1.0.0+20261106</code>) در مقایسه‌ی اولویت نادیده گرفته می‌شود.</li>
+      <li>نسخه‌های <code>0.y.z</code> برای توسعه‌ی اولیه‌اند و API پایدار تلقی نمی‌شود.</li>
+    </ul>
+    <h4>ارتباط با Composer</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>قید</th><th>معادل</th></tr></thead>
+      <tbody>
+        <tr><td><code>^2.3</code></td><td><code>&gt;=2.3.0 &lt;3.0.0</code> (رایج‌ترین؛ به SemVer اعتماد می‌کند)</td></tr>
+        <tr><td><code>~2.3</code></td><td><code>&gt;=2.3.0 &lt;3.0.0</code></td></tr>
+        <tr><td><code>~2.3.1</code></td><td><code>&gt;=2.3.1 &lt;2.4.0</code></td></tr>
+        <tr><td><code>^0.4</code></td><td><code>&gt;=0.4.0 &lt;0.5.0</code> (در 0.x، MINOR مثل MAJOR رفتار می‌کند)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>SemVer فقط وقتی معنا دارد که «API عمومی» را تعریف کرده باشید (برای یک library: کلاس‌ها و متدهای public؛ برای یک REST API: قرارداد endpointها). اپلیکیشن‌های نهایی که مصرف‌کننده‌ی بیرونی ندارند گاهی از CalVer (مثل <code>2026.11.0</code>) یا شماره‌ی build استفاده می‌کنند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="workflows" data-title="Workflowهای تیمی">
+    <h2>Workflowهای تیمی</h2>
+    <p><strong>Branching strategy</strong> قراردادی است که تیم برای ساخت branch، ادغام و release دنبال می‌کند. انتخاب آن به فرکانس deploy، تعداد نسخه‌های هم‌زمانی که پشتیبانی می‌کنید، بلوغ CI/تست و اندازه‌ی تیم بستگی دارد.</p>
+
+    <h3>Git Flow</h3>
+    <pre class="diagram">main     ──●────────────────●───────────●──────   (فقط releaseها، tag‌شده)
+            \              / \         /
+hotfix/*     \            /   ●───────●            (از main، به main و develop)
+              \          /
+release/*      \    ●───●                          (تثبیت، bump نسخه)
+                \  /     \
+develop  ────●───●───●────●───●──────────────────
+              \     /
+feature/*      ●───●</pre>
+    <ul>
+      <li>دو branch دائمی: <code>main</code> (کد production) و <code>develop</code> (ادغام featureها).</li>
+      <li>branchهای کمکی: <code>feature/*</code>، <code>release/*</code>، <code>hotfix/*</code>.</li>
+      <li><strong>مناسب:</strong> نرم‌افزار با releaseهای زمان‌بندی‌شده و نسخه‌دار (اپ موبایل، محصول on-premise، library) یا پشتیبانی هم‌زمان از چند نسخه.</li>
+      <li><strong>معایب:</strong> پیچیدگی، branchهای طولانی‌مدت، merge hell، فاصله‌ی زیاد بین نوشتن کد و رسیدن به production؛ برای deploy پیوسته سنگین است.</li>
+    </ul>
+
+    <h3>GitHub Flow</h3>
+    <ul>
+      <li>یک branch اصلی (<code>main</code>) که <strong>همیشه قابل deploy</strong> است.</li>
+      <li>برای هر تغییر: branch کوتاه‌عمر ← commit ← Pull Request ← review و CI ← merge ← deploy.</li>
+      <li><strong>مناسب:</strong> وب‌اپلیکیشن و SaaS با deploy مداوم و یک نسخه در production.</li>
+      <li><strong>معایب:</strong> بدون CI و تست خودکار قوی خطرناک است؛ مدیریت چند نسخه‌ی هم‌زمان را پوشش نمی‌دهد.</li>
+    </ul>
+
+    <h3>Trunk-based Development</h3>
+    <ul>
+      <li>همه مستقیماً روی trunk (main) یا با branchهایی بسیار کوتاه‌عمر (حداکثر یکی دو روز) کار می‌کنند و چند بار در روز ادغام می‌کنند.</li>
+      <li>کار ناتمام پشت <strong>feature flag</strong> پنهان می‌شود؛ یعنی <em>deploy</em> از <em>release</em> جدا می‌شود.</li>
+      <li>نیازمند: CI سریع و قابل اعتماد، پوشش تست خوب، فرهنگ تغییرات کوچک، و گاهی release branch برای نسخه‌ها.</li>
+      <li><strong>مزایا:</strong> کمترین conflict، بازخورد سریع، پایه‌ی Continuous Integration واقعی.</li>
+      <li><strong>معایب:</strong> مدیریت feature flagها (بدهی فنی flagهای قدیمی) و نیاز به نظم و بلوغ تیمی.</li>
+    </ul>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Git Flow</th><th>GitHub Flow</th><th>Trunk-based</th></tr></thead>
+      <tbody>
+        <tr><td>branchهای دائمی</td><td>main + develop</td><td>main</td><td>main (trunk)</td></tr>
+        <tr><td>عمر feature branch</td><td>روزها تا هفته‌ها</td><td>چند روز</td><td>ساعت‌ها تا ۱–۲ روز</td></tr>
+        <tr><td>فرکانس release</td><td>دوره‌ای</td><td>پیوسته</td><td>پیوسته</td></tr>
+        <tr><td>چند نسخه‌ی هم‌زمان</td><td>پشتیبانی خوب</td><td>ضعیف</td><td>با release branch</td></tr>
+        <tr><td>نیاز به CI/تست</td><td>متوسط</td><td>بالا</td><td>بسیار بالا</td></tr>
+        <tr><td>ریسک merge conflict</td><td>بالا</td><td>متوسط</td><td>پایین</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>در سوالات «کدام workflow را پیشنهاد می‌کنید؟» جواب درست «بستگی دارد» است، اما باید معیار بدهید: برای یک تیم Laravel که یک SaaS را روزانه deploy می‌کند، GitHub Flow یا trunk-based همراه با feature flag (مثلاً Laravel Pennant) و CI قوی مناسب است؛ برای محصولی که برای مشتریان مختلف نسخه‌های جدا نصب می‌شود، Git Flow یا release branchها منطقی‌ترند.</p></div>
+    <div class="callout note"><p><strong>GitLab Flow</strong> گونه‌ای میانه است: GitHub Flow به‌علاوه‌ی branchهای محیطی (مثل <code>staging</code> و <code>production</code>) یا release branchها، که تغییرات از بالادست به پایین‌دست ادغام می‌شوند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="pull-requests" data-title="Pull Request و Code Review">
+    <h2>Pull Request و Code Review</h2>
+    <p><strong>Pull Request</strong> (در GitLab: Merge Request) درخواست ادغام یک branch در branch دیگر است که بستری برای review، بحث، اجرای CI و ثبت تصمیم‌ها فراهم می‌کند. PR بخشی از Git نیست؛ قابلیت پلتفرم‌هایی مثل GitHub و GitLab است.</p>
+
+    <h3>یک PR خوب</h3>
+    <ul>
+      <li><strong>کوچک و متمرکز:</strong> یک هدف. PRهای چندصد خطی به‌خوبی review نمی‌شوند (reviewer خسته فقط approve می‌کند).</li>
+      <li><strong>توضیح کامل:</strong> چه چیزی، چرا، چگونه تست شده، لینک issue، اسکرین‌شات برای UI، نکات deploy (migration، متغیر env جدید، queue).</li>
+      <li><strong>self-review قبل از درخواست review:</strong> خواندن diff خود، حذف dump و کد مرده.</li>
+      <li><strong>CI سبز:</strong> تست، static analysis (PHPStan/Larastan)، style (Pint) قبل از درگیر کردن انسان.</li>
+      <li>Draft PR برای گرفتن بازخورد زودهنگام روی رویکرد.</li>
+    </ul>
+    <pre><code class="language-plaintext">## چه چیزی و چرا
+افزودن امکان دانلود فاکتور به PDF برای مشتری (#412).
+
+## تغییرات
+- سرویس InvoicePdfGenerator (بر پایه‌ی dompdf)
+- endpoint جدید GET /api/invoices/{invoice}/pdf با policy
+- Job برای تولید PDFهای بزرگ در queue
+
+## نحوه‌ی تست
+- Feature test برای مجوز (۴۰۳ برای کاربر غیرمالک) و پاسخ موفق
+- تست دستی روی staging با فاکتور ۲۰۰ ردیفی
+
+## نکات deploy
+- متغیر env جدید: INVOICE_PDF_DISK (پیش‌فرض: s3)
+- نیاز به اجرای worker برای صف pdf</code></pre>
+
+    <h3>Code Review: به چه چیزی نگاه کنیم؟</h3>
+    <ol>
+      <li><strong>درستی:</strong> آیا نیازمندی را برآورده می‌کند؟ edge caseها، null، خطا و همزمانی (race condition).</li>
+      <li><strong>طراحی:</strong> مسئولیت‌ها در جای درست هستند؟ coupling، تکرار، abstraction بی‌مورد.</li>
+      <li><strong>امنیت:</strong> authorization، validation، SQL injection، mass assignment، نشت اطلاعات در log.</li>
+      <li><strong>کارایی:</strong> N+1 query، index دیتابیس، کارهای سنگین در request به‌جای queue.</li>
+      <li><strong>تست:</strong> تست‌ها رفتار را می‌سنجند یا فقط coverage را بالا می‌برند؟</li>
+      <li><strong>خوانایی و نگهداری:</strong> نام‌گذاری، پیچیدگی، مستندات لازم.</li>
+    </ol>
+
+    <h3>فرهنگ review</h3>
+    <ul>
+      <li>نقد کد، نه شخص؛ سؤال بپرسید («اینجا اگر سفارش null باشد چه می‌شود؟») به‌جای حکم.</li>
+      <li>شدت کامنت را مشخص کنید: <code>nit:</code> برای سلیقه‌ای، «blocking» برای مشکلات جدی.</li>
+      <li>چیزهایی که ابزار می‌تواند بگیرد (style، فرمت) را به ابزار بسپارید.</li>
+      <li>review سریع (مثلاً ظرف یک روز کاری)؛ PR معطل‌مانده باعث context switch و conflict می‌شود.</li>
+      <li>تعریف و تحسین کد خوب هم بخشی از review است.</li>
+    </ul>
+
+    <h3>محافظت از branch و روش‌های merge</h3>
+    <ul>
+      <li><strong>Branch protection:</strong> منع push مستقیم و force push به main، الزام CI سبز، حداقل یک approve، به‌روز بودن branch، و <code>CODEOWNERS</code> برای الزام review از مالکان یک بخش.</li>
+      <li>گزینه‌های merge در GitHub: <strong>Merge commit</strong> (حفظ همه‌ی commitها + merge commit)، <strong>Squash and merge</strong> (یک commit)، <strong>Rebase and merge</strong> (commitها خطی، بدون merge commit).</li>
+    </ul>
+    <div class="callout exam"><p>اهداف code review فقط «پیدا کردن باگ» نیست: <strong>انتقال دانش</strong> (کاهش bus factor)، یکپارچگی سبک و معماری، آموزش اعضای جدید و ثبت تصمیم‌ها. در پاسخ تشریحی هر دو جنبه‌ی فنی و انسانی را بگویید.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="commit-messages" data-title="Commit Message و Conventional Commits">
+    <h2>Commit Message و Conventional Commits</h2>
+    <p>پیام commit برای «خواننده‌ی آینده» نوشته می‌شود: کسی که شش ماه بعد با <code>git blame</code> به یک خط عجیب می‌رسد و می‌خواهد بداند <strong>چرا</strong> این‌طور نوشته شده. diff می‌گوید <em>چه</em> تغییر کرد؛ پیام باید بگوید <em>چرا</em>.</p>
+
+    <h3>قواعد کلاسیک</h3>
+    <ul>
+      <li>خط اول (subject) کوتاه، حدود ۵۰ کاراکتر و حداکثر ۷۲؛ بدون نقطه در انتها.</li>
+      <li>وجه امری در انگلیسی: «Add»، «Fix»؛ نه «Added» یا «Fixes». (جمله باید با «If applied, this commit will …» جور باشد.)</li>
+      <li>یک خط خالی بین subject و body.</li>
+      <li>body با شکست خط حدود ۷۲ کاراکتر: انگیزه، رویکرد، پیامدها و گزینه‌های ردشده.</li>
+      <li>یک commit = یک تغییر منطقی (atomic). کد هر commit باید build و تست را پاس کند تا bisect قابل اعتماد باشد.</li>
+    </ul>
+
+    <h3>Conventional Commits</h3>
+    <p>یک قرارداد ساخت‌یافته برای پیام commit که توسط ماشین قابل پردازش است:</p>
+    <pre><code class="language-plaintext">&lt;type&gt;[optional scope][!]: &lt;description&gt;
+
+[optional body]
+
+[optional footer(s)]</code></pre>
+    <pre><code class="language-plaintext">fix(payment): prevent double charge when gateway times out
+
+The gateway may process a request even if it responds with a timeout.
+We now send an idempotency key derived from the order id, so a retry
+returns the original charge instead of creating a new one.
+
+Closes #318</code></pre>
+    <pre><code class="language-plaintext">feat(api)!: return amounts as integer minor units
+
+BREAKING CHANGE: `amount` in /api/v2/orders is now an integer in cents
+instead of a decimal string. Clients must divide by 100.</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>type</th><th>معنی</th><th>اثر در SemVer</th></tr></thead>
+      <tbody>
+        <tr><td><code>feat</code></td><td>قابلیت جدید</td><td>MINOR</td></tr>
+        <tr><td><code>fix</code></td><td>رفع باگ</td><td>PATCH</td></tr>
+        <tr><td><code>!</code> یا footer <code>BREAKING CHANGE:</code></td><td>تغییر ناسازگار</td><td>MAJOR</td></tr>
+        <tr><td><code>docs</code>، <code>style</code>، <code>refactor</code>، <code>perf</code>، <code>test</code>، <code>build</code>، <code>ci</code>، <code>chore</code>، <code>revert</code></td><td>انواع رایج دیگر (در spec اجباری نیستند؛ از قرارداد Angular آمده‌اند)</td><td>به‌طور پیش‌فرض بدون release (به جز perf در برخی پیکربندی‌ها)</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>مزایا:</strong> تولید خودکار CHANGELOG، تعیین خودکار نسخه‌ی بعدی (ابزارهایی مثل semantic-release یا release-please)، فیلتر کردن تاریخچه (<code>git log --grep "^feat"</code>) و قابل فهم‌تر شدن تاریخچه. اجرای قرارداد معمولاً با یک <code>commit-msg</code> hook (مثلاً commitlint) و بررسی در CI انجام می‌شود.</p>
+    <div class="callout warn"><p>پیام‌هایی مثل «fix»، «update»، «changes» یا «wip» در تاریخچه‌ی نهایی main بی‌ارزش‌اند. اگر روی branch شخصی این‌ها را دارید، قبل از merge با interactive rebase یا squash آن‌ها را به پیام معنادار تبدیل کنید.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="recovery" data-title="بازیابی: reflog و bisect">
+    <h2>بازیابی: reflog و bisect</h2>
+    <h3>reflog: تاریخچه‌ی جابه‌جایی اشاره‌گرها</h3>
+    <p><strong>reflog</strong> یک log محلی است که هر بار HEAD یا یک branch جابه‌جا شود (commit، reset، rebase، checkout، merge، amend) یک ورودی ثبت می‌کند. چون commitها در Git واقعاً حذف نمی‌شوند (تا زمان garbage collection)، reflog «شبکه‌ی ایمنی» تقریباً هر اشتباهی است.</p>
+    <pre><code class="language-bash">git reflog
+# 4e5f6a7 HEAD@{0}: reset: moving to HEAD~3
+# 9a8b7c6 HEAD@{1}: commit: feat(cart): add coupon support
+# ...
+git reset --hard HEAD@{1}             # برگشتن به قبل از reset اشتباه
+git branch rescue 9a8b7c6             # یا ساختن branch روی commit گمشده
+git reflog show feature/cart          # reflog یک branch خاص
+git reset --hard ORIG_HEAD            # بعد از rebase/merge/reset: وضعیت قبلی</code></pre>
+    <ul>
+      <li>reflog <strong>محلی</strong> است؛ push نمی‌شود و در clone جدید وجود ندارد.</li>
+      <li>ورودی‌ها پس از مدتی منقضی می‌شوند (به‌طور پیش‌فرض ۹۰ روز برای ورودی‌های قابل دسترس و ۳۰ روز برای ورودی‌های unreachable)، سپس <code>git gc</code> می‌تواند commitهای بی‌مرجع را حذف کند.</li>
+      <li>تغییرات هرگز commit/stage‌نشده در reflog نیستند؛ <code>reset --hard</code> روی آن‌ها قابل بازگشت نیست.</li>
+    </ul>
+    <div class="callout tip"><p>قبل از عملیات پرریسک (rebase بزرگ، filter-repo) یک branch پشتیبان بسازید: <code>git branch backup/before-rebase</code>. ساده‌تر از جستجو در reflog است.</p></div>
+
+    <h3>bisect: جستجوی دودویی باگ</h3>
+    <p><code>git bisect</code> با <strong>جستجوی دودویی</strong> روی تاریخچه، اولین commitی را پیدا می‌کند که باگ را وارد کرده است. اگر بین نسخه‌ی سالم و خراب ۱۰۰۰ commit فاصله باشد، حدود ۱۰ مرحله (log₂ 1000) کافی است.</p>
+    <pre><code class="language-bash">git bisect start
+git bisect bad                 # نسخه‌ی فعلی خراب است
+git bisect good v2.2.0         # این نسخه سالم بود
+# Git یک commit میانی را checkout می‌کند؛ تست کنید و اعلام کنید:
+git bisect good    # یا: git bisect bad   یا: git bisect skip (اگر قابل تست نیست)
+# ... تا اینکه: "a1b2c3d is the first bad commit"
+git bisect reset               # برگشت به وضعیت اولیه
+
+# خودکارسازی کامل: اسکریپتی که برای سالم exit 0 و برای خراب exit غیرصفر برمی‌گرداند
+git bisect start HEAD v2.2.0
+git bisect run php artisan test --filter=CouponDiscountTest</code></pre>
+    <div class="callout exam"><p>bisect وقتی بهترین کارایی را دارد که <strong>هر commit قابل build و تست باشد</strong> و commitها کوچک و اتمیک باشند. این یکی از دلایل فنی قوی برای commitهای تمیز و Conventional است. exit code ۱۲۵ در <code>bisect run</code> به معنی skip است.</p></div>
+
+    <h3>ابزارهای کمکی دیگر</h3>
+    <ul>
+      <li><code>git blame -w -C file</code>: چه کسی و در کدام commit هر خط را نوشته (با نادیده گرفتن whitespace و تشخیص جابه‌جایی کد). برای نادیده گرفتن commitهای format سراسری: <code>blame.ignoreRevsFile</code> با فایل <code>.git-blame-ignore-revs</code>.</li>
+      <li><code>git log -S "calculateTax" --oneline</code> (pickaxe): commitهایی که تعداد رخداد یک رشته را تغییر داده‌اند.</li>
+      <li><code>git log -L :total:app/Services/PriceCalculator.php</code>: تاریخچه‌ی یک تابع.</li>
+      <li><code>git fsck --lost-found</code>: پیدا کردن اشیای dangling (مثلاً stash حذف‌شده).</li>
+    </ul>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="hooks-monorepo" data-title="Hookها، Monorepo و Submodule">
+    <h2>Hookها، Monorepo و Submodule</h2>
+    <h3>Git Hooks</h3>
+    <p><strong>Hook</strong> اسکریپتی است که Git در نقاط مشخصی از چرخه اجرا می‌کند. اگر hookهای «pre-» با کد غیرصفر خارج شوند، عملیات متوقف می‌شود.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Hook</th><th>زمان اجرا</th><th>کاربرد رایج</th></tr></thead>
+      <tbody>
+        <tr><td><code>pre-commit</code></td><td>قبل از ساخت commit</td><td>lint و format فایل‌های stage‌شده (Pint)، <code>php -l</code>، secret scanning</td></tr>
+        <tr><td><code>commit-msg</code></td><td>بعد از نوشتن پیام</td><td>اعتبارسنجی Conventional Commits</td></tr>
+        <tr><td><code>pre-push</code></td><td>قبل از push</td><td>اجرای تست‌های سریع و PHPStan</td></tr>
+        <tr><td><code>post-merge</code> / <code>post-checkout</code></td><td>بعد از merge/checkout</td><td>یادآوری <code>composer install</code> اگر lock تغییر کرده</td></tr>
+        <tr><td><code>pre-receive</code> (سمت سرور)</td><td>روی سرور هنگام دریافت push</td><td>اعمال سیاست‌ها؛ قابل دور زدن توسط کلاینت نیست</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-bash">#!/bin/sh
+# .githooks/pre-commit — فقط فایل‌های PHP stage‌شده را بررسی می‌کند
+FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.php')
+[ -z "$FILES" ] &amp;&amp; exit 0
+
+for f in $FILES; do
+  php -l "$f" &gt; /dev/null || exit 1
+done
+
+./vendor/bin/pint --test $FILES || {
+  echo "Code style issues found. Run: ./vendor/bin/pint"
+  exit 1
+}</code></pre>
+    <pre><code class="language-bash"># hookهای داخل .git/hooks version control نمی‌شوند؛ برای اشتراک در تیم:
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-commit</code></pre>
+    <ul>
+      <li>ابزارهای مدیریت hook: <strong>CaptainHook</strong> و <strong>GrumPHP</strong> در اکوسیستم PHP (نصب با Composer)، Husky و lint-staged در اکوسیستم JS، و pre-commit framework (پایتون).</li>
+      <li>hookها باید <strong>سریع</strong> باشند؛ pre-commit چنددقیقه‌ای باعث می‌شود توسعه‌دهندگان آن را دور بزنند.</li>
+    </ul>
+    <div class="callout exam"><p>hookهای سمت کلاینت با <code>git commit --no-verify</code> قابل دور زدن‌اند و اختیاری‌اند؛ پس <strong>جایگزین CI نیستند</strong>. hook بازخورد سریع محلی می‌دهد، CI و branch protection تضمین می‌کنند.</p></div>
+
+    <h3>Monorepo در برابر Polyrepo</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Monorepo (یک repo برای چند پروژه)</h4><ul>
+        <li>تغییرات اتمیک بین چند سرویس/پکیج در یک PR.</li>
+        <li>اشتراک کد و ابزار ساده‌تر، یک نسخه‌ی واحد از وابستگی‌ها.</li>
+        <li>نیاز به ابزار برای build و تست انتخابی (فقط بخش‌های تغییرکرده).</li>
+        <li>repo بزرگ: clone کند؛ راه‌حل‌ها: <code>git sparse-checkout</code>، partial clone (<code>--filter=blob:none</code>).</li>
+        <li>مجوزهای ریزدانه دشوارتر است.</li>
+      </ul></div>
+      <div class="card"><h4>Polyrepo (repo جدا برای هر سرویس)</h4><ul>
+        <li>مالکیت و مجوز روشن، CI مستقل و ساده.</li>
+        <li>نسخه‌دهی و release مستقل.</li>
+        <li>تغییرات بین‌سرویسی نیازمند چند PR هماهنگ.</li>
+        <li>خطر واگرایی ابزار و نسخه‌ی وابستگی‌ها.</li>
+      </ul></div>
+    </div>
+
+    <h3>Submodule و Subtree</h3>
+    <p><strong>Submodule</strong> یک repo دیگر را در یک مسیر از repo شما قرار می‌دهد، اما فقط <strong>یک commit مشخص</strong> از آن را ثبت می‌کند (نه branch). اطلاعات آن در فایل <code>.gitmodules</code> است.</p>
+    <pre><code class="language-bash">git submodule add https://github.com/acme/shared-contracts.git contracts
+git clone --recurse-submodules &lt;url&gt;
+git submodule update --init --recursive   # بعد از clone معمولی
+cd contracts &amp;&amp; git pull origin main &amp;&amp; cd .. &amp;&amp; git add contracts &amp;&amp; git commit -m "chore: bump contracts"</code></pre>
+    <ul>
+      <li><strong>مشکلات رایج:</strong> فراموش کردن update بعد از pull (کد قدیمی)، detached HEAD داخل submodule، و commit کردن اشاره‌گری که push نشده است.</li>
+      <li><strong>Subtree:</strong> کد repo دیگر را مستقیماً در تاریخچه‌ی شما ادغام می‌کند؛ کاربران repo ابزار اضافه‌ای لازم ندارند، اما ارسال تغییرات به repo مبدأ پیچیده‌تر است.</li>
+      <li>در PHP، برای اشتراک کد بین پروژه‌ها معمولاً یک <strong>پکیج Composer</strong> (حتی private از طریق repository از نوع vcs یا path) بهتر از submodule است، چون نسخه‌دهی SemVer و مدیریت وابستگی را به‌طور طبیعی دارد.</li>
+    </ul>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-git-1">
+      <summary>ساختار داخلی Git را توضیح دهید. blob، tree، commit و ref چه هستند و branch در واقع چیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Git یک پایگاه داده‌ی <strong>content-addressable</strong> است: هر شیء با hash محتوایش (پیش‌فرض SHA-1) ذخیره و شناسایی می‌شود. چهار نوع شیء اصلی دارد:</p>
+        <ul>
+          <li><strong>blob:</strong> محتوای یک فایل، بدون نام.</li>
+          <li><strong>tree:</strong> یک پوشه؛ نام فایل‌ها و اشاره به blobها و treeهای فرزند.</li>
+          <li><strong>commit:</strong> اشاره به tree ریشه (یعنی یک <strong>snapshot</strong> کامل)، اشاره به والد(ها)، author/committer و پیام.</li>
+          <li><strong>annotated tag:</strong> شیئی با نام و پیام که به یک commit اشاره می‌کند.</li>
+        </ul>
+        <p><strong>Ref</strong> یک نام خوانا برای یک hash است. <strong>branch</strong> فقط یک ref متحرک است، یعنی فایلی کوچک در <code>refs/heads/</code> که hash آخرین commit را نگه می‌دارد و با هر commit جدید جلو می‌رود. <strong>HEAD</strong> نشان می‌دهد الان روی کدام branch (یا در حالت detached، کدام commit) هستیم.</p>
+        <p><strong>پیامدها:</strong></p>
+        <ul>
+          <li>چون hash به محتوا و والد وابسته است، تاریخچه <strong>immutable</strong> است؛ amend و rebase commit جدید می‌سازند.</li>
+          <li>ساختن branch تقریباً رایگان است، پس branchهای کوتاه‌عمر برای هر feature عملی‌اند.</li>
+          <li>فایل‌های بدون تغییر بین commitها به اشتراک گذاشته می‌شوند؛ snapshot بودن به معنی هدر رفتن فضا نیست.</li>
+          <li>یکپارچگی تضمین می‌شود: دستکاری هر بایت در تاریخچه hash همه‌ی commitهای بعدی را تغییر می‌دهد.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-2">
+      <summary>تفاوت fast-forward merge و three-way merge را با رسم شکل توضیح دهید. گزینه‌ی <code>--no-ff</code> چه زمانی مفید است؟</summary>
+      <div class="answer">
+        <p><strong>Fast-forward:</strong> وقتی branch مقصد از زمان جدا شدن هیچ commit جدیدی نداشته باشد، یعنی نوک مقصد جد مستقیم نوک feature باشد، Git فقط اشاره‌گر مقصد را جلو می‌برد. هیچ commit جدیدی ساخته نمی‌شود و تاریخچه خطی است.</p>
+        <pre class="diagram">A ─ B ─ C (main)               A ─ B ─ C ─ D ─ E (main)
+         └ D ─ E (feature)   ⇒</pre>
+        <p><strong>Three-way:</strong> وقتی هر دو branch commit جدید دارند، Git سه نسخه را مقایسه می‌کند: <strong>merge base</strong> (جد مشترک)، نوک branch فعلی و نوک branch دیگر. تغییراتی که فقط در یک طرف هستند خودکار اعمال می‌شوند و تغییرات متضاد در یک ناحیه conflict ایجاد می‌کنند. نتیجه یک <strong>merge commit با دو والد</strong> است.</p>
+        <pre class="diagram">A ─ B ─ C ─ F ─── M (main)
+         └ D ─ E ─┘  (feature)</pre>
+        <p><strong>--no-ff</strong> حتی وقتی ff ممکن است merge commit می‌سازد. مزایا:</p>
+        <ul>
+          <li>مرز هر feature در تاریخچه دیده می‌شود (<code>git log --first-parent</code> فقط merge commitهای main را نشان می‌دهد).</li>
+          <li>revert کل feature با یک دستور: <code>git revert -m 1 &lt;merge&gt;</code>.</li>
+        </ul>
+        <p>عیب آن تاریخچه‌ی شلوغ‌تر است. تیم‌هایی که تاریخچه‌ی خطی می‌خواهند از <code>--ff-only</code> یا squash-merge استفاده می‌کنند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-3">
+      <summary>Rebase و Merge را مقایسه کنید. «قانون طلایی rebase» چیست و چرا نقض آن مشکل‌ساز است؟</summary>
+      <div class="answer">
+        <p><strong>Merge</strong> دو تاریخچه را با یک merge commit به هم وصل می‌کند و هیچ commit موجودی را تغییر نمی‌دهد. <strong>Rebase</strong> commitهای branch را روی پایه‌ی جدید دوباره اعمال می‌کند؛ چون والد عوض می‌شود، <strong>commitهای جدید با hash جدید</strong> ساخته می‌شوند.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Merge</th><th>Rebase</th></tr></thead>
+          <tbody>
+            <tr><td>تاریخچه</td><td>واقعی، غیرخطی</td><td>خطی، تمیز</td></tr>
+            <tr><td>بازنویسی</td><td>ندارد</td><td>دارد</td></tr>
+            <tr><td>branch مشترک</td><td>امن</td><td>خطرناک</td></tr>
+            <tr><td>conflict</td><td>یک‌بار</td><td>ممکن است برای هر commit</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>قانون طلایی:</strong> commitهایی را که push شده و دیگران ممکن است بر پایه‌ی آن‌ها کار کرده باشند rebase نکنید.</p>
+        <p><strong>چرا؟</strong> همکاران شما commitهای قدیمی (D، E) را دارند و شما commitهای جدید (D′، E′) را force-push کرده‌اید. از دید Git این‌ها commitهای متفاوتی‌اند؛ در pull بعدی همکار، تغییرات تکراری، merge commit عجیب و conflictهای گیج‌کننده رخ می‌دهد و اگر force-push بی‌احتیاط باشد، ممکن است commitهای دیگران روی remote پاک شود.</p>
+        <p><strong>جمع‌بندی عملی:</strong> rebase برای همگام‌سازی و تمیز کردن branch شخصی قبل از PR (و <code>pull --rebase</code> برای commitهای push‌نشده)؛ merge (یا squash-merge در PR) برای ادغام در main و branchهای مشترک. اگر rebase روی branch شخصی push‌شده لازم شد، از <code>--force-with-lease</code> استفاده کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-4">
+      <summary>سه حالت <code>git reset</code> (soft، mixed، hard) را توضیح دهید و تفاوت reset با revert را بیان کنید. روی main کدام را استفاده می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>reset</strong> اشاره‌گر branch فعلی (و HEAD) را به commit دیگری منتقل می‌کند. تفاوت حالت‌ها در اثر روی index و working tree است:</p>
+        <ul>
+          <li><strong>--soft:</strong> فقط branch جابه‌جا می‌شود؛ تغییرات commitهای حذف‌شده stage‌شده می‌مانند. کاربرد: ادغام چند commit آخر در یکی (<code>reset --soft HEAD~3</code> و commit مجدد).</li>
+          <li><strong>--mixed (پیش‌فرض):</strong> index هم reset می‌شود؛ تغییرات در working tree می‌مانند اما unstaged. کاربرد: بازچینی commitها.</li>
+          <li><strong>--hard:</strong> index و working tree هم با commit هدف یکی می‌شوند؛ تغییرات commit‌نشده <strong>برای همیشه</strong> از دست می‌روند.</li>
+        </ul>
+        <p><strong>revert</strong> یک commit <em>جدید</em> می‌سازد که اثر commit هدف را خنثی می‌کند؛ تاریخچه بازنویسی نمی‌شود.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>reset</th><th>revert</th></tr></thead>
+          <tbody>
+            <tr><td>مکانیزم</td><td>جابه‌جایی اشاره‌گر (حذف commitها از branch)</td><td>commit معکوس</td></tr>
+            <tr><td>تاریخچه</td><td>بازنویسی</td><td>حفظ و قابل ردیابی</td></tr>
+            <tr><td>بعد از push</td><td>نیاز به force-push</td><td>push معمولی</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>روی main</strong> (و هر branch push‌شده و مشترک) همیشه <code>git revert</code>؛ هم امن است و هم مشخص می‌کند که چه چیزی، چرا و توسط چه کسی برگشته است. reset برای کار محلی push‌نشده است. برای revert یک merge commit از <code>-m 1</code> استفاده می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-5">
+      <summary>تفاوت <code>git fetch</code> و <code>git pull</code> چیست؟ <code>pull --rebase</code> چه مزیتی دارد؟</summary>
+      <div class="answer">
+        <p><strong>fetch</strong> commitها و refهای جدید را از remote دانلود و فقط <strong>remote-tracking branchها</strong> (مثل <code>origin/main</code>) را به‌روز می‌کند. branchهای محلی و working tree دست‌نخورده می‌مانند؛ بنابراین همیشه امن است و می‌توان قبل از ادغام تغییرات را بررسی کرد:</p>
+        <pre><code class="language-bash">git fetch
+git log --oneline main..origin/main   # چه چیزی آمده؟
+git diff main...origin/main</code></pre>
+        <p><strong>pull</strong> = <code>fetch</code> + ادغام upstream در branch فعلی (به‌طور پیش‌فرض merge). ممکن است conflict یا merge commit ایجاد کند.</p>
+        <p><strong>pull --rebase</strong>: به‌جای merge، commitهای محلی push‌نشده‌ی شما را روی نسخه‌ی جدید remote قرار می‌دهد. مزایا:</p>
+        <ul>
+          <li>از merge commitهای بی‌معنی «Merge branch 'main' of origin» جلوگیری می‌کند.</li>
+          <li>تاریخچه خطی می‌ماند.</li>
+          <li>قانون طلایی را نقض نمی‌کند، چون فقط commitهای push‌نشده بازنویسی می‌شوند.</li>
+        </ul>
+        <p>با <code>git config --global pull.rebase true</code> پیش‌فرض می‌شود. در محیط CI یا هنگام کار روی branch ناآشنا، fetch و بررسی قبل از ادغام انتخاب محتاطانه‌تری است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-6">
+      <summary>یک سناریو: بعد از rebase روی branch feature می‌خواهید push کنید و رد می‌شود. همکارتان هم روی همین branch کار می‌کند. چه می‌کنید؟ تفاوت <code>--force</code> و <code>--force-with-lease</code> را بگویید.</summary>
+      <div class="answer">
+        <p><strong>علت رد شدن:</strong> rebase commitها را با hash جدید بازنویسی کرده و تاریخچه‌ی محلی دیگر ادامه‌ی (fast-forward) تاریخچه‌ی remote نیست.</p>
+        <p><strong>اقدام:</strong></p>
+        <ol>
+          <li>اول با همکار هماهنگ کنید؛ در اصل، branch مشترک نباید rebase شود (قانون طلایی). اگر هماهنگی ممکن نیست، به‌جای rebase از <code>git merge origin/main</code> استفاده کنید.</li>
+          <li><code>git fetch</code> و بررسی اینکه همکار چیزی push کرده یا نه: <code>git log HEAD..origin/feature</code>.</li>
+          <li>اگر commit جدیدی دارد، آن را روی branch rebase‌شده بیاورید (rebase دوباره روی <code>origin/feature</code> یا cherry-pick).</li>
+          <li>سپس <code>git push --force-with-lease</code> و اطلاع به همکار تا branch محلی خود را با <code>git fetch</code> و <code>git reset --hard origin/feature</code> (اگر تغییر محلی ندارد) یا <code>git pull --rebase</code> هماهنگ کند.</li>
+        </ol>
+        <p><strong>تفاوت‌ها:</strong></p>
+        <ul>
+          <li><code>--force</code>: remote را بی‌قیدوشرط بازنویسی می‌کند؛ commitهای همکار که از آخرین fetch شما push شده‌اند <strong>پاک می‌شوند</strong>.</li>
+          <li><code>--force-with-lease</code>: فقط اگر ref روی remote هنوز برابر <code>origin/feature</code> محلی شما باشد بازنویسی می‌کند؛ اگر کسی در این فاصله push کرده باشد، رد می‌شود.</li>
+          <li>ضعف lease: اگر بعد از push همکار fetch کرده باشید (حتی خودکار در IDE)، lease پاس می‌شود. <code>--force-if-includes</code> این را هم بررسی می‌کند.</li>
+        </ul>
+        <p>روی main و release branchها force push باید با branch protection کاملاً ممنوع باشد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-7">
+      <summary>چند commit «wip» و «fix typo» در branch خود دارید و می‌خواهید قبل از PR تاریخچه را تمیز کنید. چه روش‌هایی دارید؟ squash کردن چه مزایا و معایبی دارد؟</summary>
+      <div class="answer">
+        <p><strong>روش‌ها:</strong></p>
+        <ul>
+          <li><strong>Interactive rebase:</strong> <code>git rebase -i origin/main</code> و استفاده از <code>squash</code> (ادغام و ترکیب پیام‌ها)، <code>fixup</code> (ادغام و دور ریختن پیام)، <code>reword</code>، <code>drop</code> و تغییر ترتیب خطوط.</li>
+          <li><strong>fixup هدفمند:</strong> <code>git commit --fixup=&lt;sha&gt;</code> و بعد <code>git rebase -i --autosquash origin/main</code>.</li>
+          <li><strong>reset --soft:</strong> <code>git reset --soft origin/main</code> و یک commit جدید؛ ساده‌ترین روش برای تبدیل همه به یک commit.</li>
+          <li><strong>Squash and merge</strong> در PR: پلتفرم هنگام merge همه را یک commit می‌کند.</li>
+        </ul>
+        <p>اگر branch قبلاً push شده، بعد از بازنویسی <code>git push --force-with-lease</code> لازم است (فقط برای branch شخصی).</p>
+        <p><strong>مزایای squash:</strong> تاریخچه‌ی main خوانا (یک commit به ازای هر تغییر منطقی)، revert آسان کل feature، حذف نویز آزمون و خطا، و حفظ قابلیت build بودن هر commit (به نفع bisect).</p>
+        <p><strong>معایب:</strong> اگر PR بزرگ باشد، جزئیات مراحل منطقی از بین می‌رود و <code>bisect</code> و <code>blame</code> فقط به یک commit بزرگ می‌رسند؛ commitهای مستقل (مثلاً refactor جدا از feature) در هم ادغام می‌شوند.</p>
+        <p><strong>رویکرد متعادل:</strong> نویز را squash کنید، ولی گام‌های منطقی مستقل را به‌صورت commitهای جدا با پیام معنادار نگه دارید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-8">
+      <summary>یک سناریو: به‌طور تصادفی <code>git reset --hard HEAD~3</code> اجرا کرده‌اید و سه commit مهم «گم» شده است. چطور آن‌ها را بازیابی می‌کنید؟ چه چیزهایی قابل بازیابی نیستند؟</summary>
+      <div class="answer">
+        <p><strong>نکته‌ی کلیدی:</strong> reset commitها را حذف نمی‌کند، فقط اشاره‌گر branch را عقب می‌برد. commitها هنوز در object database هستند و <strong>reflog</strong> ثبت کرده که HEAD قبلاً کجا بوده است.</p>
+        <pre><code class="language-bash">git reflog
+# a1b2c3d HEAD@{0}: reset: moving to HEAD~3
+# 9f8e7d6 HEAD@{1}: commit: feat: add coupon validation
+git reset --hard 9f8e7d6     # یا HEAD@{1}
+# روش محتاطانه‌تر: git branch rescue 9f8e7d6
+# بلافاصله بعد از reset/rebase/merge: git reset --hard ORIG_HEAD</code></pre>
+        <p><strong>چه چیزهایی قابل بازیابی نیستند یا محدودیت دارند:</strong></p>
+        <ul>
+          <li><strong>تغییرات commit‌نشده</strong> در working tree که با <code>--hard</code> پاک شده‌اند، در reflog نیستند. (اگر فقط stage شده بودند، blob آن‌ها ممکن است با <code>git fsck --lost-found</code> پیدا شود.)</li>
+          <li>reflog <strong>محلی</strong> است؛ در clone دیگر یا روی سرور وجود ندارد.</li>
+          <li>ورودی‌ها منقضی می‌شوند (پیش‌فرض‌ها ۹۰ و ۳۰ روز) و پس از آن <code>git gc</code> اشیای بی‌مرجع را حذف می‌کند.</li>
+        </ul>
+        <p><strong>پیشگیری:</strong> قبل از عملیات پرخطر یک branch پشتیبان بسازید، به‌جای <code>--hard</code> از <code>--keep</code> یا stash استفاده کنید، و commitها را زودبه‌زود روی branch شخصی push کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-9">
+      <summary>یک باگ در production دیده شده که در نسخه‌ی v2.2.0 وجود نداشت و بین آن و HEAD حدود ۵۰۰ commit فاصله است. با Git چطور commit معیوب را پیدا می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>ابزار:</strong> <code>git bisect</code> که با <strong>جستجوی دودویی</strong> اولین commit معیوب را پیدا می‌کند. برای ۵۰۰ commit حدود ۹ مرحله (log₂ 500) کافی است.</p>
+        <ol>
+          <li>یک تست خودکار بنویسید که باگ را بازتولید کند (و در نسخه‌ی سالم پاس شود). این تست بعداً regression test هم خواهد بود.</li>
+          <li>اجرای bisect:</li>
+        </ol>
+        <pre><code class="language-bash">git bisect start HEAD v2.2.0       # bad سپس good
+git bisect run ./vendor/bin/phpunit --filter=InvoiceRoundingTest
+# خروجی: "3c4d5e6 is the first bad commit"
+git show 3c4d5e6
+git bisect reset</code></pre>
+        <ul>
+          <li><code>bisect run</code> برای exit code ۰ آن commit را good و برای ۱ تا ۱۲۷ (به جز ۱۲۵) bad در نظر می‌گیرد؛ ۱۲۵ یعنی skip (مثلاً commit قابل build نیست).</li>
+          <li>اگر تست خودکار ممکن نیست، دستی تست کنید و <code>git bisect good</code>/<code>bad</code> بزنید.</li>
+          <li>اگر schema دیتابیس بین commitها تغییر کرده، اسکریپت باید migration مناسب را اجرا کند (مثلاً <code>RefreshDatabase</code> در تست).</li>
+        </ul>
+        <p><strong>شرط کارایی:</strong> commitهای کوچک و اتمیک که هر کدام build و تست را پاس می‌کنند. با squash-merge commitهای بزرگ، bisect فقط PR مقصر را پیدا می‌کند. مکمل‌ها: <code>git log -S</code> برای جستجوی تغییر یک رشته و <code>git blame</code> برای خطوط مشکوک.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-10">
+      <summary>Git Flow، GitHub Flow و Trunk-based Development را مقایسه کنید. برای یک تیم ۶ نفره که یک SaaS مبتنی بر Laravel را چند بار در هفته deploy می‌کند، کدام را پیشنهاد می‌دهید و چرا؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Git Flow:</strong> branchهای دائمی <code>main</code> و <code>develop</code> به‌علاوه‌ی <code>feature/*</code>، <code>release/*</code> و <code>hotfix/*</code>. مناسب releaseهای دوره‌ای و پشتیبانی چند نسخه‌ی هم‌زمان. عیب: پیچیدگی، branchهای طولانی، conflict زیاد، فاصله‌ی زیاد تا production.</li>
+          <li><strong>GitHub Flow:</strong> فقط <code>main</code> که همیشه deployable است؛ branch کوتاه، PR، review و CI، merge و deploy. ساده و مناسب deploy پیوسته، اما بدون CI قوی ریسکی است و چندنسخه‌ای را پوشش نمی‌دهد.</li>
+          <li><strong>Trunk-based:</strong> ادغام چندباره در روز در trunk با branchهای چندساعته و <strong>feature flag</strong> برای کار ناتمام. کمترین conflict و سریع‌ترین بازخورد، ولی نیازمند CI سریع، تست خودکار قوی و نظم تیمی.</li>
+        </ul>
+        <p><strong>پیشنهاد برای این تیم:</strong> GitHub Flow (با حرکت تدریجی به سمت trunk-based):</p>
+        <ul>
+          <li>یک نسخه در production وجود دارد، پس release branch و develop سربار بی‌فایده‌اند.</li>
+          <li>PRهای کوچک با branch protection: CI شامل Pest/PHPUnit، Larastan و Pint، و حداقل یک approve.</li>
+          <li>squash-merge با پیام Conventional تا CHANGELOG و نسخه خودکار تولید شود.</li>
+          <li>feature flag (مثلاً Laravel Pennant) برای featureهای بزرگ تا branchها طولانی نشوند.</li>
+          <li>deploy خودکار از main به staging و deploy کنترل‌شده به production؛ hotfix هم یک PR عادی است.</li>
+        </ul>
+        <p>اگر بعداً محصول on-premise با چند نسخه‌ی تحت پشتیبانی اضافه شود، می‌توان release branchها را اضافه کرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-11">
+      <summary>یک Pull Request خوب چه ویژگی‌هایی دارد و در code review به چه مواردی توجه می‌کنید؟ هدف code review فقط پیدا کردن باگ است؟</summary>
+      <div class="answer">
+        <p><strong>PR خوب:</strong></p>
+        <ul>
+          <li><strong>کوچک و تک‌هدفه</strong> (معمولاً چند صد خط یا کمتر)؛ refactor و feature در PRهای جدا.</li>
+          <li>توضیح «چه و چرا»، لینک issue، نحوه‌ی تست، نکات deploy (migration، env جدید، worker).</li>
+          <li>self-review، CI سبز، commitهای تمیز.</li>
+        </ul>
+        <p><strong>چک‌لیست review:</strong></p>
+        <ol>
+          <li><strong>درستی:</strong> برآورده شدن نیازمندی، edge caseها، مدیریت خطا، تراکنش و race condition.</li>
+          <li><strong>امنیت:</strong> authorization (Policy/Gate)، validation، mass assignment، SQL injection، داده‌ی حساس در log.</li>
+          <li><strong>کارایی:</strong> N+1 (eager loading)، index، کار سنگین در queue.</li>
+          <li><strong>طراحی:</strong> جای درست منطق، coupling، سازگاری با معماری موجود.</li>
+          <li><strong>تست:</strong> پوشش رفتارهای مهم و حالت‌های خطا.</li>
+          <li><strong>خوانایی:</strong> نام‌گذاری، پیچیدگی، مستندات.</li>
+        </ol>
+        <p><strong>اهداف فراتر از باگ:</strong> <strong>اشتراک دانش</strong> و کاهش bus factor، یکپارچگی معماری و سبک، آموزش، و ثبت تصمیم‌ها در تاریخچه‌ی PR.</p>
+        <p><strong>فرهنگ:</strong> نقد کد نه شخص، سؤال به‌جای حکم، تفکیک <code>nit:</code> از موارد blocking، review سریع، و سپردن style به ابزارهای خودکار.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-12">
+      <summary>Conventional Commits چیست؟ ساختار آن را با مثال بنویسید و ارتباطش را با Semantic Versioning توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> یک قرارداد سبک برای پیام commit که ساختار مشخص و قابل پردازش با ماشین دارد:</p>
+        <pre><code class="language-plaintext">&lt;type&gt;(&lt;scope&gt;)[!]: &lt;description&gt;
+
+&lt;body: چرا و چگونه&gt;
+
+&lt;footer: BREAKING CHANGE: ... / Closes #123&gt;</code></pre>
+        <pre><code class="language-plaintext">feat(auth): add two-factor authentication via TOTP
+fix(cart): round tax per line instead of per order
+refactor(order)!: rename status "paid" to "settled"
+
+BREAKING CHANGE: API consumers must handle the new status value.</code></pre>
+        <p><strong>ارتباط با SemVer:</strong></p>
+        <ul>
+          <li><code>fix</code> ← افزایش <strong>PATCH</strong></li>
+          <li><code>feat</code> ← افزایش <strong>MINOR</strong></li>
+          <li><code>!</code> بعد از type/scope یا footer <code>BREAKING CHANGE:</code> ← افزایش <strong>MAJOR</strong></li>
+          <li>typeهای دیگر (<code>docs</code>، <code>refactor</code>، <code>test</code>، <code>ci</code>، <code>chore</code> و…) معمولاً release ایجاد نمی‌کنند.</li>
+        </ul>
+        <p><strong>مزایا:</strong> تولید خودکار CHANGELOG و نسخه (semantic-release، release-please)، تاریخچه‌ی قابل جستجو، و وادار کردن توسعه‌دهنده به فکر کردن درباره‌ی ماهیت تغییر (آیا breaking است؟).</p>
+        <p><strong>اجرا:</strong> hook <code>commit-msg</code> با commitlint و بررسی در CI؛ در صورت squash-merge، کافی است عنوان PR از قرارداد پیروی کند.</p>
+        <p><strong>محدودیت:</strong> قرارداد فقط قالب را تضمین می‌کند؛ کیفیت محتوا (توضیح «چرا») همچنان به نویسنده بستگی دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-13">
+      <summary>کد/دستورات زیر چه مشکلی دارند؟ <code>git add .env &amp;&amp; git commit -m "update" &amp;&amp; git push origin main --force</code></summary>
+      <div class="answer">
+        <p>این دستور زنجیره‌ای چند مشکل جدی دارد:</p>
+        <ol>
+          <li><strong>commit کردن <code>.env</code>:</strong> این فایل secretها (کلید APP_KEY، رمز دیتابیس، کلید APIها) را دارد. باید در <code>.gitignore</code> باشد و فقط <code>.env.example</code> بدون مقدار commit شود. اگر push شد، باید فرض کرد لو رفته است: <strong>همه‌ی کلیدها را rotate کنید</strong>، فایل را با <code>git rm --cached .env</code> خارج کنید و در صورت نیاز تاریخچه را با <code>git filter-repo</code> پاک‌سازی کنید (که خودش نیازمند هماهنگی تیم است).</li>
+          <li><strong>پیام «update»:</strong> بی‌معنی است؛ نه نوع تغییر را می‌گوید نه دلیل آن را. باید مثلاً <code>chore(config): add mail queue settings</code> با توضیح باشد.</li>
+          <li><strong>push مستقیم به main:</strong> review و CI را دور می‌زند؛ باید از طریق PR انجام شود.</li>
+          <li><strong>--force روی main:</strong> تاریخچه‌ی مشترک را بازنویسی می‌کند و ممکن است commitهای دیگران را پاک کند. در صورت نیاز واقعی به force روی branch شخصی، <code>--force-with-lease</code> استفاده شود؛ روی main هرگز.</li>
+        </ol>
+        <p><strong>پیشگیری سیستمی:</strong> branch protection روی main (منع push مستقیم و force push)، secret scanning در pre-commit (مثل gitleaks) و در پلتفرم/CI، و <code>.gitignore</code> استاندارد Laravel.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-14">
+      <summary>Conflict در Git چه زمانی رخ می‌دهد و مراحل حل آن چیست؟ برای کاهش conflict در تیم چه پیشنهادهایی دارید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> conflict وقتی رخ می‌دهد که Git در three-way merge (یا rebase/cherry-pick) نتواند خودکار تصمیم بگیرد: هر دو طرف یک ناحیه از فایل را نسبت به merge base به شکل متفاوت تغییر داده‌اند، یا یک طرف فایل را حذف و طرف دیگر ویرایش کرده است.</p>
+        <p><strong>مراحل حل:</strong></p>
+        <ol>
+          <li><code>git status</code> برای فهرست فایل‌های unmerged.</li>
+          <li>بررسی markerها (<code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>، <code>=======</code>، <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code>)؛ با <code>merge.conflictStyle=zdiff3</code> نسخه‌ی base هم دیده می‌شود.</li>
+          <li>فهم <strong>منطق</strong> هر دو تغییر و نوشتن نسخه‌ی ترکیبی صحیح؛ اغلب جواب درست ترکیب هر دو است، نه انتخاب یکی.</li>
+          <li>اجرای تست‌ها، سپس <code>git add</code> و <code>git commit</code> یا <code>git rebase --continue</code>.</li>
+          <li>در صورت نیاز <code>--abort</code>. برای lock fileها، یک نسخه را بردارید و با Composer دوباره تولید کنید.</li>
+        </ol>
+        <p><strong>کاهش conflict:</strong></p>
+        <ul>
+          <li>branchهای کوتاه‌عمر و PRهای کوچک؛ ادغام مکرر (پایه‌ی trunk-based).</li>
+          <li>همگام‌سازی منظم branch با main.</li>
+          <li>formatter مشترک (Pint) و تنظیمات editor یکسان (<code>.editorconfig</code>) تا تغییرات فاصله‌گذاری conflict نسازند.</li>
+          <li>شکستن فایل‌های بزرگ و پرتغییر؛ ارتباط تیمی برای refactorهای گسترده.</li>
+          <li><code>rerere</code> برای تکرار خودکار حل conflictهای قبلی.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-15">
+      <summary>Git hookها چه هستند؟ یک pre-commit hook برای پروژه‌ی PHP چه کارهایی باید انجام دهد و چرا hook جایگزین CI نیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> hookها اسکریپت‌هایی هستند که Git در رویدادهای مشخص (مثل <code>pre-commit</code>، <code>commit-msg</code>، <code>pre-push</code> و در سرور <code>pre-receive</code>) اجرا می‌کند. اگر hookهای «pre» کد خروج غیرصفر برگردانند، عملیات لغو می‌شود.</p>
+        <p><strong>pre-commit مناسب برای PHP</strong> (فقط روی فایل‌های stage‌شده و سریع):</p>
+        <ul>
+          <li><code>php -l</code> برای خطای syntax.</li>
+          <li>بررسی style با <code>pint --test</code> (یا اصلاح خودکار).</li>
+          <li>اسکن secret (gitleaks) و جلوگیری از commit فایل‌های <code>.env</code>.</li>
+          <li>جلوگیری از <code>dd()</code>/<code>dump()</code> فراموش‌شده.</li>
+          <li>کارهای کندتر مثل تست کامل و PHPStan بهتر است در <code>pre-push</code> یا CI باشند.</li>
+        </ul>
+        <p><strong>اشتراک‌گذاری:</strong> <code>.git/hooks</code> version control نمی‌شود؛ با <code>git config core.hooksPath .githooks</code> یا ابزارهایی مثل CaptainHook/GrumPHP (از طریق Composer) hookها در repo نگه‌داری و نصب می‌شوند.</p>
+        <p><strong>چرا جایگزین CI نیست:</strong></p>
+        <ul>
+          <li>با <code>--no-verify</code> قابل دور زدن‌اند و ممکن است روی سیستم یک نفر نصب نشده باشند.</li>
+          <li>به محیط محلی وابسته‌اند (نسخه‌ی PHP، extensionها).</li>
+          <li>CI در محیط یکسان و کنترل‌شده اجرا می‌شود و همراه با branch protection <strong>اجبار</strong> ایجاد می‌کند.</li>
+        </ul>
+        <p>پس hook برای <strong>بازخورد سریع</strong> است و CI برای <strong>تضمین</strong>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-git-16">
+      <summary>git stash چیست و چه زمانی از آن استفاده می‌کنید؟ چه جایگزین‌هایی برای آن وجود دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> stash تغییرات commit‌نشده (working tree و index) را در یک پشته‌ی محلی ذخیره و working tree را به وضعیت HEAD برمی‌گرداند. stash در واقع commitهای ویژه‌ای است که در <code>refs/stash</code> نگه‌داری می‌شوند.</p>
+        <p><strong>کاربردها:</strong></p>
+        <ul>
+          <li>وسط کار هستید و باید فوراً branch را عوض کنید (hotfix).</li>
+          <li>قبل از <code>pull</code> یا <code>rebase</code> که working tree تمیز می‌خواهد.</li>
+          <li>انتقال تغییرات به branch دیگر (stash، switch، pop).</li>
+        </ul>
+        <pre><code class="language-bash">git stash push -u -m "wip: invoice totals"
+git switch hotfix/login
+# ...
+git switch feature/invoice
+git stash pop</code></pre>
+        <p><strong>نکات:</strong> فایل‌های untracked به‌طور پیش‌فرض stash نمی‌شوند (<code>-u</code> لازم است)؛ <code>pop</code> در صورت conflict stash را حذف نمی‌کند؛ stash push نمی‌شود و نام branch ندارد، پس به‌راحتی فراموش می‌شود.</p>
+        <p><strong>جایگزین‌ها:</strong></p>
+        <ul>
+          <li><strong>WIP commit</strong> روی branch شخصی و بعداً <code>reset --soft HEAD~1</code> یا squash؛ قابل push و پشتیبان‌گیری.</li>
+          <li><strong>git worktree:</strong> <code>git worktree add ../app-hotfix main</code>؛ working tree دوم بدون دست زدن به کار فعلی. برای کار موازی بهترین گزینه است.</li>
+        </ul>
+      </div>
+    </details>
+
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>مدل</h4>
+      <ul>
+        <li>commit = snapshot تغییرناپذیر + والد(ها)؛ شناسه = hash محتوا.</li>
+        <li>اشیا: blob (فایل)، tree (پوشه)، commit، annotated tag.</li>
+        <li>branch = اشاره‌گر متحرک؛ tag = اشاره‌گر ثابت؛ HEAD = جای فعلی.</li>
+        <li>Detached HEAD = HEAD مستقیم روی commit؛ commitها را با branch نجات دهید.</li>
+        <li>سه ناحیه: working tree ← (add) ← index ← (commit) ← repo.</li>
+        <li><code>diff</code> = unstaged؛ <code>diff --staged</code> = آنچه commit می‌شود.</li>
+      </ul>
+      <h4>ادغام</h4>
+      <ul>
+        <li>ff: فقط جلو بردن اشاره‌گر، بدون commit جدید.</li>
+        <li>three-way: base + دو نوک ← merge commit با دو والد.</li>
+        <li><code>--no-ff</code> مرز feature را حفظ می‌کند؛ <code>--squash</code> یک commit بدون ارتباط والدی.</li>
+        <li>rebase = replay با hash جدید؛ تاریخچه‌ی خطی.</li>
+        <li><strong>قانون طلایی:</strong> commitهای push‌شده‌ی مشترک را rebase نکنید.</li>
+        <li>rebase محلی، merge/squash در PR.</li>
+        <li>conflict: فهم هر دو طرف، تست، <code>add</code>، <code>continue</code>؛ <code>zdiff3</code> و <code>rerere</code> مفیدند.</li>
+        <li>در rebase، ours = پایه و theirs = commit شما.</li>
+      </ul>
+      <h4>بازگردانی</h4>
+      <ul>
+        <li><code>reset --soft</code>: فقط branch؛ <code>--mixed</code>: + index؛ <code>--hard</code>: + working tree.</li>
+        <li><code>revert</code>: commit معکوس، امن برای main؛ merge: <code>-m 1</code>.</li>
+        <li><code>restore file</code>: دور ریختن تغییر؛ <code>restore --staged</code>: unstage.</li>
+        <li><code>stash -u</code>، <code>pop</code> در برابر <code>apply</code>؛ جایگزین: WIP commit یا <code>worktree</code>.</li>
+        <li><code>cherry-pick -x</code>: کپی یک commit با hash جدید (backport).</li>
+        <li><code>rebase -i</code>: pick، reword، edit، squash، fixup، drop؛ <code>--fixup</code> + <code>--autosquash</code>.</li>
+      </ul>
+      <h4>Remote</h4>
+      <ul>
+        <li>fetch: فقط <code>origin/*</code> را به‌روز می‌کند (امن).</li>
+        <li>pull = fetch + merge؛ <code>pull --rebase</code> بدون merge commit بی‌معنی.</li>
+        <li>push فقط ff پذیرفته می‌شود؛ بعد از rebase: <code>--force-with-lease</code> (+ <code>--force-if-includes</code>).</li>
+        <li>tagها جدا push می‌شوند: <code>git push origin v1.2.0</code> یا <code>--follow-tags</code>.</li>
+      </ul>
+      <h4>نسخه و پیام</h4>
+      <ul>
+        <li>SemVer: MAJOR (ناسازگار)، MINOR (قابلیت سازگار)، PATCH (رفع باگ).</li>
+        <li>Composer: <code>^2.3</code> = &lt;3.0؛ <code>~2.3.1</code> = &lt;2.4.0؛ <code>^0.4</code> = &lt;0.5.</li>
+        <li>Annotated tag برای release؛ tag منتشرشده را جابه‌جا نکنید.</li>
+        <li>Conventional: <code>type(scope)!: desc</code>؛ feat→MINOR، fix→PATCH، BREAKING→MAJOR.</li>
+        <li>subject حدود ۵۰ کاراکتر، امری، body = «چرا».</li>
+      </ul>
+      <h4>Workflow و تیم</h4>
+      <ul>
+        <li>Git Flow: main + develop + feature/release/hotfix؛ برای release دوره‌ای و چندنسخه‌ای.</li>
+        <li>GitHub Flow: main همیشه deployable + PR؛ برای SaaS.</li>
+        <li>Trunk-based: ادغام روزانه + feature flag + CI قوی.</li>
+        <li>PR کوچک، توضیح چه/چرا/تست/deploy، CI سبز، branch protection، CODEOWNERS.</li>
+        <li>review: درستی، امنیت، کارایی، طراحی، تست، خوانایی + اشتراک دانش.</li>
+      </ul>
+      <h4>بازیابی و ابزار</h4>
+      <ul>
+        <li><code>reflog</code>: تاریخچه‌ی محلی HEAD؛ نجات بعد از reset/rebase؛ <code>ORIG_HEAD</code>.</li>
+        <li>تغییرات commit‌نشده با <code>reset --hard</code> قابل بازیابی نیستند.</li>
+        <li><code>bisect</code>: جستجوی دودویی؛ <code>bisect run</code>؛ ۱۲۵ = skip.</li>
+        <li><code>blame</code>، <code>log -S</code>، <code>log -L</code> برای ردیابی.</li>
+        <li><code>.gitignore</code> روی فایل track‌شده اثر ندارد ← <code>rm --cached</code>.</li>
+        <li>secret لو رفته ← اول rotate، بعد پاک‌سازی.</li>
+        <li>hook = بازخورد سریع (قابل دور زدن)؛ CI = تضمین. <code>core.hooksPath</code> برای اشتراک.</li>
+        <li>submodule = اشاره به یک commit مشخص؛ در PHP پکیج Composer معمولاً بهتر است.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

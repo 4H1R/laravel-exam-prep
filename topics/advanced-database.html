@@ -1,0 +1,1622 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Advanced Database — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="advanced-database">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Advanced Database</h1>
+    <p class="lead">ACID و سطوح ایزولاسیون، MVCC، قفل‌ها و Deadlock، ساختار داخلی ایندکس‌ها و خواندن EXPLAIN، CTE و Window Function، و در ادامه Partitioning، Sharding، Replication، High Availability، CAP/PACELC و استراتژی‌های Backup؛ همه با تمرکز بر MySQL InnoDB، PostgreSQL و Laravel.</p>
+  </header>
+
+  <!-- ===================================================== 1 -->
+  <section class="lesson" id="acid" data-title="ACID در عمق">
+    <h2>ACID در عمق</h2>
+    <p><strong>Transaction</strong> یک واحد منطقی کار است که شامل یک یا چند عملیات روی دیتابیس می‌شود و دیتابیس تضمین می‌کند که این مجموعه یا <em>کامل</em> اعمال شود یا <em>اصلاً</em> اعمال نشود. چهار ویژگی ACID قراردادی است که دیتابیس رابطه‌ای درباره‌ی تراکنش‌ها با ما می‌بندد. نکته‌ی مهم برای پاسخ تشریحی این است که فقط تعریف نکنید؛ بگویید <strong>هر ویژگی با چه مکانیزمی</strong> پیاده‌سازی می‌شود.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>تعریف</th><th>مکانیزم در InnoDB</th><th>مکانیزم در PostgreSQL</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Atomicity</strong></td><td>همه یا هیچ؛ اگر وسط کار خطا رخ دهد، همه‌ی تغییرات برگردانده می‌شوند.</td><td><code>undo log</code>: نسخه‌ی قبلی هر سطر نگه داشته می‌شود تا در <code>ROLLBACK</code> برگردد.</td><td>نسخه‌های جدید tuple با <code>xmin</code> تراکنش ثبت می‌شوند؛ اگر تراکنش abort شود، آن نسخه‌ها هرگز visible نمی‌شوند.</td></tr>
+        <tr><td><strong>Consistency</strong></td><td>تراکنش دیتابیس را از یک حالت معتبر به حالت معتبر دیگر می‌برد (constraintها، FK، UNIQUE، CHECK نقض نمی‌شوند).</td><td>constraintها + منطق درست برنامه</td><td>constraintها (شامل deferrable constraints) + منطق برنامه</td></tr>
+        <tr><td><strong>Isolation</strong></td><td>تراکنش‌های هم‌زمان نباید روی هم اثر ناخواسته بگذارند؛ میزانش با Isolation Level تنظیم می‌شود.</td><td>MVCC برای خواندن + قفل‌های سطری، gap و next-key برای نوشتن</td><td>MVCC (snapshot) + قفل سطری + SSI در سطح Serializable</td></tr>
+        <tr><td><strong>Durability</strong></td><td>پس از <code>COMMIT</code>، تغییر حتی با قطع برق از بین نمی‌رود.</td><td><code>redo log</code> (Write-Ahead) + <code>innodb_flush_log_at_trx_commit=1</code> + doublewrite buffer</td><td>WAL + <code>fsync</code> + <code>synchronous_commit=on</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Write-Ahead Logging؛ قلب Durability</h3>
+    <p>دیتابیس به‌جای اینکه با هر COMMIT صفحه‌های داده (data pages) را که به‌صورت تصادفی روی دیسک پخش‌اند بنویسد، ابتدا تغییر را به‌صورت <strong>ترتیبی (sequential)</strong> در لاگ می‌نویسد و آن را <code>fsync</code> می‌کند. صفحه‌های داده بعداً و به‌صورت دسته‌ای (checkpoint) flush می‌شوند. اگر سرور crash کند، هنگام راه‌اندازی، لاگ replay می‌شود (crash recovery). نوشتن ترتیبی بسیار سریع‌تر از نوشتن تصادفی است؛ به همین دلیل WAL هم Durability و هم کارایی را تأمین می‌کند.</p>
+    <pre class="diagram">  COMMIT
+    │
+    ▼
+┌──────────────┐  fsync (ترتیبی، سریع)   ┌──────────────────┐
+│ Log Buffer   │ ──────────────────────► │ redo log / WAL   │  ← Durability
+└──────────────┘                         └──────────────────┘
+┌──────────────┐  بعداً در checkpoint    ┌──────────────────┐
+│ Buffer Pool  │ ──────────────────────► │ Data files (.ibd)│
+│ (dirty pages)│     (تصادفی، کند)        └──────────────────┘
+└──────────────┘
+Crash ⇒ restart ⇒ replay redo/WAL ⇒ صفحه‌های commit‌شده بازسازی می‌شوند</pre>
+
+    <h3>تنظیمات مهم Durability در MySQL</h3>
+    <ul>
+      <li><code>innodb_flush_log_at_trx_commit = 1</code> (پیش‌فرض): در هر COMMIT لاگ نوشته و fsync می‌شود؛ ACID کامل.</li>
+      <li><code>= 2</code>: در هر COMMIT به OS نوشته می‌شود ولی fsync حدوداً هر ثانیه؛ crash خود MySQL داده را از بین نمی‌برد ولی crash سیستم‌عامل/قطع برق ممکن است تا حدود یک ثانیه تراکنش را از بین ببرد.</li>
+      <li><code>= 0</code>: سریع‌ترین و ناامن‌ترین؛ حتی crash خود MySQL هم ممکن است تراکنش‌های ثانیه‌ی آخر را از بین ببرد.</li>
+      <li><code>sync_binlog = 1</code>: binlog هم در هر commit fsync شود؛ برای سازگاری binlog با داده (و درنتیجه replication و PITR) لازم است.</li>
+    </ul>
+
+    <div class="callout exam"><p><strong>تله‌ی رایج سوال:</strong> «C» در ACID با «C» در CAP یکی نیست. در ACID، Consistency یعنی رعایت قیود و invariantهای داده؛ در CAP یعنی <strong>Linearizability</strong>، یعنی همه‌ی نودها در یک لحظه آخرین مقدار نوشته‌شده را ببینند.</p></div>
+
+    <div class="callout note"><p>Consistency تنها ویژگی ACID است که بخشی از آن بر عهده‌ی <strong>برنامه</strong> است. دیتابیس فقط قیودی را که تعریف کرده‌اید اعمال می‌کند؛ اگر قانون «مجموع موجودی حساب‌ها ثابت بماند» را در کد درست پیاده نکنید، دیتابیس نمی‌تواند آن را تضمین کند.</p></div>
+
+    <h3>تراکنش در Laravel</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\DB;
+
+// روش closure: در صورت Exception خودکار rollback، در غیر این صورت commit.
+// پارامتر دوم: تعداد تلاش مجدد در صورت deadlock.
+DB::transaction(function () use ($from, $to, $amount) {
+    Account::whereKey($from)-&gt;decrement('balance', $amount);
+    Account::whereKey($to)-&gt;increment('balance', $amount);
+    Transfer::create(['from' =&gt; $from, 'to' =&gt; $to, 'amount' =&gt; $amount]);
+}, attempts: 3);
+
+// روش دستی
+DB::beginTransaction();
+try {
+    // ...
+    DB::commit();
+} catch (\Throwable $e) {
+    DB::rollBack();
+    throw $e;
+}</code></pre>
+    <div class="callout warn"><p>تراکنش‌های تودرتو در Laravel با <strong>SAVEPOINT</strong> پیاده می‌شوند؛ یعنی <code>DB::transaction</code> داخلی یک commit واقعی نیست و فقط بیرونی‌ترین تراکنش commit می‌کند. همچنین کارهای خارج از دیتابیس (ارسال ایمیل، صدا زدن API، dispatch کردن job) را داخل تراکنش قرار ندهید؛ rollback آن‌ها را برنمی‌گرداند. برای jobها از <code>afterCommit</code> یا <code>DB::afterCommit()</code> استفاده کنید.</p></div>
+    <div class="callout tip"><p>تراکنش را <strong>کوتاه</strong> نگه دارید. تراکنش طولانی یعنی قفل طولانی، احتمال بیشتر deadlock، رشد undo log در InnoDB و جلوگیری از VACUUM در PostgreSQL.</p></div>
+  </section>
+
+  <!-- ===================================================== 2 -->
+  <section class="lesson" id="isolation-levels" data-title="سطوح ایزولاسیون و ناهنجاری‌ها">
+    <h2>سطوح ایزولاسیون و ناهنجاری‌ها</h2>
+    <p>Isolation کامل (اجرای سریالی) گران است. استاندارد SQL چهار سطح تعریف می‌کند که هر کدام بین <strong>درستی</strong> و <strong>هم‌زمانی (concurrency)</strong> مصالحه می‌کنند. برای توضیح هر سطح، باید بدانید چه <strong>ناهنجاری (anomaly)</strong>‌ای را مجاز می‌داند.</p>
+
+    <h3>ناهنجاری‌ها</h3>
+    <dl class="terms">
+      <dt>Dirty Read</dt><dd>تراکنش A داده‌ای را می‌خواند که تراکنش B نوشته ولی هنوز commit نکرده؛ اگر B rollback کند، A داده‌ای را دیده که هرگز وجود نداشته است.</dd>
+      <dt>Non-Repeatable Read</dt><dd>A یک سطر را دو بار می‌خواند و بین این دو بار، B آن سطر را <strong>update</strong> و commit کرده؛ پس دو مقدار متفاوت دیده می‌شود.</dd>
+      <dt>Phantom Read</dt><dd>A یک <strong>شرط (range)</strong> را دو بار query می‌کند و بین این دو بار، B سطری را <strong>insert/delete</strong> کرده که با شرط مطابقت دارد؛ پس مجموعه‌ی نتایج تغییر می‌کند.</dd>
+      <dt>Lost Update</dt><dd>A و B هر دو مقداری را می‌خوانند، در برنامه تغییرش می‌دهند و می‌نویسند (read-modify-write)؛ نوشتن دوم، نوشتن اول را بی‌اثر می‌کند.</dd>
+      <dt>Write Skew</dt><dd>A و B هر دو یک شرط مشترک را می‌خوانند (مثلاً «حداقل دو پزشک کشیک هستند»)، و هر کدام بر اساس آن، <strong>سطر متفاوتی</strong> را تغییر می‌دهند؛ هیچ‌کدام تداخل مستقیم ندارند، اما نتیجه‌ی نهایی invariant را نقض می‌کند (هیچ پزشکی کشیک نمی‌ماند).</dd>
+    </dl>
+
+    <h3>جدول سطوح و ناهنجاری‌ها</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>سطح</th><th>Dirty Read</th><th>Non-Repeatable</th><th>Phantom</th><th>Lost Update</th><th>Write Skew</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Read Uncommitted</strong></td><td>ممکن</td><td>ممکن</td><td>ممکن</td><td>ممکن</td><td>ممکن</td></tr>
+        <tr><td><strong>Read Committed</strong></td><td>جلوگیری</td><td>ممکن</td><td>ممکن</td><td>ممکن</td><td>ممکن</td></tr>
+        <tr><td><strong>Repeatable Read</strong> (استاندارد)</td><td>جلوگیری</td><td>جلوگیری</td><td>ممکن</td><td>وابسته به پیاده‌سازی</td><td>ممکن</td></tr>
+        <tr><td>Repeatable Read در <strong>PostgreSQL</strong> (Snapshot Isolation)</td><td>جلوگیری</td><td>جلوگیری</td><td>جلوگیری</td><td>جلوگیری (خطای serialization)</td><td><strong>ممکن</strong></td></tr>
+        <tr><td>Repeatable Read در <strong>InnoDB</strong></td><td>جلوگیری</td><td>جلوگیری</td><td>برای snapshot read جلوگیری؛ برای locking read با next-key lock جلوگیری</td><td><strong>ممکن</strong> (در الگوی SELECT ساده و سپس UPDATE)</td><td>ممکن</td></tr>
+        <tr><td><strong>Serializable</strong></td><td>جلوگیری</td><td>جلوگیری</td><td>جلوگیری</td><td>جلوگیری</td><td>جلوگیری</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>پیش‌فرض‌ها و تفاوت پیاده‌سازی</h3>
+    <div class="grid-2">
+      <div class="card"><h4>MySQL InnoDB</h4><ul>
+        <li>پیش‌فرض: <strong>REPEATABLE READ</strong>.</li>
+        <li>خواندن ساده (<em>consistent nonlocking read</em>) از snapshot خوانده می‌شود؛ snapshot در اولین خواندن تراکنش ساخته می‌شود (نه لزوماً در <code>BEGIN</code>).</li>
+        <li><code>UPDATE</code>/<code>DELETE</code> و <code>SELECT … FOR UPDATE</code> «current read» هستند: آخرین نسخه‌ی commit‌شده را می‌خوانند و قفل می‌گیرند، نه snapshot.</li>
+        <li>برای جلوگیری از phantom در locking readها از <strong>gap lock و next-key lock</strong> استفاده می‌کند.</li>
+        <li>Serializable در InnoDB قفل‌محور است: SELECTهای ساده (وقتی autocommit خاموش است) ضمنی به <code>FOR SHARE</code> تبدیل می‌شوند.</li>
+        <li>Read Uncommitted واقعاً dirty read دارد.</li>
+      </ul></div>
+      <div class="card"><h4>PostgreSQL</h4><ul>
+        <li>پیش‌فرض: <strong>READ COMMITTED</strong>؛ هر <em>statement</em> snapshot تازه می‌گیرد.</li>
+        <li>Read Uncommitted مثل Read Committed رفتار می‌کند؛ dirty read هرگز رخ نمی‌دهد.</li>
+        <li>Repeatable Read همان <strong>Snapshot Isolation</strong> است؛ phantom هم رخ نمی‌دهد. اگر سطری که شما می‌خواهید update کنید را تراکنش دیگری بعد از snapshot شما تغییر داده باشد، خطای <code>could not serialize access due to concurrent update</code> می‌گیرید.</li>
+        <li>Serializable با <strong>SSI</strong> (Serializable Snapshot Isolation) پیاده شده: قفل خواندنی نمی‌گذارد، وابستگی‌های خطرناک را رصد می‌کند و یکی از تراکنش‌ها را با SQLSTATE <code>40001</code> abort می‌کند. برنامه باید <strong>retry</strong> کند.</li>
+      </ul></div>
+    </div>
+
+    <h3>مثال Write Skew</h3>
+    <pre><code class="language-sql">-- invariant: حداقل یک پزشک باید on_call باشد. الان Ali و Sara هر دو on_call هستند.
+-- T1 (Ali)                                   -- T2 (Sara)
+BEGIN;                                        BEGIN;
+SELECT count(*) FROM doctors                  SELECT count(*) FROM doctors
+ WHERE on_call AND shift_id = 7;  -- 2         WHERE on_call AND shift_id = 7;  -- 2
+UPDATE doctors SET on_call = false            UPDATE doctors SET on_call = false
+ WHERE name = 'Ali';                           WHERE name = 'Sara';
+COMMIT;                                       COMMIT;
+-- نتیجه: هیچ پزشکی on_call نیست! دو تراکنش سطرهای متفاوتی را نوشتند، پس
+-- Snapshot Isolation تداخلی تشخیص نمی‌دهد.</code></pre>
+    <p><strong>راه‌حل‌ها:</strong> (۱) سطح <code>SERIALIZABLE</code> (در PostgreSQL یکی abort می‌شود)؛ (۲) قفل صریح روی سطرهایی که شرط را تشکیل می‌دهند: <code>SELECT … FOR UPDATE</code>؛ (۳) «materializing the conflict»: یک سطر مشترک (مثلاً سطر <code>shifts</code>) را قفل کنید تا تراکنش‌ها روی یک چیز مشترک تداخل پیدا کنند؛ (۴) در صورت امکان، تبدیل invariant به constraint.</p>
+
+    <h3>تنظیم Isolation Level</h3>
+    <pre><code class="language-sql">-- MySQL: برای تراکنش بعدی
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+-- MySQL: برای کل session
+SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+-- PostgreSQL: داخل تراکنش
+BEGIN ISOLATION LEVEL SERIALIZABLE;
+-- ...
+COMMIT;</code></pre>
+    <pre><code class="language-php">&lt;?php
+// Laravel: در config/database.php برای MySQL می‌توان سطح را با options/isolation_level تعیین کرد،
+// یا به‌صورت موردی قبل از تراکنش:
+DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+DB::transaction(function () {
+    // ...
+}, attempts: 5); // در Serializable باید آماده‌ی retry باشید</code></pre>
+
+    <div class="callout exam"><p><strong>جمله‌ی کلیدی برای پاسخ:</strong> «بالاتر بردن سطح ایزولاسیون، ناهنجاری‌های کمتری را مجاز می‌کند اما هزینه‌اش هم‌زمانی کمتر، قفل یا abort بیشتر و نیاز به retry در برنامه است. انتخاب سطح باید بر اساس invariantهای کسب‌وکار باشد؛ برای بیشتر برنامه‌های وب Read Committed یا Repeatable Read کافی است و بخش‌های حساس (پول، موجودی) با قفل صریح یا عملیات atomic محافظت می‌شوند.»</p></div>
+    <div class="callout warn"><p>بسیاری از تیم‌ها روی MySQL، Isolation را به <strong>READ COMMITTED</strong> تغییر می‌دهند تا gap lock و deadlock کمتر شود. این تصمیم درستی است فقط اگر بدانید non-repeatable read و phantom در منطق شما مشکل‌ساز نیستند. نکته‌ی تاریخی: در گذشته replication مبتنی بر statement با READ COMMITTED سازگار نبود؛ با <code>binlog_format=ROW</code> (پیش‌فرض MySQL 8) این محدودیت وجود ندارد.</p></div>
+  </section>
+
+  <!-- ===================================================== 3 -->
+  <section class="lesson" id="mvcc" data-title="MVCC">
+    <h2>MVCC</h2>
+    <p><strong>MVCC</strong> یعنی دیتابیس از هر سطر چند نسخه نگه می‌دارد تا <strong>خواننده‌ها نویسنده‌ها را بلاک نکنند و نویسنده‌ها خواننده‌ها را بلاک نکنند</strong>. هر تراکنش یک <em>snapshot</em> از داده‌های commit‌شده تا یک لحظه‌ی مشخص می‌بیند. نویسنده‌ها با هم همچنان با قفل سطری هماهنگ می‌شوند (دو تراکنش نمی‌توانند هم‌زمان یک سطر را update کنند).</p>
+
+    <h3>MVCC در InnoDB</h3>
+    <ul>
+      <li>هر سطر در clustered index ستون‌های مخفی دارد: <code>DB_TRX_ID</code> (آخرین تراکنشی که آن را تغییر داده) و <code>DB_ROLL_PTR</code> (اشاره‌گر به رکورد undo که نسخه‌ی قبلی را می‌سازد).</li>
+      <li>نسخه‌ی <strong>جاری</strong> در جای خود (in-place) به‌روز می‌شود و نسخه‌های قدیمی از طریق زنجیره‌ی <strong>undo log</strong> بازسازی می‌شوند.</li>
+      <li>هر snapshot یک <strong>Read View</strong> است: فهرست تراکنش‌های فعال در لحظه‌ی ساخت. اگر <code>DB_TRX_ID</code> سطر برای این read view «نامرئی» باشد، InnoDB زنجیره‌ی undo را دنبال می‌کند تا به نسخه‌ی مرئی برسد.</li>
+      <li><strong>Purge thread</strong> رکوردهای undo را که دیگر هیچ read viewای به آن‌ها نیاز ندارد پاک می‌کند. یک تراکنش باز طولانی، purge را متوقف می‌کند و <em>history list length</em> رشد می‌کند؛ نتیجه: کندی تدریجی کل سرور.</li>
+    </ul>
+
+    <h3>MVCC در PostgreSQL</h3>
+    <ul>
+      <li>هر <code>UPDATE</code> در عمل یک <strong>tuple جدید</strong> در heap می‌سازد و tuple قبلی را با <code>xmax</code> علامت می‌زند؛ هر tuple دارای <code>xmin</code> (تراکنش سازنده) و <code>xmax</code> (تراکنش حذف‌کننده) است.</li>
+      <li>tupleهای مرده (dead tuples) در جدول می‌مانند تا <strong>VACUUM</strong> (معمولاً autovacuum) فضایشان را قابل استفاده‌ی مجدد کند. اگر autovacuum عقب بماند: <strong>bloat</strong> جدول و ایندکس.</li>
+      <li><strong>HOT update</strong> (Heap-Only Tuple): اگر هیچ ستون ایندکس‌شده‌ای تغییر نکند و در همان صفحه جا باشد، ایندکس‌ها به‌روزرسانی نمی‌شوند؛ دلیل دیگر برای اینکه ایندکس‌های غیرضروری نسازید.</li>
+      <li>شناسه‌ی تراکنش ۳۲ بیتی است؛ VACUUM باید tupleهای قدیمی را <em>freeze</em> کند تا از <strong>transaction ID wraparound</strong> جلوگیری شود.</li>
+    </ul>
+
+    <pre class="diagram">InnoDB (undo-based)                         PostgreSQL (append in heap)
+┌──────────────────────┐                    ┌───────────────────────────────┐
+│ row v3 (current)     │                    │ tuple v1 xmin=100 xmax=120 ✗  │
+│ trx_id=130 roll_ptr ─┼─► undo: v2 ─► v1   │ tuple v2 xmin=120 xmax=130 ✗  │
+└──────────────────────┘    (purge پاک می‌کند) │ tuple v3 xmin=130 xmax=0   ✓  │
+                                            └───────────────────────────────┘
+                                                (VACUUM نسخه‌های مرده را پاک می‌کند)</pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>جنبه</th><th>InnoDB</th><th>PostgreSQL</th></tr></thead>
+      <tbody>
+        <tr><td>محل نسخه‌های قدیمی</td><td>undo log (جدا از جدول)</td><td>داخل خود جدول (heap)</td></tr>
+        <tr><td>هزینه‌ی UPDATE</td><td>نوشتن در جا + undo</td><td>نوشتن tuple جدید + (احتمالاً) به‌روزرسانی همه‌ی ایندکس‌ها</td></tr>
+        <tr><td>پاک‌سازی</td><td>purge thread</td><td>VACUUM / autovacuum</td></tr>
+        <tr><td>مشکل رایج</td><td>تراکنش طولانی ⇒ رشد history list</td><td>bloat، tuneنبودن autovacuum، wraparound</td></tr>
+        <tr><td>ROLLBACK</td><td>نسبتاً گران (اعمال undo)</td><td>ارزان (فقط علامت abort)</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p><strong>سوال محتمل:</strong> «چرا در MVCC خواندن، نوشتن را بلاک نمی‌کند؟» پاسخ: چون خواننده نسخه‌ی snapshot خودش را می‌خواند و نیازی به قفل روی نسخه‌ی جاری ندارد؛ نویسنده نسخه‌ی جدید می‌سازد. فقط <strong>نوشتن-نوشتن</strong> روی یک سطر نیاز به قفل دارد. تبصره: <code>SELECT … FOR UPDATE</code> و <code>FOR SHARE</code> از MVCC عبور نمی‌کنند و قفل می‌گیرند.</p></div>
+  </section>
+
+  <!-- ===================================================== 4 -->
+  <section class="lesson" id="locking" data-title="قفل‌ها: Pessimistic و Optimistic">
+    <h2>قفل‌ها: Pessimistic و Optimistic</h2>
+
+    <h3>انواع قفل از نظر حالت</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Shared (S) موجود</th><th>Exclusive (X) موجود</th></tr></thead>
+      <tbody>
+        <tr><td>درخواست S</td><td>سازگار ✓</td><td>منتظر ✗</td></tr>
+        <tr><td>درخواست X</td><td>منتظر ✗</td><td>منتظر ✗</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>Shared Lock (S)</strong>: «من این را می‌خوانم و نباید تا پایان تراکنشم تغییر کند». چند تراکنش هم‌زمان می‌توانند S بگیرند. SQL: <code>SELECT … FOR SHARE</code> (در MySQL قدیمی‌تر <code>LOCK IN SHARE MODE</code>)؛ Laravel: <code>sharedLock()</code>.</li>
+      <li><strong>Exclusive Lock (X)</strong>: «من این را تغییر می‌دهم». با هیچ قفل دیگری سازگار نیست. <code>UPDATE</code>/<code>DELETE</code> خودکار X می‌گیرند؛ صریح: <code>SELECT … FOR UPDATE</code>؛ Laravel: <code>lockForUpdate()</code>.</li>
+      <li><strong>Intention Locks (IS/IX)</strong>: قفل در سطح جدول که اعلام می‌کند «قصد دارم روی سطرهایی قفل S/X بگیرم»؛ تا عملیاتی مثل <code>LOCK TABLES … WRITE</code> بتواند بدون بررسی تک‌تک سطرها تشخیص دهد تداخل هست یا نه.</li>
+    </ul>
+
+    <h3>دانه‌بندی (Granularity)</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Row-level lock</h4><ul><li>هم‌زمانی بالا؛ فقط سطرهای درگیر قفل می‌شوند.</li><li>سربار مدیریت قفل بیشتر.</li><li>InnoDB و PostgreSQL برای DML از قفل سطری استفاده می‌کنند.</li></ul></div>
+      <div class="card"><h4>Table-level lock</h4><ul><li>ساده و کم‌سربار، ولی هم‌زمانی پایین.</li><li>MyISAM فقط قفل جدولی داشت.</li><li>DDLها (مثل <code>ALTER TABLE</code>) قفل metadata/جدولی می‌گیرند؛ مراقب migration روی جداول بزرگ باشید.</li></ul></div>
+    </div>
+    <div class="callout warn"><p>در InnoDB قفل‌ها روی <strong>رکوردهای ایندکس</strong> گرفته می‌شوند، نه روی «سطر» به‌صورت انتزاعی. اگر <code>UPDATE … WHERE status = 'x'</code> بزنید و روی <code>status</code> ایندکس نباشد، InnoDB کل clustered index را اسکن می‌کند و <strong>همه‌ی سطرهای اسکن‌شده</strong> (عملاً کل جدول) قفل می‌شوند. ایندکس مناسب روی شرط WHERE در UPDATE/DELETE فقط مسئله‌ی سرعت نیست؛ مسئله‌ی هم‌زمانی است.</p></div>
+
+    <h3>Record، Gap و Next-Key Lock در InnoDB</h3>
+    <dl class="terms">
+      <dt>Record Lock</dt><dd>قفل روی یک رکورد ایندکس.</dd>
+      <dt>Gap Lock</dt><dd>قفل روی <strong>فاصله‌ی بین</strong> دو رکورد ایندکس (یا قبل از اولین/بعد از آخرین)؛ هدفش جلوگیری از <strong>insert</strong> در آن بازه است. gap lockها با هم تداخل ندارند؛ فقط جلوی insert را می‌گیرند.</dd>
+      <dt>Next-Key Lock</dt><dd>ترکیب record lock روی یک رکورد + gap lock روی فاصله‌ی قبل از آن. قفل پیش‌فرض InnoDB برای جست‌وجو و اسکن ایندکس در REPEATABLE READ و ابزار جلوگیری از phantom.</dd>
+      <dt>Insert Intention Lock</dt><dd>نوعی gap lock که INSERT قبل از درج می‌گیرد؛ چند insert در یک gap اگر موقعیت متفاوت داشته باشند هم را بلاک نمی‌کنند، ولی با gap lock تراکنش دیگر تداخل دارند.</dd>
+    </dl>
+    <pre class="diagram">ایندکس روی age:   10        20        30
+                  │         │         │
+ (-∞,10]  (10,20]  (20,30]  (30,+∞)
+
+T1: SELECT * FROM users WHERE age BETWEEN 15 AND 25 FOR UPDATE;   -- REPEATABLE READ
+    ⇒ next-key lock روی (10,20] و (20,30]   ⇒ insert با age=12 یا 27 بلاک می‌شود
+T2: INSERT INTO users(age) VALUES (27);   ⏳ منتظر می‌ماند (phantom ممکن نیست)
+
+در READ COMMITTED: gap lock برای جست‌وجوها غیرفعال است ⇒ فقط record lock ⇒ insert آزاد</pre>
+    <ul>
+      <li>اگر جست‌وجو روی <strong>ایندکس یکتا</strong> با شرط تساوی و برای یک سطر موجود باشد (<code>WHERE id = 5</code>)، فقط record lock گرفته می‌شود، نه gap.</li>
+      <li>اگر سطر وجود نداشته باشد (<code>WHERE id = 7</code> و 7 نیست)، gap lock گرفته می‌شود. این منشأ deadlockهای معروف الگوی «SELECT FOR UPDATE؛ اگر نبود INSERT» است.</li>
+    </ul>
+
+    <h3>Pessimistic Locking در Laravel</h3>
+    <pre><code class="language-php">&lt;?php
+// رزرو آخرین صندلی‌ها: فقط یک تراکنش در هر لحظه می‌تواند این سطر را بخواند-و-تغییر دهد
+DB::transaction(function () use ($eventId, $qty) {
+    $event = Event::whereKey($eventId)-&gt;lockForUpdate()-&gt;firstOrFail(); // SELECT ... FOR UPDATE
+
+    if ($event-&gt;remaining_seats &lt; $qty) {
+        throw new SoldOutException();
+    }
+
+    $event-&gt;decrement('remaining_seats', $qty);
+    Booking::create(['event_id' =&gt; $eventId, 'qty' =&gt; $qty]);
+});
+// نکته: lockForUpdate بیرون از تراکنش عملاً بی‌اثر است؛ قفل با پایان statement (autocommit) آزاد می‌شود.</code></pre>
+    <p>اگر منطق ساده است، از <strong>عملیات atomic</strong> استفاده کنید که اصلاً به قفل صریح نیاز ندارد:</p>
+    <pre><code class="language-php">&lt;?php
+// UPDATE events SET remaining_seats = remaining_seats - ? WHERE id = ? AND remaining_seats &gt;= ?
+$affected = Event::whereKey($eventId)
+    -&gt;where('remaining_seats', '&gt;=', $qty)
+    -&gt;decrement('remaining_seats', $qty);
+
+if ($affected === 0) {
+    throw new SoldOutException();
+}</code></pre>
+
+    <h3>Optimistic Locking با ستون version</h3>
+    <p>فرض optimistic: «تداخل نادر است». قفلی نگه نمی‌داریم؛ هنگام نوشتن بررسی می‌کنیم که از زمان خواندن، کسی سطر را تغییر نداده باشد. اگر تغییر داده بود، خطای conflict برمی‌گردانیم یا دوباره تلاش می‌کنیم. مناسب برای ویرایش‌های طولانی که کاربر فرم را چند دقیقه باز نگه می‌دارد (نمی‌توان قفل دیتابیس را چند دقیقه نگه داشت).</p>
+    <pre><code class="language-php">&lt;?php
+// خواندن: version را هم به کلاینت بدهید (مثلاً hidden field یا ETag)
+$doc = Document::findOrFail($id);   // version = 7
+
+// نوشتن: UPDATE ... WHERE id = ? AND version = ?
+$affected = Document::whereKey($id)
+    -&gt;where('version', $request-&gt;integer('version'))
+    -&gt;update([
+        'body'    =&gt; $request-&gt;input('body'),
+        'version' =&gt; DB::raw('version + 1'),
+    ]);
+
+if ($affected === 0) {
+    abort(409, 'این سند توسط شخص دیگری تغییر کرده است.');  // یا retry
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Pessimistic (FOR UPDATE)</th><th>Optimistic (version)</th></tr></thead>
+      <tbody>
+        <tr><td>فرض</td><td>تداخل زیاد است</td><td>تداخل کم است</td></tr>
+        <tr><td>مکانیزم</td><td>قفل سطر تا پایان تراکنش</td><td>بررسی version هنگام نوشتن</td></tr>
+        <tr><td>هزینه در تداخل کم</td><td>انتظار و قفل غیرضروری</td><td>تقریباً صفر</td></tr>
+        <tr><td>هزینه در تداخل زیاد</td><td>صف شدن، ولی کار هدر نمی‌رود</td><td>retryهای زیاد، کار هدر می‌رود</td></tr>
+        <tr><td>Deadlock</td><td>ممکن</td><td>ندارد</td></tr>
+        <tr><td>عملیات طولانی/تعامل کاربر</td><td>نامناسب</td><td>مناسب (HTTP <code>ETag</code>/<code>If-Match</code>)</td></tr>
+        <tr><td>نمونه</td><td>موجودی انبار پرتقاضا، کیف پول</td><td>ویرایش پروفایل، CMS، تنظیمات</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p>سه راه رایج جلوگیری از <strong>Lost Update</strong>: (۱) <strong>عملیات atomic</strong> در خود SQL (<code>SET x = x - 1</code>)؛ (۲) <strong>Pessimistic lock</strong> با <code>SELECT … FOR UPDATE</code>؛ (۳) <strong>Optimistic lock</strong> با version یا compare-and-set. در PostgreSQL، سطح Repeatable Read هم lost update را تشخیص می‌دهد و تراکنش دوم را abort می‌کند.</p></div>
+    <div class="callout note"><p>گزینه‌های <code>SKIP LOCKED</code> و <code>NOWAIT</code> (در MySQL 8 و PostgreSQL): <code>FOR UPDATE SKIP LOCKED</code> سطرهای قفل‌شده را رد می‌کند و برای پیاده‌سازی <strong>صف کار روی دیتابیس</strong> (چند worker که هر کدام job متفاوتی برمی‌دارند) عالی است؛ درایور database queue در Laravel روی دیتابیس‌های پشتیبانی‌کننده از همین استفاده می‌کند. <code>NOWAIT</code> به‌جای انتظار، فوراً خطا می‌دهد.</p></div>
+  </section>
+
+  <!-- ===================================================== 5 -->
+  <section class="lesson" id="deadlocks" data-title="Deadlock">
+    <h2>Deadlock</h2>
+    <p><strong>Deadlock</strong> وضعیتی است که دو (یا چند) تراکنش هر کدام قفلی را نگه داشته‌اند که دیگری به آن نیاز دارد و هیچ‌کدام نمی‌توانند پیش بروند؛ یعنی یک <strong>چرخه در گراف انتظار (wait-for graph)</strong>.</p>
+    <pre class="diagram">T1: UPDATE accounts SET … WHERE id = 1;   ── X lock روی 1 ✓
+T2: UPDATE accounts SET … WHERE id = 2;   ── X lock روی 2 ✓
+T1: UPDATE accounts SET … WHERE id = 2;   ── منتظر T2 ⏳
+T2: UPDATE accounts SET … WHERE id = 1;   ── منتظر T1 ⏳   ⇒ چرخه ⇒ DEADLOCK
+
+      ┌────── منتظر ──────┐
+      ▼                   │
+    [T1] ──── منتظر ────► [T2]</pre>
+
+    <h3>چهار شرط Coffman</h3>
+    <p>Deadlock فقط وقتی رخ می‌دهد که هر چهار شرط برقرار باشد: <strong>Mutual Exclusion</strong> (منبع انحصاری)، <strong>Hold and Wait</strong> (نگه داشتن یکی و انتظار برای دیگری)، <strong>No Preemption</strong> (نمی‌توان قفل را به‌زور گرفت) و <strong>Circular Wait</strong> (انتظار چرخه‌ای). پیشگیری یعنی شکستن یکی از این‌ها؛ در عمل معمولاً <em>Circular Wait</em> را با ترتیب ثابت قفل‌گیری می‌شکنیم.</p>
+
+    <h3>تشخیص</h3>
+    <ul>
+      <li><strong>InnoDB</strong>: به‌صورت پیش‌فرض (<code>innodb_deadlock_detect=ON</code>) چرخه را فوراً تشخیص می‌دهد و یک تراکنش را به‌عنوان قربانی rollback می‌کند (تراکنشی که کوچک‌تر است؛ یعنی سطرهای کمتری را تغییر داده یا قفل کرده). خطا: <code>ERROR 1213 (40001): Deadlock found when trying to get lock</code>.</li>
+      <li>انتظار طولانی بدون چرخه: <code>innodb_lock_wait_timeout</code> (پیش‌فرض ۵۰ ثانیه) ⇒ <code>ERROR 1205 Lock wait timeout exceeded</code>.</li>
+      <li>دیدن آخرین deadlock: <code>SHOW ENGINE INNODB STATUS</code> (بخش LATEST DETECTED DEADLOCK)؛ برای ثبت همه در error log: <code>innodb_print_all_deadlocks=ON</code>.</li>
+      <li><strong>PostgreSQL</strong>: پس از <code>deadlock_timeout</code> (پیش‌فرض ۱ ثانیه) انتظار، بررسی چرخه انجام می‌شود؛ خطا با SQLSTATE <code>40P01</code>.</li>
+    </ul>
+
+    <h3>پیشگیری و کاهش</h3>
+    <ol>
+      <li><strong>ترتیب ثابت قفل‌گیری</strong>: همیشه منابع را به یک ترتیب قفل کنید (مثلاً بر اساس id صعودی). در انتقال پول، اول حساب با id کوچک‌تر.</li>
+      <li><strong>تراکنش کوتاه</strong>: هیچ I/O خارجی (HTTP، ایمیل) داخل تراکنش نباشد.</li>
+      <li><strong>ایندکس مناسب</strong> روی شرط‌های UPDATE/DELETE/FOR UPDATE تا سطرهای کمتری اسکن و قفل شوند.</li>
+      <li>در صورت امکان <strong>READ COMMITTED</strong> در MySQL تا gap lockها حذف شوند.</li>
+      <li>به‌جای الگوی «SELECT FOR UPDATE؛ اگر نبود INSERT» از <code>INSERT … ON DUPLICATE KEY UPDATE</code> (MySQL) یا <code>INSERT … ON CONFLICT</code> (PostgreSQL) یا <code>upsert()</code> در Laravel استفاده کنید.</li>
+      <li>دسته‌های بزرگ UPDATE را به batchهای کوچک بشکنید.</li>
+      <li>و مهم‌تر از همه: <strong>Deadlock را خطای عادی بدانید و retry کنید</strong>. در سیستم پرهم‌زمان، حذف کامل deadlock ممکن نیست.</li>
+    </ol>
+    <pre><code class="language-php">&lt;?php
+// ترتیب ثابت + retry خودکار در deadlock
+public function transfer(int $fromId, int $toId, int $amount): void
+{
+    DB::transaction(function () use ($fromId, $toId, $amount) {
+        $ids = [$fromId, $toId];
+        sort($ids); // همیشه اول id کوچک‌تر ⇒ چرخه شکل نمی‌گیرد
+
+        $accounts = Account::whereIn('id', $ids)
+            -&gt;orderBy('id')
+            -&gt;lockForUpdate()
+            -&gt;get()
+            -&gt;keyBy('id');
+
+        if ($accounts[$fromId]-&gt;balance &lt; $amount) {
+            throw new InsufficientFunds();
+        }
+        $accounts[$fromId]-&gt;decrement('balance', $amount);
+        $accounts[$toId]-&gt;increment('balance', $amount);
+    }, attempts: 3); // Laravel روی خطای deadlock کل closure را دوباره اجرا می‌کند
+}</code></pre>
+    <div class="callout exam"><p>تفاوت <strong>Deadlock</strong> و <strong>Lock wait timeout</strong>: در deadlock چرخه وجود دارد و دیتابیس فوراً یکی را قربانی می‌کند؛ در lock wait timeout چرخه‌ای نیست، فقط یک تراکنش قفل را بیش از حد نگه داشته (مثلاً تراکنش طولانی یا فراموش‌شده). راه‌حل دومی پیدا کردن تراکنش نگه‌دارنده است (<code>performance_schema.data_lock_waits</code> در MySQL 8، <code>pg_locks</code> و <code>pg_stat_activity</code> در PostgreSQL).</p></div>
+  </section>
+
+  <!-- ===================================================== 6 -->
+  <section class="lesson" id="index-internals" data-title="ساختار داخلی ایندکس">
+    <h2>ساختار داخلی ایندکس</h2>
+    <h3>B+Tree</h3>
+    <p>ایندکس پیش‌فرض در InnoDB و PostgreSQL ساختار <strong>B+Tree</strong> است: درختی متوازن با فاکتور انشعاب (fan-out) بسیار بالا (صدها کلید در هر صفحه‌ی ۱۶KB در InnoDB یا ۸KB در PostgreSQL). ویژگی‌ها:</p>
+    <ul>
+      <li><strong>نودهای داخلی</strong> فقط کلید و اشاره‌گر دارند؛ <strong>داده/اشاره‌گر نهایی فقط در برگ‌ها</strong> است.</li>
+      <li>برگ‌ها به‌صورت <strong>لیست پیوندی مرتب</strong> به هم متصل‌اند ⇒ range scan و <code>ORDER BY</code> بسیار کارآمد.</li>
+      <li>متوازن است: هر جست‌وجو <code>O(log n)</code> با پایه‌ی بزرگ؛ یک جدول صدها میلیون سطری معمولاً عمق ۳ تا ۴ دارد، یعنی ۳ تا ۴ خواندن صفحه (که نودهای بالایی هم معمولاً در حافظه‌اند).</li>
+    </ul>
+    <pre class="diagram">                    ┌───────────────┐
+                    │   [30 | 60]   │            ← root
+                    └──┬─────┬────┬─┘
+          ┌────────────┘     │    └────────────┐
+    ┌─────▼─────┐      ┌─────▼─────┐     ┌─────▼─────┐
+    │ [10 | 20] │      │ [40 | 50] │     │ [70 | 80] │   ← internal
+    └─┬───┬───┬─┘      └───────────┘     └───────────┘
+      ▼   ▼   ▼
+   ┌────┐┌────┐┌────┐    ┌────┐
+   │1..9│⇄│10..│⇄│20..│ ⇄ │30..│ ⇄ …                    ← leaves (مرتب و پیوندی)
+   └────┘└────┘└────┘    └────┘
+   range scan: پیدا کردن اولین برگ ⇒ حرکت افقی روی لیست</pre>
+    <div class="callout note"><p>انواع دیگر: <strong>Hash index</strong> (فقط تساوی؛ در InnoDB به‌صورت Adaptive Hash Index داخلی، در PostgreSQL صریحاً قابل ساخت)، <strong>GIN</strong> در PostgreSQL (برای JSONB، آرایه و full-text؛ ایندکس معکوس)، <strong>GiST/SP-GiST</strong> (داده‌های هندسی و بازه‌ای)، <strong>BRIN</strong> (جداول عظیم با داده‌ی مرتب طبیعی مثل زمان؛ بسیار کوچک)، و <strong>FULLTEXT</strong> و <strong>SPATIAL</strong> در MySQL.</p></div>
+
+    <h3>Clustered و Secondary Index در InnoDB</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Clustered Index (Primary Key)</h4><ul>
+        <li><strong>خود جدول</strong> است: برگ‌ها کل سطر را نگه می‌دارند و داده به ترتیب PK ذخیره می‌شود.</li>
+        <li>هر جدول دقیقاً یکی دارد. اگر PK تعریف نکنید، اولین ایندکس <code>UNIQUE NOT NULL</code> و در غیر این صورت یک row id مخفی ۶ بایتی استفاده می‌شود.</li>
+        <li>جست‌وجو با PK: یک بار پیمایش درخت.</li>
+      </ul></div>
+      <div class="card"><h4>Secondary Index</h4><ul>
+        <li>برگ‌ها: <strong>مقدار ستون‌های ایندکس + مقدار PK</strong> (نه اشاره‌گر فیزیکی).</li>
+        <li>جست‌وجو: پیمایش secondary ⇒ گرفتن PK ⇒ پیمایش دوم در clustered index (<em>bookmark lookup</em>).</li>
+        <li>پس PK بزرگ (مثلاً UUID رشته‌ای ۳۶ کاراکتری) <strong>همه‌ی</strong> ایندکس‌های ثانویه را بزرگ می‌کند.</li>
+      </ul></div>
+    </div>
+    <pre class="diagram">SELECT * FROM users WHERE email = 'a@x.com';
+
+idx_email (secondary)                 PRIMARY (clustered)
+┌──────────────────────┐              ┌──────────────────────────────┐
+│ 'a@x.com' → PK=42    │ ── PK=42 ──► │ 42 | Ali | a@x.com | ... row │
+└──────────────────────┘              └──────────────────────────────┘
+      پیمایش ۱                                پیمایش ۲  (اگر ستون‌های لازم همه در
+                                              idx_email باشند ⇒ covering ⇒ حذف پیمایش ۲)</pre>
+    <div class="callout warn"><p><strong>UUID v4 تصادفی به‌عنوان PK در InnoDB</strong>: چون clustered index به ترتیب PK مرتب است، insertهای تصادفی باعث <strong>page split</strong>، تکه‌تکه‌شدن، و پراکندگی نوشتن‌ها در کل buffer pool می‌شود. راه‌حل: PK عددی <code>AUTO_INCREMENT</code>/<code>BIGINT</code>، یا UUIDهای مرتب‌شونده بر اساس زمان (UUIDv7، ULID) و ذخیره به‌صورت <code>BINARY(16)</code> به‌جای <code>CHAR(36)</code>. در PostgreSQL جدول heap است و مشکل کمتر است، ولی خود ایندکس B-Tree همچنان از کلیدهای تصادفی آسیب می‌بیند.</p></div>
+    <div class="callout note"><p>در <strong>PostgreSQL</strong> جداول clustered نیستند: داده در heap است و <strong>همه‌ی</strong> ایندکس‌ها (از جمله PK) به آدرس فیزیکی tuple (<code>ctid</code>) اشاره می‌کنند. Index Only Scan فقط وقتی واقعاً بدون رجوع به heap است که صفحه در <em>visibility map</em> همه‌ی tupleهایش visible علامت خورده باشد (یعنی VACUUM به‌روز باشد).</p></div>
+
+    <h3>Composite Index و قانون Leftmost Prefix</h3>
+    <p>ایندکس <code>(a, b, c)</code> ابتدا بر اساس <code>a</code>، سپس داخل هر <code>a</code> بر اساس <code>b</code> و سپس <code>c</code> مرتب است؛ مثل دفترچه‌ی تلفن که اول بر اساس نام خانوادگی و بعد نام مرتب است. پس فقط وقتی قابل استفاده است که شرط از <strong>چپ‌ترین ستون</strong> شروع شود.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Query روی <code>INDEX(a, b, c)</code></th><th>استفاده از ایندکس</th></tr></thead>
+      <tbody>
+        <tr><td><code>WHERE a = 1</code></td><td>✓ (پیشوند a)</td></tr>
+        <tr><td><code>WHERE a = 1 AND b = 2</code></td><td>✓ (a,b)</td></tr>
+        <tr><td><code>WHERE a = 1 AND b = 2 AND c = 3</code></td><td>✓ کامل</td></tr>
+        <tr><td><code>WHERE b = 2 AND a = 1</code></td><td>✓ ترتیب در WHERE مهم نیست؛ optimizer بازچینی می‌کند</td></tr>
+        <tr><td><code>WHERE b = 2</code></td><td>✗ (به‌جز skip scan محدود در MySQL 8.0.13+)</td></tr>
+        <tr><td><code>WHERE a = 1 AND c = 3</code></td><td>فقط a برای seek؛ c به‌صورت فیلتر (Index Condition Pushdown)</td></tr>
+        <tr><td><code>WHERE a &gt; 1 AND b = 2</code></td><td>range روی a ⇒ b دیگر برای seek استفاده نمی‌شود</td></tr>
+        <tr><td><code>WHERE a = 1 ORDER BY b</code></td><td>✓ بدون filesort</td></tr>
+        <tr><td><code>WHERE a = 1 ORDER BY c</code></td><td>filesort (b وسط فاصله انداخته)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p><strong>قاعده‌ی طراحی composite index:</strong> ستون‌های <strong>تساوی اول</strong>، بعد ستونی که <strong>ORDER BY/GROUP BY</strong> روی آن است، و در آخر ستون <strong>range</strong>. مثلاً برای <code>WHERE user_id = ? AND status = ? AND created_at &gt; ? ORDER BY created_at</code> ایندکس <code>(user_id, status, created_at)</code> مناسب است. ترتیب ستون‌ها در ایندکس مهم است، نه ترتیب در WHERE.</p></div>
+
+    <h3>Covering Index</h3>
+    <p>اگر <strong>همه‌ی ستون‌هایی که query لازم دارد</strong> (SELECT، WHERE، ORDER BY) در خود ایندکس باشند، دیتابیس اصلاً به جدول رجوع نمی‌کند. در EXPLAIN مربوط به MySQL با <code>Using index</code> و در PostgreSQL با <code>Index Only Scan</code> دیده می‌شود. در InnoDB چون PK داخل هر secondary index هست، ایندکس <code>(status)</code> برای <code>SELECT id FROM t WHERE status = ?</code> خودبه‌خود covering است. PostgreSQL (11+) با <code>INCLUDE</code> اجازه می‌دهد ستون‌های غیرکلیدی را در برگ‌ها نگه دارید.</p>
+    <pre><code class="language-sql">-- MySQL
+CREATE INDEX idx_orders_user_status_created ON orders (user_id, status, created_at);
+-- این query کاملاً از ایندکس جواب داده می‌شود:
+SELECT id, created_at FROM orders WHERE user_id = 7 AND status = 'paid' ORDER BY created_at DESC LIMIT 20;
+
+-- PostgreSQL: ستون total فقط در برگ‌ها (بخشی از کلید نیست)
+CREATE INDEX idx_orders_cover ON orders (user_id, created_at) INCLUDE (total);</code></pre>
+
+    <h3>Selectivity و Cardinality</h3>
+    <ul>
+      <li><strong>Cardinality</strong>: تعداد مقادیر متمایز یک ستون (در MySQL در <code>SHOW INDEX</code> تخمینی است و با <code>ANALYZE TABLE</code> به‌روز می‌شود).</li>
+      <li><strong>Selectivity</strong> = cardinality ÷ تعداد سطرها؛ بین ۰ و ۱. هرچه به ۱ نزدیک‌تر (مثل email)، ایندکس مفیدتر. ستون <code>is_active</code> با دو مقدار، selectivity پایینی دارد.</li>
+      <li>اگر شرط بخش بزرگی از جدول (مثلاً بیش از حدود ۲۰ تا ۳۰ درصد؛ عدد دقیق بستگی به cost model دارد) را برگرداند، optimizer معمولاً <strong>full scan</strong> را ترجیح می‌دهد، چون هزاران lookup تصادفی از یک اسکن ترتیبی گران‌تر است.</li>
+      <li>استثنا: ستون کم‌تنوع ولی با توزیع نامتوازن (مثلاً ۹۹٪ <code>done</code> و ۱٪ <code>pending</code>)؛ ایندکس برای جست‌وجوی <code>pending</code> عالی است. در PostgreSQL <strong>partial index</strong> (<code>WHERE status = 'pending'</code>) بهترین گزینه است.</li>
+    </ul>
+
+    <h3>چه وقت ایندکس ضرر دارد؟</h3>
+    <ul>
+      <li>هر INSERT/UPDATE/DELETE باید <strong>همه‌ی</strong> ایندکس‌های مرتبط را به‌روز کند ⇒ write amplification. جداول write-heavy (لاگ، رویداد) را با ایندکس اشباع نکنید.</li>
+      <li>فضای دیسک و حافظه‌ی buffer pool مصرف می‌کند؛ ایندکس‌های بلااستفاده، داده‌ی مفید را از cache بیرون می‌کنند.</li>
+      <li>ایندکس‌های تکراری/زائد: با وجود <code>(a, b)</code> ایندکس جداگانه‌ی <code>(a)</code> معمولاً زائد است.</li>
+      <li>optimizer ممکن است ایندکس اشتباه انتخاب کند (آمار قدیمی)؛ ایندکس بیشتر = فضای تصمیم بزرگ‌تر.</li>
+      <li>ستون با selectivity بسیار پایین و توزیع یکنواخت.</li>
+      <li>جداول خیلی کوچک (چند صد سطر): full scan به همان سرعت است.</li>
+    </ul>
+    <div class="callout tip"><p>پیدا کردن ایندکس‌های بلااستفاده: در MySQL 8 view <code>sys.schema_unused_indexes</code> و در PostgreSQL <code>pg_stat_user_indexes</code> (ستون <code>idx_scan = 0</code>). در MySQL 8 می‌توانید قبل از حذف، ایندکس را <code>INVISIBLE</code> کنید تا بدون ریسک اثرش را بسنجید.</p></div>
+  </section>
+
+  <!-- ===================================================== 7 -->
+  <section class="lesson" id="explain" data-title="EXPLAIN و بهینه‌سازی Query">
+    <h2>EXPLAIN و بهینه‌سازی Query</h2>
+    <p><code>EXPLAIN</code> <strong>برنامه‌ی اجرای</strong> (execution plan) که optimizer انتخاب کرده را نشان می‌دهد؛ <code>EXPLAIN ANALYZE</code> (MySQL 8.0.18+ و PostgreSQL) query را <strong>واقعاً اجرا می‌کند</strong> و زمان و تعداد سطر واقعی را کنار تخمین‌ها می‌گذارد. اختلاف زیاد بین rows تخمینی و واقعی معمولاً یعنی آمار قدیمی است.</p>
+    <pre><code class="language-sql">EXPLAIN SELECT o.id, o.total
+FROM orders o
+WHERE o.user_id = 42 AND o.status = 'paid'
+ORDER BY o.created_at DESC
+LIMIT 10;
+
+-- id | select_type | table | type | possible_keys            | key                      | key_len | ref         | rows | filtered | Extra
+-- 1  | SIMPLE      | o     | ref  | idx_user,idx_user_status | idx_user_status_created  | 8       | const,const | 37   | 100.00   | Using where; Backward index scan</code></pre>
+
+    <h3>ستون‌های مهم در MySQL</h3>
+    <dl class="terms">
+      <dt>type</dt><dd>نوع دسترسی؛ مهم‌ترین ستون. از بهترین به بدترین: <code>system</code> &gt; <code>const</code> &gt; <code>eq_ref</code> &gt; <code>ref</code> &gt; <code>range</code> &gt; <code>index</code> &gt; <code>ALL</code>.</dd>
+      <dt>possible_keys / key</dt><dd>ایندکس‌های کاندید / ایندکسی که واقعاً انتخاب شده. <code>key = NULL</code> یعنی بدون ایندکس.</dd>
+      <dt>key_len</dt><dd>چند بایت از ایندکس استفاده شده؛ نشان می‌دهد چند ستون از composite index واقعاً به کار رفته.</dd>
+      <dt>ref</dt><dd>با چه چیزی مقایسه شده (<code>const</code>، ستون جدول دیگر).</dd>
+      <dt>rows</dt><dd>تخمین تعداد سطرهایی که باید بررسی شود (نه تعداد نتیجه).</dd>
+      <dt>filtered</dt><dd>درصد تخمینی سطرهایی که پس از شرط باقی می‌مانند.</dd>
+      <dt>Extra</dt><dd>جزئیات حیاتی؛ جدول زیر.</dd>
+    </dl>
+    <div class="table-wrap"><table>
+      <thead><tr><th>type</th><th>معنی</th></tr></thead>
+      <tbody>
+        <tr><td><code>const</code></td><td>حداکثر یک سطر با PK یا UNIQUE و مقدار ثابت؛ ایده‌آل.</td></tr>
+        <tr><td><code>eq_ref</code></td><td>در JOIN، برای هر سطر جدول قبلی دقیقاً یک سطر با PK/UNIQUE.</td></tr>
+        <tr><td><code>ref</code></td><td>تساوی روی ایندکس غیریکتا؛ چند سطر.</td></tr>
+        <tr><td><code>range</code></td><td>بازه روی ایندکس (<code>BETWEEN</code>، <code>&gt;</code>، <code>IN</code>، <code>LIKE 'abc%'</code>).</td></tr>
+        <tr><td><code>index</code></td><td><strong>کل ایندکس</strong> اسکن می‌شود (full index scan)؛ بهتر از ALL فقط چون ایندکس کوچک‌تر است.</td></tr>
+        <tr><td><code>ALL</code></td><td><strong>Full table scan</strong>؛ روی جداول بزرگ هشدار جدی.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Extra</th><th>معنی</th><th>خوب/بد</th></tr></thead>
+      <tbody>
+        <tr><td><code>Using index</code></td><td>covering index؛ بدون رجوع به جدول</td><td>عالی</td></tr>
+        <tr><td><code>Using where</code></td><td>فیلتر بعد از خواندن سطر در لایه‌ی سرور</td><td>عادی؛ با rows زیاد مشکوک</td></tr>
+        <tr><td><code>Using index condition</code></td><td>Index Condition Pushdown؛ فیلتر روی ستون‌های ایندکس قبل از خواندن سطر کامل</td><td>خوب</td></tr>
+        <tr><td><code>Using filesort</code></td><td>مرتب‌سازی جداگانه چون ترتیب ایندکس با ORDER BY نمی‌خواند (لزوماً روی دیسک نیست)</td><td>روی نتایج بزرگ بد</td></tr>
+        <tr><td><code>Using temporary</code></td><td>جدول موقت برای GROUP BY/DISTINCT/UNION</td><td>روی نتایج بزرگ بد</td></tr>
+        <tr><td><code>Using join buffer (hash join)</code></td><td>JOIN بدون ایندکس مناسب؛ MySQL 8.0.18+ hash join</td><td>معمولاً نیاز به ایندکس روی ستون join</td></tr>
+        <tr><td><code>Backward index scan</code></td><td>پیمایش معکوس ایندکس برای DESC</td><td>خوب</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout note"><p>معادل‌ها در PostgreSQL: <code>Seq Scan</code> (≈ ALL)، <code>Index Scan</code>، <code>Index Only Scan</code> (≈ Using index)، <code>Bitmap Index/Heap Scan</code> (ترکیب چند شرط یا سطرهای متوسط)، <code>Sort</code>، <code>HashAggregate</code>، <code>Nested Loop</code>/<code>Hash Join</code>/<code>Merge Join</code>. دستور مفید: <code>EXPLAIN (ANALYZE, BUFFERS) …</code>.</p></div>
+
+    <h3>الگوهای رایج بهینه‌سازی</h3>
+    <h4>۱. شرط Sargable بنویسید (تابع روی ستون نزنید)</h4>
+    <pre><code class="language-sql">-- ✗ ایندکس روی created_at استفاده نمی‌شود
+SELECT * FROM orders WHERE YEAR(created_at) = 2026;
+SELECT * FROM users WHERE LOWER(email) = 'a@x.com';
+SELECT * FROM users WHERE phone = 9121234567;   -- phone از نوع VARCHAR ⇒ تبدیل نوع ضمنی
+
+-- ✓
+SELECT * FROM orders WHERE created_at &gt;= '2026-01-01' AND created_at &lt; '2027-01-01';
+SELECT * FROM users WHERE phone = '9121234567';
+-- یا functional index (MySQL 8.0.13+) / expression index (PostgreSQL):
+CREATE INDEX idx_email_lower ON users ((LOWER(email)));</code></pre>
+    <h4>۲. LIKE با wildcard ابتدایی</h4>
+    <p><code>LIKE 'ali%'</code> از ایندکس استفاده می‌کند (range)، ولی <code>LIKE '%ali%'</code> نه. برای جست‌وجوی متنی از FULLTEXT، <code>pg_trgm</code> در PostgreSQL یا موتور جست‌وجو استفاده کنید.</p>
+    <h4>۳. Pagination با OFFSET بزرگ</h4>
+    <pre><code class="language-sql">-- ✗ دیتابیس باید 100020 سطر را بخواند و 100000 تا را دور بریزد
+SELECT * FROM posts ORDER BY id DESC LIMIT 20 OFFSET 100000;
+
+-- ✓ Keyset / Seek pagination: از آخرین id صفحه‌ی قبل ادامه بده
+SELECT * FROM posts WHERE id &lt; 873421 ORDER BY id DESC LIMIT 20;</code></pre>
+    <pre><code class="language-php">&lt;?php
+// Laravel: cursorPaginate از keyset pagination استفاده می‌کند
+$posts = Post::orderByDesc('id')-&gt;cursorPaginate(20);</code></pre>
+    <h4>۴. فقط ستون‌های لازم را بخوانید</h4>
+    <p><code>SELECT *</code> مانع covering index می‌شود، ترافیک شبکه و حافظه را بالا می‌برد. در Eloquent: <code>select([...])</code>.</p>
+    <h4>۵. مشکل N+1</h4>
+    <pre><code class="language-php">&lt;?php
+// ✗ 1 query برای posts + N query برای author
+foreach (Post::latest()-&gt;take(50)-&gt;get() as $post) {
+    echo $post-&gt;author-&gt;name;
+}
+// ✓ 2 query
+foreach (Post::with('author:id,name')-&gt;latest()-&gt;take(50)-&gt;get() as $post) {
+    echo $post-&gt;author-&gt;name;
+}
+// در محیط توسعه: Model::preventLazyLoading(! app()-&gt;isProduction());</code></pre>
+    <h4>۶. OR روی ستون‌های مختلف</h4>
+    <p><code>WHERE a = 1 OR b = 2</code> ممکن است به full scan برسد. optimizer گاهی <code>index_merge</code> می‌زند؛ در غیر این صورت به <code>UNION ALL</code> دو query ایندکس‌دار بازنویسی کنید (مراقب تکراری‌ها باشید).</p>
+    <h4>۷. COUNT روی جداول بزرگ</h4>
+    <p>در InnoDB و PostgreSQL، <code>COUNT(*)</code> به خاطر MVCC باید سطرها (یا کوچک‌ترین ایندکس) را بشمارد؛ عدد ذخیره‌شده‌ای ندارد. برای داشبورد از شمارنده‌ی جداگانه یا تخمین استفاده کنید.</p>
+    <h4>۸. پردازش دسته‌ای</h4>
+    <pre><code class="language-php">&lt;?php
+// ✗ همه در حافظه
+User::all()-&gt;each(...);
+// ✓ دسته‌ای و پایدار در برابر تغییر داده‌ها حین پیمایش
+User::where('active', true)-&gt;chunkById(1000, function ($users) { /* ... */ });
+// ✓ با یک query و حداقل حافظه (unbuffered نیست، ولی مدل‌ها یکی‌یکی hydrate می‌شوند)
+foreach (User::where('active', true)-&gt;lazyById(1000) as $user) { /* ... */ }</code></pre>
+
+    <h3>روش کار سیستماتیک</h3>
+    <ol>
+      <li>پیدا کردن queryهای کند: <strong>slow query log</strong> (<code>long_query_time</code>)، <code>performance_schema</code>/<code>sys.statement_analysis</code>، <code>pg_stat_statements</code>، Laravel Telescope/Pulse.</li>
+      <li>اولویت با queryهایی که <strong>زمان کل</strong> (تکرار × میانگین) بیشتری دارند، نه لزوماً کندترین تکی.</li>
+      <li><code>EXPLAIN</code>/<code>EXPLAIN ANALYZE</code> ⇒ بررسی type، rows، Extra.</li>
+      <li>ایندکس، بازنویسی query، کاهش داده‌ی خوانده‌شده، denormalization سنجیده، یا cache.</li>
+      <li>اندازه‌گیری دوباره روی داده‌ی واقعی (نه دیتابیس تست کوچک).</li>
+    </ol>
+    <div class="callout exam"><p>در سوالات «این query کند است، چه می‌کنید؟» حتماً اشاره کنید: <strong>اول اندازه‌گیری (EXPLAIN ANALYZE، slow log)، بعد تغییر</strong>. پاسخ «یک ایندکس اضافه می‌کنم» بدون توضیح ترتیب ستون‌ها و تأثیر روی نوشتن، پاسخ کاملی نیست.</p></div>
+  </section>
+
+  <!-- ===================================================== 8 -->
+  <section class="lesson" id="cte-window" data-title="CTE و Window Function">
+    <h2>CTE و Window Function</h2>
+    <h3>CTE (Common Table Expression)</h3>
+    <p>CTE یک <strong>نتیجه‌ی موقت نام‌دار</strong> است که با <code>WITH</code> تعریف می‌شود و فقط در همان query وجود دارد. فایده‌ی اصلی: <strong>خوانایی</strong> (شکستن query پیچیده به مراحل نام‌دار)، استفاده‌ی چندباره از یک زیرquery، و مهم‌تر از همه <strong>CTE بازگشتی (recursive)</strong> برای داده‌های درختی. MySQL از نسخه‌ی 8.0 از CTE و window function پشتیبانی می‌کند.</p>
+    <pre><code class="language-sql">-- مشتریانی که در 30 روز گذشته بیش از میانگین خرید کرده‌اند
+WITH recent AS (
+    SELECT user_id, SUM(total) AS spent
+    FROM orders
+    WHERE created_at &gt;= NOW() - INTERVAL 30 DAY
+    GROUP BY user_id
+),
+avg_spent AS (
+    SELECT AVG(spent) AS v FROM recent
+)
+SELECT r.user_id, r.spent
+FROM recent r, avg_spent a
+WHERE r.spent &gt; a.v
+ORDER BY r.spent DESC;</code></pre>
+
+    <h4>CTE بازگشتی: درخت دسته‌بندی</h4>
+    <pre><code class="language-sql">-- categories(id, parent_id, name): همه‌ی زیرشاخه‌های دسته‌ی 5 همراه با عمق
+WITH RECURSIVE tree AS (
+    SELECT id, parent_id, name, 0 AS depth
+    FROM categories
+    WHERE id = 5                      -- anchor member
+    UNION ALL
+    SELECT c.id, c.parent_id, c.name, t.depth + 1
+    FROM categories c
+    JOIN tree t ON c.parent_id = t.id -- recursive member
+)
+SELECT * FROM tree ORDER BY depth;</code></pre>
+    <div class="callout warn"><p>در CTE بازگشتی مراقب <strong>چرخه</strong> در داده باشید (مثلاً A والد B و B والد A). MySQL با <code>cte_max_recursion_depth</code> (پیش‌فرض 1000) جلوی حلقه‌ی بی‌پایان را می‌گیرد؛ در PostgreSQL می‌توانید از <code>CYCLE</code> (نسخه‌ی 14+) یا نگه‌داری مسیر استفاده کنید.</p></div>
+    <div class="callout note"><p><strong>کارایی CTE:</strong> در PostgreSQL قبل از نسخه‌ی 12، CTE همیشه materialize می‌شد و مانع بهینه‌سازی بود (optimization fence). از نسخه‌ی 12 به بعد، CTE غیربازگشتی که یک بار استفاده شود inline می‌شود و می‌توانید با <code>MATERIALIZED</code> / <code>NOT MATERIALIZED</code> کنترلش کنید. MySQL هم CTE را بسته به شرایط merge یا materialize می‌کند. پس CTE ذاتاً کندتر از subquery نیست، ولی EXPLAIN را بررسی کنید.</p></div>
+
+    <h3>Window Function</h3>
+    <p>Window function روی یک «پنجره» از سطرهای مرتبط محاسبه انجام می‌دهد، <strong>بدون اینکه سطرها را مثل GROUP BY ادغام کند</strong>؛ هر سطر باقی می‌ماند و یک ستون محاسبه‌شده می‌گیرد. ساختار کلی:</p>
+    <pre><code class="language-sql">function_name(...) OVER (
+    PARTITION BY ...      -- گروه‌بندی پنجره (اختیاری)
+    ORDER BY ...          -- ترتیب داخل پنجره
+    ROWS BETWEEN ... AND ...  -- frame (اختیاری)
+)</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>تابع</th><th>کاربرد</th><th>رفتار با مقادیر مساوی (ties)</th></tr></thead>
+      <tbody>
+        <tr><td><code>ROW_NUMBER()</code></td><td>شماره‌ی یکتا برای هر سطر</td><td>1, 2, 3, 4 (ترتیب ties نامعین مگر ORDER BY کامل)</td></tr>
+        <tr><td><code>RANK()</code></td><td>رتبه با فاصله</td><td>1, 2, 2, 4</td></tr>
+        <tr><td><code>DENSE_RANK()</code></td><td>رتبه بدون فاصله</td><td>1, 2, 2, 3</td></tr>
+        <tr><td><code>NTILE(n)</code></td><td>تقسیم به n دسته (مثلاً چارک)</td><td>—</td></tr>
+        <tr><td><code>LAG()</code> / <code>LEAD()</code></td><td>مقدار سطر قبلی/بعدی (رشد ماه‌به‌ماه)</td><td>—</td></tr>
+        <tr><td><code>FIRST_VALUE()</code> / <code>LAST_VALUE()</code></td><td>اولین/آخرین مقدار پنجره</td><td>LAST_VALUE به frame حساس است</td></tr>
+        <tr><td><code>SUM()</code>/<code>AVG()</code>/<code>COUNT()</code> <code>OVER</code></td><td>جمع تجمعی، میانگین متحرک، درصد از کل</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+
+    <h4>Top-N در هر گروه: ۳ سفارش آخر هر کاربر</h4>
+    <pre><code class="language-sql">WITH ranked AS (
+    SELECT o.*,
+           ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC, id DESC) AS rn
+    FROM orders o
+)
+SELECT * FROM ranked WHERE rn &lt;= 3;
+-- نکته: window function را نمی‌توان مستقیم در WHERE استفاده کرد (بعد از WHERE محاسبه می‌شود)؛
+-- به همین دلیل از CTE یا subquery استفاده می‌کنیم.</code></pre>
+
+    <h4>جمع تجمعی (Running Total) و میانگین متحرک</h4>
+    <pre><code class="language-sql">SELECT day,
+       revenue,
+       SUM(revenue) OVER (ORDER BY day
+                          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total,
+       AVG(revenue) OVER (ORDER BY day
+                          ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)         AS moving_avg_7d,
+       revenue - LAG(revenue) OVER (ORDER BY day)                         AS diff_prev_day,
+       ROUND(100 * revenue / SUM(revenue) OVER (), 2)                     AS pct_of_total
+FROM daily_revenue
+ORDER BY day;</code></pre>
+    <div class="callout warn"><p>اگر <code>ORDER BY</code> داخل <code>OVER</code> بدهید و frame را مشخص نکنید، frame پیش‌فرض <code>RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code> است؛ یعنی سطرهای با مقدار ORDER BY <strong>برابر</strong> (peers) با هم جمع می‌شوند و running total برای روزهای تکراری «پرش» می‌کند. برای جمع تجمعی سطربه‌سطر صریحاً <code>ROWS</code> بنویسید.</p></div>
+
+    <h4>رتبه‌بندی با RANK و DENSE_RANK</h4>
+    <pre><code class="language-sql">SELECT name, department_id, salary,
+       RANK()       OVER (PARTITION BY department_id ORDER BY salary DESC) AS rnk,
+       DENSE_RANK() OVER (PARTITION BY department_id ORDER BY salary DESC) AS dense_rnk
+FROM employees;
+-- salary: 900, 800, 800, 700  ⇒  rnk: 1,2,2,4   dense_rnk: 1,2,2,3</code></pre>
+
+    <pre><code class="language-php">&lt;?php
+// Laravel: window function را با selectRaw و subquery استفاده کنید
+$ranked = DB::table('orders')
+    -&gt;select('*')
+    -&gt;selectRaw('ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn');
+
+$latest3 = DB::query()-&gt;fromSub($ranked, 'r')-&gt;where('rn', '&lt;=', 3)-&gt;get();
+
+// CTE در Query Builder هسته‌ی Laravel نیست؛ برای آن از DB::select با SQL خام
+// یا پکیج‌هایی مثل staudenmeir/laravel-cte استفاده می‌شود.</code></pre>
+    <div class="callout exam"><p>تفاوت <strong>GROUP BY</strong> و <strong>Window Function</strong>: GROUP BY سطرها را به یک سطر در هر گروه تبدیل می‌کند؛ window function تعداد سطرها را حفظ می‌کند و فقط ستون محاسباتی اضافه می‌کند. پس برای «هر سفارش به‌همراه مجموع خرید آن کاربر» window function مناسب است: <code>SUM(total) OVER (PARTITION BY user_id)</code>.</p></div>
+  </section>
+
+  <!-- ===================================================== 9 -->
+  <section class="lesson" id="views-procedures" data-title="View، Materialized View، Procedure و Trigger">
+    <h2>View، Materialized View، Procedure و Trigger</h2>
+    <h3>View</h3>
+    <p><strong>View</strong> یک query ذخیره‌شده با نام است؛ داده‌ای ذخیره نمی‌کند و هر بار که از آن select می‌کنید، query زیرین اجرا می‌شود. کاربردها: ساده‌سازی queryهای تکراری، <strong>لایه‌ی امنیتی</strong> (دادن دسترسی به view به‌جای جدول، مخفی کردن ستون‌های حساس)، و لایه‌ی سازگاری هنگام تغییر schema.</p>
+    <pre><code class="language-sql">CREATE VIEW active_customers AS
+SELECT id, name, email   -- ستون‌های حساس مثل national_id حذف شده
+FROM users
+WHERE status = 'active' AND deleted_at IS NULL;
+
+GRANT SELECT ON shop.active_customers TO 'report_user'@'%';</code></pre>
+    <ul>
+      <li>View ساده (یک جدول، بدون aggregate/DISTINCT) معمولاً <strong>updatable</strong> است.</li>
+      <li>در MySQL الگوریتم <code>MERGE</code> (ادغام در query بیرونی، کارآمد) و <code>TEMPTABLE</code> (ساخت جدول موقت؛ با aggregate) وجود دارد.</li>
+      <li>View خودش سرعت را بالا نمی‌برد؛ فقط query را پنهان می‌کند. Viewهای تودرتو می‌توانند planهای بد بسازند.</li>
+    </ul>
+
+    <h3>Materialized View</h3>
+    <p><strong>Materialized View</strong> نتیجه‌ی query را <strong>فیزیکی ذخیره</strong> می‌کند؛ خواندن بسیار سریع است ولی داده تا refresh بعدی <strong>کهنه (stale)</strong> است. مناسب گزارش‌ها و داشبوردهایی که تأخیر چند دقیقه‌ای قابل قبول است.</p>
+    <pre><code class="language-sql">-- PostgreSQL
+CREATE MATERIALIZED VIEW daily_sales AS
+SELECT date_trunc('day', created_at) AS day, SUM(total) AS revenue, COUNT(*) AS orders
+FROM orders
+GROUP BY 1;
+
+CREATE UNIQUE INDEX ON daily_sales (day);           -- برای CONCURRENTLY لازم است
+REFRESH MATERIALIZED VIEW CONCURRENTLY daily_sales;  -- خواننده‌ها حین refresh بلاک نمی‌شوند</code></pre>
+    <div class="callout note"><p><strong>MySQL Materialized View ندارد.</strong> معادلش یک <strong>summary table</strong> است که با job زمان‌بندی‌شده (Laravel Scheduler، MySQL Event)، یا به‌صورت افزایشی با event/queue پس از هر تغییر، یا با trigger به‌روز می‌شود.</p></div>
+    <pre><code class="language-php">&lt;?php
+// routes/console.php — بازسازی summary table هر 10 دقیقه
+Schedule::call(function () {
+    DB::statement(&lt;&lt;&lt;SQL
+        INSERT INTO daily_sales (day, revenue, orders)
+        SELECT DATE(created_at), SUM(total), COUNT(*)
+        FROM orders WHERE created_at &gt;= CURDATE() - INTERVAL 1 DAY
+        GROUP BY DATE(created_at)
+        ON DUPLICATE KEY UPDATE revenue = VALUES(revenue), orders = VALUES(orders)
+    SQL);
+})-&gt;everyTenMinutes()-&gt;withoutOverlapping();</code></pre>
+
+    <h3>Stored Procedure و Trigger: مصالحه‌ها</h3>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul>
+        <li>اجرای منطق کنار داده ⇒ رفت‌وبرگشت شبکه‌ی کمتر برای عملیات چندمرحله‌ای حجیم.</li>
+        <li>Trigger تضمین می‌کند قاعده (مثلاً audit log) <strong>صرف‌نظر از اینکه کدام برنامه</strong> داده را تغییر داده اجرا شود.</li>
+        <li>کنترل دسترسی: کاربر فقط اجازه‌ی EXECUTE دارد، نه دسترسی مستقیم به جدول.</li>
+      </ul></div>
+      <div class="card"><h4>معایب</h4><ul>
+        <li>منطق کسب‌وکار پنهان و دوپاره (بخشی در PHP، بخشی در DB)؛ سخت‌تر برای خواندن و دیباگ.</li>
+        <li>نسخه‌بندی، code review، تست واحد و CI سخت‌تر.</li>
+        <li>مقیاس‌پذیری: دیتابیس گران‌ترین و سخت‌ترین لایه برای scale افقی است؛ CPU آن را صرف منطق برنامه نکنید.</li>
+        <li>وابستگی به vendor (زبان PL/pgSQL یا SQL/PSM در MySQL).</li>
+        <li>Trigger «جادوی پنهان» است: کندی INSERTها، اثرات زنجیره‌ای، و Eloquent Eventها از آن خبر ندارند.</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-sql">-- نمونه‌ی trigger برای audit در MySQL
+CREATE TRIGGER trg_price_audit
+AFTER UPDATE ON products
+FOR EACH ROW
+BEGIN
+    IF NEW.price &lt;&gt; OLD.price THEN
+        INSERT INTO price_history (product_id, old_price, new_price, changed_at)
+        VALUES (OLD.id, OLD.price, NEW.price, NOW());
+    END IF;
+END;</code></pre>
+    <div class="callout exam"><p><strong>پاسخ متعادل:</strong> «در معماری‌های مدرن Laravel، منطق کسب‌وکار در لایه‌ی برنامه نگه داشته می‌شود (تست‌پذیر، نسخه‌بندی‌شده، scale افقی ساده). از Procedure/Trigger فقط در موارد محدود استفاده می‌کنم: audit و قیود یکپارچگی که باید مستقل از برنامه تضمین شوند، یا پردازش داده‌ی بسیار حجیم که انتقالش به برنامه گران است.» در Laravel معادل‌های برنامه‌ای: Model Observer/Event، Job، و constraintهای دیتابیس (FK، UNIQUE، CHECK).</p></div>
+  </section>
+
+  <!-- ===================================================== 10 -->
+  <section class="lesson" id="partitioning-sharding" data-title="Partitioning و Sharding">
+    <h2>Partitioning و Sharding</h2>
+    <p>هر دو یعنی تقسیم داده‌ی یک جدول بزرگ به قطعه‌های کوچک‌تر؛ تفاوت اصلی در این است که قطعه‌ها <strong>کجا</strong> هستند.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Partitioning</th><th>Sharding</th></tr></thead>
+      <tbody>
+        <tr><td>محل داده</td><td>یک سرور دیتابیس، چند partition</td><td>چند سرور مستقل (هر shard یک دیتابیس)</td></tr>
+        <tr><td>شفافیت برای برنامه</td><td>شفاف؛ SQL عوض نمی‌شود</td><td>معمولاً برنامه یا لایه‌ی میانی باید routing کند</td></tr>
+        <tr><td>هدف</td><td>مدیریت جداول بزرگ، partition pruning، حذف سریع داده‌ی قدیمی</td><td>scale نوشتن و حجم داده فراتر از توان یک سرور</td></tr>
+        <tr><td>JOIN و تراکنش</td><td>عادی</td><td>cross-shard join و تراکنش توزیع‌شده سخت/غیرممکن</td></tr>
+        <tr><td>پیچیدگی عملیاتی</td><td>کم تا متوسط</td><td>زیاد (resharding، backup، monitoring چندگانه)</td></tr>
+        <tr><td>نام دیگر</td><td>Horizontal partitioning داخلی</td><td>Horizontal partitioning بین سرورها</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout note"><p><strong>Vertical partitioning</strong> چیز دیگری است: جدا کردن ستون‌ها (مثلاً ستون‌های حجیم <code>bio</code> و <code>settings</code> در جدول <code>user_profiles</code> جدا از <code>users</code>)، یا جدا کردن جدول‌ها/ماژول‌ها به دیتابیس‌های مختلف (functional partitioning).</p></div>
+
+    <h3>انواع Partitioning</h3>
+    <dl class="terms">
+      <dt>RANGE</dt><dd>بر اساس بازه (معمولاً تاریخ). عالی برای داده‌ی زمانی: archive یا حذف یک ماه کامل با <code>DROP PARTITION</code> در کسری از ثانیه به‌جای DELETE میلیون‌ها سطر.</dd>
+      <dt>LIST</dt><dd>بر اساس مجموعه‌ی مقادیر گسسته (مثلاً region یا country).</dd>
+      <dt>HASH / KEY</dt><dd>توزیع یکنواخت بر اساس hash یک ستون؛ برای پخش بار وقتی بازه‌ی طبیعی وجود ندارد. KEY در MySQL از تابع hash داخلی استفاده می‌کند.</dd>
+    </dl>
+    <pre><code class="language-sql">-- MySQL: پارتیشن‌بندی ماهانه‌ی جدول لاگ
+CREATE TABLE access_logs (
+    id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    created_at DATETIME NOT NULL,
+    user_id    BIGINT UNSIGNED,
+    path       VARCHAR(255),
+    PRIMARY KEY (id, created_at)          -- ستون partition باید در همه‌ی کلیدهای یکتا باشد
+)
+PARTITION BY RANGE COLUMNS (created_at) (
+    PARTITION p2026_10 VALUES LESS THAN ('2026-11-01'),
+    PARTITION p2026_11 VALUES LESS THAN ('2026-12-01'),
+    PARTITION pmax     VALUES LESS THAN (MAXVALUE)
+);
+
+-- partition pruning: فقط p2026_11 خوانده می‌شود
+EXPLAIN SELECT * FROM access_logs WHERE created_at &gt;= '2026-11-05' AND created_at &lt; '2026-11-06';
+
+-- حذف داده‌ی قدیمی: آنی
+ALTER TABLE access_logs DROP PARTITION p2026_10;</code></pre>
+    <pre><code class="language-sql">-- PostgreSQL: declarative partitioning
+CREATE TABLE events (
+    id         bigint GENERATED ALWAYS AS IDENTITY,
+    created_at timestamptz NOT NULL,
+    payload    jsonb
+) PARTITION BY RANGE (created_at);
+
+CREATE TABLE events_2026_11 PARTITION OF events
+    FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');</code></pre>
+    <div class="callout warn"><p><strong>محدودیت‌ها:</strong> در MySQL هر کلید یکتا (از جمله PK) باید شامل همه‌ی ستون‌های عبارت partition باشد و جداول partitionشده‌ی InnoDB از <strong>Foreign Key</strong> پشتیبانی نمی‌کنند. در PostgreSQL هم PK/UNIQUE باید ستون partition را شامل شود. queryای که شرطی روی کلید partition ندارد، <strong>همه‌ی</strong> partitionها را می‌خواند و ممکن است کندتر از جدول عادی شود. Partitioning جایگزین ایندکس خوب نیست.</p></div>
+
+    <h3>Sharding</h3>
+    <p>انتخاب <strong>Shard Key</strong> مهم‌ترین تصمیم است و تغییرش بعداً بسیار گران است. shard key خوب: (۱) cardinality بالا، (۲) توزیع یکنواخت بار (نه فقط داده)، (۳) اکثر queryها فقط به یک shard نیاز داشته باشند (مثلاً <code>tenant_id</code> یا <code>user_id</code>).</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>استراتژی</th><th>روش</th><th>مزیت</th><th>عیب</th></tr></thead>
+      <tbody>
+        <tr><td>Range-based</td><td>user_id 1..1M ⇒ shard1، …</td><td>range query ساده</td><td>hotspot (کاربران جدید همه روی آخرین shard)</td></tr>
+        <tr><td>Hash-based</td><td><code>hash(user_id) % N</code></td><td>توزیع یکنواخت</td><td>تغییر N ⇒ جابه‌جایی تقریباً همه‌ی داده؛ range query بین همه‌ی shardها</td></tr>
+        <tr><td>Consistent Hashing</td><td>حلقه‌ی hash + virtual nodes</td><td>افزودن shard فقط بخش کوچکی را جابه‌جا می‌کند</td><td>پیچیدگی بیشتر</td></tr>
+        <tr><td>Directory / Lookup</td><td>جدول نگاشت key ⇒ shard</td><td>انعطاف کامل، جابه‌جایی tenant بزرگ</td><td>lookup اضافه؛ خود directory باید HA و cache شود</td></tr>
+      </tbody>
+    </table></div>
+    <pre class="diagram">             ┌──────────────────────────┐
+  request ──►│ App / Shard Router        │  shard = lookup(tenant_id)
+             └──────┬─────────┬─────────┬┘
+                    ▼         ▼         ▼
+              ┌────────┐ ┌────────┐ ┌────────┐
+              │Shard 1 │ │Shard 2 │ │Shard 3 │   هر کدام: primary + replicas
+              │t 1..400│ │t 401.. │ │t VIP   │   (tenant بزرگ ⇒ shard اختصاصی)
+              └────────┘ └────────┘ └────────┘</pre>
+    <h4>چالش‌های Sharding</h4>
+    <ul>
+      <li><strong>Cross-shard query/JOIN</strong>: باید scatter-gather در برنامه انجام شود؛ گزارش‌گیری را به data warehouse منتقل کنید.</li>
+      <li><strong>تراکنش توزیع‌شده</strong>: 2PC یا Saga؛ بهتر است مدل داده طوری باشد که تراکنش‌ها داخل یک shard بمانند.</li>
+      <li><strong>ID یکتای سراسری</strong>: auto-increment هر shard تکراری می‌شود ⇒ UUIDv7، ULID، Snowflake ID.</li>
+      <li><strong>Resharding</strong> و جابه‌جایی داده بدون downtime.</li>
+      <li><strong>Hot shard</strong>: یک tenant/کاربر خیلی بزرگ (celebrity problem).</li>
+      <li>ابزارها: <strong>Vitess</strong> (MySQL)، <strong>Citus</strong> (PostgreSQL)، یا دیتابیس‌های توزیع‌شده‌ی بومی.</li>
+    </ul>
+    <div class="callout exam"><p><strong>Sharding آخرین گزینه است.</strong> مسیر معمول: بهینه‌سازی query و ایندکس ⇒ cache ⇒ read replica ⇒ scale عمودی ⇒ partitioning و archive ⇒ functional split ⇒ sharding. در پاسخ تشریحی این ترتیب و دلیل هزینه‌ی بالای sharding (از دست رفتن JOIN، تراکنش، و پیچیدگی عملیاتی) را ذکر کنید.</p></div>
+  </section>
+
+  <!-- ===================================================== 11 -->
+  <section class="lesson" id="replication" data-title="Replication و Read Replica">
+    <h2>Replication و Read Replica</h2>
+    <p><strong>Replication</strong> یعنی نگه‌داری کپی داده روی چند سرور. اهداف: (۱) <strong>Scale خواندن</strong> با read replica؛ (۲) <strong>High Availability</strong> (replica آماده‌ی جایگزینی primary)؛ (۳) فاصله‌ی جغرافیایی کمتر تا کاربر؛ (۴) اجرای گزارش‌های سنگین و backup روی replica بدون فشار به primary.</p>
+
+    <h3>مکانیزم</h3>
+    <ul>
+      <li><strong>MySQL</strong>: primary تغییرات را در <strong>binary log</strong> می‌نویسد (فرمت <code>ROW</code> پیش‌فرض MySQL 8؛ همچنین STATEMENT و MIXED). replica با thread دریافت (I/O / receiver) binlog را به <strong>relay log</strong> خودش منتقل می‌کند و thread(های) اعمال (SQL / applier، قابل موازی) آن را اجرا می‌کنند. <strong>GTID</strong> شناسه‌ی سراسری هر تراکنش است و failover و تغییر source را ساده می‌کند.</li>
+      <li><strong>PostgreSQL</strong>: <strong>Streaming Replication</strong> فیزیکی (ارسال WAL به standby)؛ standby یک کپی بایت‌به‌بایت کل cluster است. <strong>Logical Replication</strong> (publication/subscription) برای replicate کردن جداول انتخابی، بین نسخه‌های مختلف یا برای upgrade کم‌downtime.</li>
+    </ul>
+    <pre class="diagram">                 writes                     reads
+  App ───────────────────────► ┌─────────┐
+   │                           │ Primary │──binlog/WAL──┬──────────────┐
+   │                           └─────────┘              ▼              ▼
+   │                                              ┌──────────┐   ┌──────────┐
+   └──────────────── reads ──────────────────────►│Replica 1 │   │Replica 2 │
+                                                  └──────────┘   └──────────┘
+                                                   lag: ms … ثانیه‌ها (یا بیشتر زیر بار)</pre>
+
+    <h3>Async، Semi-sync و Sync</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>حالت</th><th>COMMIT کی به کلاینت برمی‌گردد؟</th><th>از دست رفتن داده در failover</th><th>Latency نوشتن</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Asynchronous</strong> (پیش‌فرض MySQL و PostgreSQL)</td><td>بلافاصله پس از commit محلی</td><td>ممکن (تراکنش‌هایی که هنوز ارسال نشده‌اند)</td><td>کمترین</td></tr>
+        <tr><td><strong>Semi-synchronous</strong> (MySQL)</td><td>پس از اینکه حداقل یک replica دریافت و ذخیره‌ی تراکنش در relay log را تأیید کند (نه لزوماً اعمال آن)</td><td>تقریباً صفر؛ اما اگر replica در timeout جواب ندهد، به async برمی‌گردد</td><td>+ یک رفت‌وبرگشت شبکه</td></tr>
+        <tr><td><strong>Synchronous</strong> (PostgreSQL با <code>synchronous_standby_names</code>)</td><td>پس از تأیید standby همگام (بسته به <code>synchronous_commit</code>: <code>remote_write</code>، <code>on</code>، <code>remote_apply</code>)</td><td>صفر برای standby همگام</td><td>بیشتر؛ اگر standby از دسترس خارج شود نوشتن‌ها متوقف می‌شوند</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout note"><p><strong>Group Replication / InnoDB Cluster</strong> در MySQL و ابزارهایی مثل Galera از اجماع (consensus) استفاده می‌کنند تا تراکنش قبل از commit به تأیید اکثریت برسد؛ RPO صفر با هزینه‌ی latency و محدودیت‌های بیشتر.</p></div>
+
+    <h3>Replication Lag و Read-Your-Writes</h3>
+    <p>در replication غیرهمگام، replica از primary <strong>عقب</strong> است. سناریوی کلاسیک: کاربر پروفایلش را ویرایش می‌کند (نوشتن روی primary)، redirect می‌شود و صفحه‌ی پروفایل از replica خوانده می‌شود ⇒ <strong>مقدار قدیمی را می‌بیند</strong> و فکر می‌کند ذخیره نشده. این نقض تضمین <strong>Read-Your-Writes</strong> است.</p>
+    <p>علل lag: نوشتن‌های سنگین/تراکنش بزرگ روی primary، applier تک‌thread، replica ضعیف‌تر یا زیر بار گزارش، شبکه، و queryهای طولانی روی replica.</p>
+    <h4>راه‌حل‌ها</h4>
+    <ol>
+      <li><strong>Sticky در محدوده‌ی request</strong>: پس از نوشتن، بقیه‌ی خواندن‌های همان request از primary (گزینه‌ی <code>sticky</code> در Laravel).</li>
+      <li><strong>Sticky مبتنی بر زمان در session</strong>: تا N ثانیه پس از نوشتن (بیشتر از lag معمول)، خواندن‌های <em>آن کاربر</em> از primary؛ مثلاً با یک flag در session/cookie.</li>
+      <li><strong>Position/GTID tracking</strong>: پس از نوشتن، GTID یا LSN را نگه دارید و فقط از replicaای بخوانید که به آن رسیده باشد (<code>WAIT_FOR_EXECUTED_GTID_SET</code> در MySQL؛ مقایسه‌ی <code>pg_last_wal_replay_lsn()</code> در PostgreSQL).</li>
+      <li><strong>خواندن‌های حساس همیشه از primary</strong> (مثلاً موجودی کیف پول، وضعیت پرداخت).</li>
+      <li>به‌روزرسانی خوش‌بینانه‌ی UI با داده‌ای که کلاینت خودش فرستاده.</li>
+    </ol>
+    <div class="callout tip"><p>تضمین دیگر: <strong>Monotonic Reads</strong>؛ کاربر نباید با رفرش صفحه، داده‌ی «عقب‌تر» از قبل ببیند (چون این بار به replica با lag بیشتر رفته). راه‌حل: هر کاربر را همیشه به یک replica ثابت (مثلاً با hash شناسه‌ی کاربر) بفرستید.</p></div>
+
+    <h3>Read/Write Split در Laravel</h3>
+    <pre><code class="language-php">&lt;?php
+// config/database.php
+'mysql' =&gt; [
+    'driver' =&gt; 'mysql',
+    'read' =&gt; [
+        'host' =&gt; [
+            env('DB_READ_HOST_1', '10.0.0.11'),
+            env('DB_READ_HOST_2', '10.0.0.12'),   // یکی به‌صورت تصادفی انتخاب می‌شود
+        ],
+    ],
+    'write' =&gt; [
+        'host' =&gt; [env('DB_WRITE_HOST', '10.0.0.10')],
+    ],
+    'sticky'   =&gt; true,     // پس از هر write در این request، readها هم از write connection
+    'database' =&gt; env('DB_DATABASE'),
+    'username' =&gt; env('DB_USERNAME'),
+    'password' =&gt; env('DB_PASSWORD'),
+    // ...
+],</code></pre>
+    <pre><code class="language-php">&lt;?php
+// اجبار به خواندن از primary در موارد حساس
+$order = Order::onWriteConnection()-&gt;findOrFail($id);
+$rows  = DB::table('wallets')-&gt;useWritePdo()-&gt;where('user_id', $uid)-&gt;first();
+
+// SELECTهای داخل DB::transaction روی write connection اجرا می‌شوند.</code></pre>
+    <div class="callout warn"><p><code>sticky</code> فقط در <strong>همان request (یا همان اجرای job)</strong> اثر دارد. اگر کاربر بعد از POST به صفحه‌ی دیگری redirect شود، request بعدی دوباره از replica می‌خواند. برای read-your-writes بین requestها، راه‌حل ۲ یا ۳ بالا لازم است. همچنین در Octane و queue workerهای طولانی، رفتار sticky را بین requestها/jobها بررسی کنید.</p></div>
+    <div class="callout exam"><p>جمع‌بندی برای پاسخ: «Read replica خواندن را scale می‌دهد، نه نوشتن را. هزینه‌اش <strong>eventual consistency</strong> و replication lag است که باید با sticky، routing خواندن‌های حساس به primary، یا ردیابی GTID/LSN مدیریت شود. Replication جایگزین backup نیست، چون <code>DROP TABLE</code> یا <code>DELETE</code> اشتباه هم فوراً replicate می‌شود.»</p></div>
+  </section>
+
+  <!-- ===================================================== 12 -->
+  <section class="lesson" id="ha-cap-pooling" data-title="HA، Failover، CAP/PACELC و Connection Pooling">
+    <h2>HA، Failover، CAP/PACELC و Connection Pooling</h2>
+    <h3>High Availability و Failover</h3>
+    <p>HA یعنی سیستم با از کار افتادن یک جزء همچنان سرویس بدهد. در دیتابیس، یعنی primary جایگزین داشته باشد و جابه‌جایی (failover) سریع و امن انجام شود. دو معیار کلیدی:</p>
+    <dl class="terms">
+      <dt>RPO (Recovery Point Objective)</dt><dd>حداکثر داده‌ای که از دست دادنش قابل قبول است (بر حسب زمان). async ⇒ RPO چند ثانیه؛ sync/semi-sync ⇒ نزدیک صفر.</dd>
+      <dt>RTO (Recovery Time Objective)</dt><dd>حداکثر زمان قابل قبول تا بازگشت سرویس. failover خودکار ⇒ ثانیه‌ها تا یک دقیقه؛ restore از backup ⇒ ساعت‌ها.</dd>
+    </dl>
+    <pre class="diagram">                  ┌─────────────────────────────┐
+     App ────────►│ Proxy / VIP / DNS           │  (ProxySQL، HAProxy، MySQL Router،
+                  │ (همیشه به primary فعلی)       │   PgBouncer + Patroni، RDS endpoint)
+                  └──────────────┬──────────────┘
+                                 ▼
+   ┌──────────┐  replication ┌──────────┐      ┌──────────────────────────┐
+   │ Primary  │ ───────────► │ Replica  │ ◄────│ Failover manager         │
+   │   ✗ down │              │ ⇒ promote│      │ (Orchestrator، Patroni +  │
+   └──────────┘              └──────────┘      │  etcd، InnoDB Cluster)    │
+                                               └──────────────────────────┘
+مراحل: تشخیص خرابی ⇒ اجماع (quorum) ⇒ fencing primary قدیمی ⇒ promote بهترین replica
+       ⇒ repoint بقیه‌ی replicaها ⇒ تغییر مسیر ترافیک</pre>
+    <ul>
+      <li><strong>Split-brain</strong>: اگر primary قدیمی فقط از شبکه جدا شده باشد (نه خاموش) و دوباره بالا بیاید، دو primary هم‌زمان نوشتن می‌پذیرند ⇒ داده‌ی متناقض. راه‌حل: <strong>quorum</strong> (تصمیم با اکثریت، تعداد نود فرد)، و <strong>fencing</strong> (STONITH، خاموش کردن یا read-only کردن اجباری primary قدیمی).</li>
+      <li>در failover با replication غیرهمگام، تراکنش‌هایی که به replica نرسیده‌اند <strong>از دست می‌روند</strong>؛ RPO را صریحاً بپذیرید یا semi-sync بگذارید.</li>
+      <li>برنامه باید با قطعی کوتاه کنار بیاید: retry برای خطای اتصال، timeout معقول، و idempotency در عملیات.</li>
+      <li>failover را <strong>تمرین</strong> کنید؛ failover که هرگز تست نشده، در لحظه‌ی بحران کار نمی‌کند.</li>
+    </ul>
+
+    <h3>CAP Theorem</h3>
+    <p>در یک سیستم داده‌ی <strong>توزیع‌شده</strong>، هنگام وقوع <strong>Partition</strong> شبکه (قطع ارتباط بین نودها)، نمی‌توان هم‌زمان هر دوی این‌ها را داشت:</p>
+    <ul>
+      <li><strong>Consistency (C)</strong>: هر خواندن، آخرین نوشتن را می‌بیند (linearizability).</li>
+      <li><strong>Availability (A)</strong>: هر درخواست به نود سالم، پاسخ (غیرخطا) می‌گیرد.</li>
+    </ul>
+    <p>چون partition در شبکه‌ی واقعی <strong>اجتناب‌ناپذیر</strong> است، «انتخاب ۲ از ۳» گمراه‌کننده است؛ انتخاب واقعی این است که <strong>هنگام partition</strong>، سیستم <strong>CP</strong> باشد (درخواست‌هایی را که نمی‌تواند سازگار پاسخ دهد رد کند) یا <strong>AP</strong> (پاسخ بدهد، شاید با داده‌ی کهنه، و بعداً همگرا شود).</p>
+    <h3>PACELC</h3>
+    <p>توسعه‌ی CAP توسط Daniel Abadi: <strong>if Partition ⇒ A or C; Else ⇒ Latency or Consistency</strong>. یعنی حتی وقتی شبکه سالم است، replication همگام (consistency بیشتر) هزینه‌ی latency دارد. این برای اکثر روزهای عمر سیستم (که partition ندارد) مهم‌تر از CAP است.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>سیستم</th><th>دسته‌بندی رایج</th><th>توضیح</th></tr></thead>
+      <tbody>
+        <tr><td>Cassandra، DynamoDB (پیش‌فرض)</td><td>PA/EL</td><td>اولویت دسترس‌پذیری و latency؛ consistency قابل تنظیم (quorum)</td></tr>
+        <tr><td>HBase، etcd، ZooKeeper</td><td>PC/EC</td><td>اجماع؛ در partition، اقلیت سرویس نمی‌دهد</td></tr>
+        <tr><td>MySQL/PostgreSQL با replica غیرهمگام</td><td>EL در خواندن از replica</td><td>خواندن از replica سریع ولی ممکن است کهنه باشد</td></tr>
+        <tr><td>PostgreSQL با standby همگام</td><td>EC</td><td>هر commit منتظر standby ⇒ latency بیشتر</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>اشتباه رایج در پاسخ: «MySQL یک سیستم CA است». CAP درباره‌ی سیستم‌های توزیع‌شده است؛ یک نود تنها partition بین نودها ندارد، ولی در عمل availability آن هم با از کار افتادن همان نود صفر می‌شود. پاسخ بهتر: رفتار CAP را برای <strong>توپولوژی مشخص</strong> (primary-replica، cluster) و <strong>عملیات مشخص</strong> (خواندن از primary یا replica) تحلیل کنید.</p></div>
+
+    <h3>Connection Pooling</h3>
+    <p>ساختن اتصال دیتابیس گران است (TCP handshake، TLS، احراز هویت، تخصیص حافظه). همچنین هر اتصال روی سرور منبع مصرف می‌کند: MySQL برای هر اتصال یک <strong>thread</strong>، و PostgreSQL برای هر اتصال یک <strong>process</strong> کامل می‌سازد؛ به همین دلیل PostgreSQL به تعداد اتصال زیاد حساس‌تر است.</p>
+    <ul>
+      <li><strong>PHP-FPM</strong>: مدل share-nothing؛ هر worker در هر request اتصال جدید باز می‌کند (مگر با <code>PDO::ATTR_PERSISTENT</code> که اتصال را در همان process نگه می‌دارد). حداکثر اتصال ≈ <code>تعداد سرورهای app × pm.max_children</code> (+ queue workerها)؛ این عدد به‌راحتی از <code>max_connections</code> دیتابیس بیشتر می‌شود.</li>
+      <li><strong>Laravel Octane</strong> و queue workerها اتصال را بین requestها/jobها نگه می‌دارند (مثل pool کوچک per-worker)؛ مراقب اتصال‌های مرده (<code>MySQL server has gone away</code>) و تنظیم timeout باشید.</li>
+      <li><strong>Pooler خارجی</strong>: <strong>PgBouncer</strong> برای PostgreSQL، <strong>ProxySQL</strong> برای MySQL (که read/write split و query routing هم دارد). هزاران اتصال کلاینت روی ده‌ها اتصال واقعی multiplex می‌شوند.</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>حالت PgBouncer</th><th>اتصال واقعی کی آزاد می‌شود؟</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td><code>session</code></td><td>پایان session کلاینت</td><td>امن‌ترین، کمترین صرفه‌جویی</td></tr>
+        <tr><td><code>transaction</code></td><td>پایان هر تراکنش</td><td>رایج‌ترین؛ ولی ویژگی‌های session‌محور (<code>SET</code>، advisory lock در سطح session، <code>LISTEN</code>، temp table) قابل اتکا نیستند و پشتیبانی prepared statement به نسخه و تنظیمات PgBouncer بستگی دارد</td></tr>
+        <tr><td><code>statement</code></td><td>پایان هر statement</td><td>تراکنش چند statementی مجاز نیست</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>اندازه‌ی pool بزرگ‌تر همیشه بهتر نیست. دیتابیس با تعداد محدودی هسته‌ی CPU و دیسک، با صدها query هم‌زمان فعال، به‌خاطر context switch و رقابت قفل <strong>کندتر</strong> می‌شود. معمولاً تعداد کمی اتصال فعال (در حد چند برابر تعداد هسته‌ها) و صف کردن بقیه بهترین throughput را می‌دهد.</p></div>
+  </section>
+
+  <!-- ===================================================== 13 -->
+  <section class="lesson" id="backup" data-title="Backup و PITR">
+    <h2>Backup و PITR</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Logical Backup</th><th>Physical Backup</th></tr></thead>
+      <tbody>
+        <tr><td>محتوا</td><td>دستورات SQL یا داده‌ی متنی (CREATE/INSERT)</td><td>کپی فایل‌های داده‌ی دیتابیس</td></tr>
+        <tr><td>ابزار MySQL</td><td><code>mysqldump</code>، <code>mydumper</code>، MySQL Shell dump utilities</td><td>Percona XtraBackup، MySQL Enterprise Backup، snapshot دیسک</td></tr>
+        <tr><td>ابزار PostgreSQL</td><td><code>pg_dump</code>، <code>pg_dumpall</code></td><td><code>pg_basebackup</code>، pgBackRest، Barman</td></tr>
+        <tr><td>سرعت backup/restore</td><td>کند، به‌خصوص restore (بازسازی ایندکس‌ها)</td><td>سریع؛ متناسب با سرعت کپی دیسک</td></tr>
+        <tr><td>قابلیت حمل</td><td>بالا: بین نسخه‌ها و حتی معماری‌ها؛ انتخاب یک جدول</td><td>پایین: همان نسخه‌ی major و پلتفرم</td></tr>
+        <tr><td>اندازه</td><td>کوچک‌تر (بدون ایندکس) و فشرده‌پذیر</td><td>به اندازه‌ی کل دیتابیس</td></tr>
+        <tr><td>مناسب برای</td><td>دیتابیس کوچک تا متوسط، migration، کپی جدول</td><td>دیتابیس بزرگ، پایه‌ی PITR، ساخت replica</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-bash"># MySQL: backup منطقی سازگار برای InnoDB بدون قفل کردن جداول
+mysqldump --single-transaction --routines --triggers --events \
+          --source-data=2 shop | gzip &gt; shop_$(date +%F).sql.gz
+# --single-transaction: یک snapshot با REPEATABLE READ (فقط برای جداول InnoDB سازگار است)
+# --source-data=2: موقعیت binlog را به‌صورت comment ثبت می‌کند ⇒ نقطه‌ی شروع PITR
+
+# PostgreSQL: فرمت custom (فشرده، قابل restore موازی و انتخابی)
+pg_dump -Fc -d shop -f shop.dump
+pg_restore -d shop_restored -j 4 shop.dump</code></pre>
+
+    <h3>Point-in-Time Recovery (PITR)</h3>
+    <p>PITR یعنی بازگرداندن دیتابیس به <strong>هر لحظه‌ی دلخواه</strong>؛ مثلاً یک ثانیه قبل از اجرای اشتباه <code>DELETE FROM orders</code> بدون WHERE. اصل کار: <strong>آخرین backup کامل + replay لاگ تغییرات تا لحظه‌ی مورد نظر</strong>.</p>
+    <pre class="diagram">  full backup (یکشنبه 02:00)         حادثه: چهارشنبه 14:32:10
+        │                                     │
+        ▼                                     ▼
+  ──────■─────────────────────────────────────✗──────────► زمان
+        └──── binlog / WAL archive ──────────►┘
+  restore = full backup  +  replay لاگ‌ها تا 14:32:09 (stop-datetime / recovery_target_time)</pre>
+    <ul>
+      <li><strong>MySQL</strong>: restore بکاپ کامل، سپس <code>mysqlbinlog --start-position=… --stop-datetime="2026-11-04 14:32:09" binlog.* | mysql</code>. binlogها باید فعال باشند، نگه داشته شوند (<code>binlog_expire_logs_seconds</code>) و ترجیحاً به جای دیگری کپی شوند.</li>
+      <li><strong>PostgreSQL</strong>: <code>archive_mode=on</code> و <code>archive_command</code> (یا ابزاری مثل pgBackRest) فایل‌های WAL را آرشیو می‌کند؛ هنگام restore، base backup + <code>restore_command</code> + <code>recovery_target_time</code>.</li>
+    </ul>
+    <h3>اصول یک استراتژی خوب</h3>
+    <ol>
+      <li><strong>قانون 3-2-1</strong>: سه نسخه، روی دو نوع رسانه، یک نسخه خارج از محل (offsite / region دیگر). در برابر ransomware، یک نسخه‌ی <strong>immutable</strong> یا جدا از شبکه.</li>
+      <li><strong>Backup تست‌نشده، backup نیست</strong>: restore دوره‌ای و خودکار در محیط جدا و اندازه‌گیری زمان آن (RTO واقعی).</li>
+      <li><strong>Replication جایگزین backup نیست</strong>: خطای انسانی و داده‌ی خراب هم replicate می‌شود. (replica با تأخیر عمدی، مثل <code>SOURCE_DELAY</code> در MySQL، می‌تواند لایه‌ی محافظ اضافی باشد.)</li>
+      <li>ترکیب: full هفتگی + incremental/differential روزانه (XtraBackup، pgBackRest) + آرشیو پیوسته‌ی binlog/WAL.</li>
+      <li>رمزنگاری backup، کنترل دسترسی، و پایش موفقیت/شکست jobها.</li>
+      <li>backup را از <strong>replica</strong> بگیرید تا بار primary کم شود (با در نظر گرفتن lag).</li>
+      <li>RPO/RTO را با کسب‌وکار توافق کنید و استراتژی را از آن استخراج کنید، نه برعکس.</li>
+    </ol>
+    <div class="callout exam"><p>سوال سناریویی رایج: «کسی ساعت ۱۴:۳۲ تمام سفارش‌ها را حذف کرد. چه می‌کنید؟» پاسخ: (۱) جلوگیری از آسیب بیشتر (متوقف کردن نوشتن یا شناسایی منبع)؛ (۲) پیدا کردن دقیق موقعیت حادثه در binlog/WAL؛ (۳) restore آخرین full backup روی <strong>سرور جداگانه</strong>؛ (۴) replay لاگ‌ها تا درست قبل از حادثه؛ (۵) استخراج جدول/سطرهای از دست رفته و بازگرداندن آن‌ها به production (یا جایگزینی کامل، بسته به شرایط)؛ (۶) post-mortem و جلوگیری (دسترسی‌ها، <code>sql_safe_updates</code>، review).</p></div>
+  </section>
+
+  <!-- ===================================================== 14 -->
+  <section class="lesson" id="mysql-pg-search-redis" data-title="MySQL در برابر PostgreSQL، Full-text و Redis">
+    <h2>MySQL در برابر PostgreSQL، Full-text و Redis</h2>
+    <h3>مقایسه‌ی MySQL و PostgreSQL</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>جنبه</th><th>MySQL 8 (InnoDB)</th><th>PostgreSQL</th></tr></thead>
+      <tbody>
+        <tr><td>ذخیره‌سازی</td><td>Clustered index بر اساس PK</td><td>Heap + ایندکس‌های جدا</td></tr>
+        <tr><td>MVCC</td><td>undo log، purge</td><td>نسخه در heap، VACUUM</td></tr>
+        <tr><td>Isolation پیش‌فرض</td><td>Repeatable Read</td><td>Read Committed</td></tr>
+        <tr><td>Serializable</td><td>قفل‌محور</td><td>SSI (بدون قفل خواندن، abort + retry)</td></tr>
+        <tr><td>مدل اتصال</td><td>thread per connection</td><td>process per connection (pooler تقریباً ضروری)</td></tr>
+        <tr><td>JSON</td><td><code>JSON</code> (باینری)، ایندکس از طریق generated column یا multi-valued index</td><td><code>JSONB</code> با ایندکس <strong>GIN</strong> روی کل سند؛ عملگرهای غنی</td></tr>
+        <tr><td>انواع ایندکس</td><td>B-Tree، FULLTEXT، SPATIAL، functional، invisible</td><td>B-Tree، Hash، GIN، GiST، SP-GiST، BRIN؛ <strong>partial index</strong>، expression index، <code>INCLUDE</code></td></tr>
+        <tr><td>DDL تراکنشی</td><td>خیر؛ DDL باعث implicit commit می‌شود (ولی DDL خودش atomic است)</td><td><strong>بله</strong>؛ migration را می‌توان در تراکنش rollback کرد</td></tr>
+        <tr><td>Materialized View</td><td>ندارد</td><td>دارد</td></tr>
+        <tr><td>Extensionها</td><td>محدود</td><td>بسیار غنی: PostGIS، pg_trgm، TimescaleDB، pgvector، Citus</td></tr>
+        <tr><td>Upsert</td><td><code>INSERT … ON DUPLICATE KEY UPDATE</code></td><td><code>INSERT … ON CONFLICT … DO UPDATE</code></td></tr>
+        <tr><td>Replication</td><td>binlog (row-based)، GTID، Group Replication</td><td>streaming (WAL) فیزیکی + logical</td></tr>
+        <tr><td>نقطه‌ی قوت</td><td>سادگی عملیاتی، خواندن‌های ساده‌ی پرتعداد با PK، اکوسیستم و ابزارهای scale (Vitess، ProxySQL)</td><td>queryهای تحلیلی پیچیده، انواع داده‌ی غنی، تطابق دقیق‌تر با استاندارد، extensibility</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>در پاسخ تشریحی «کدام بهتر است؟» جواب مطلق ندهید. بگویید انتخاب به <strong>نیاز</strong> (نوع داده و query، JSON و جغرافیا، الگوی خواندن/نوشتن)، <strong>تجربه‌ی تیم</strong> و <strong>اکوسیستم عملیاتی</strong> (managed service، ابزار backup و HA) بستگی دارد و هر دو برای اکثر برنامه‌های Laravel کاملاً مناسب‌اند.</p></div>
+
+    <h3>Full-Text Search دیتابیس در برابر Elasticsearch</h3>
+    <pre><code class="language-sql">-- MySQL
+ALTER TABLE articles ADD FULLTEXT INDEX ft_title_body (title, body);
+SELECT id, title, MATCH(title, body) AGAINST ('laravel queue' IN NATURAL LANGUAGE MODE) AS score
+FROM articles
+WHERE MATCH(title, body) AGAINST ('+laravel -symfony' IN BOOLEAN MODE)
+ORDER BY score DESC LIMIT 20;
+
+-- PostgreSQL
+CREATE INDEX idx_articles_fts ON articles
+    USING GIN (to_tsvector('simple', title || ' ' || body));
+SELECT id, title FROM articles
+WHERE to_tsvector('simple', title || ' ' || body) @@ plainto_tsquery('simple', 'laravel queue');</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>FTS داخلی دیتابیس</th><th>Elasticsearch / OpenSearch / Meilisearch</th></tr></thead>
+      <tbody>
+        <tr><td>زیرساخت</td><td>هیچ سرویس اضافه‌ای</td><td>کلاستر جداگانه برای نگه‌داری و پایش</td></tr>
+        <tr><td>هم‌گامی داده</td><td>آنی و تراکنشی</td><td>eventual؛ نیاز به pipeline (queue، CDC، Laravel Scout)</td></tr>
+        <tr><td>کیفیت relevance</td><td>پایه</td><td>BM25، boosting، fuzzy/typo tolerance، synonym، highlight</td></tr>
+        <tr><td>زبان فارسی</td><td>tokenizer ساده؛ بدون stemming و نرمال‌سازی (ی/ي، ک/ك)</td><td>analyzer قابل تنظیم (از جمله Persian analyzer و normalizer)</td></tr>
+        <tr><td>Facet و aggregation</td><td>محدود و پرهزینه</td><td>قوی</td></tr>
+        <tr><td>مقیاس</td><td>بار جست‌وجو روی دیتابیس اصلی</td><td>scale افقی مستقل (shard/replica)</td></tr>
+        <tr><td>مناسب برای</td><td>جست‌وجوی ساده، حجم کم تا متوسط</td><td>جست‌وجوی محصول، لاگ، autocomplete، حجم زیاد</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>Elasticsearch را <strong>منبع حقیقت (source of truth)</strong> قرار ندهید؛ دیتابیس اصلی مرجع است و ایندکس جست‌وجو باید قابل بازسازی کامل از آن باشد.</p></div>
+
+    <h3>Redis به‌عنوان Data Store</h3>
+    <p>Redis یک <strong>in-memory data structure store</strong> است: بسیار سریع (زیر میلی‌ثانیه)، اجرای فرمان‌ها روی یک thread اصلی ⇒ هر فرمان <strong>atomic</strong> است. کاربردها: cache، session، صف (Laravel queue و Horizon)، rate limiter، lock توزیع‌شده، leaderboard، شمارنده، pub/sub.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع داده</th><th>کاربرد نمونه</th></tr></thead>
+      <tbody>
+        <tr><td><strong>String</strong></td><td>cache، شمارنده با <code>INCR</code>، lock با <code>SET key val NX EX 10</code></td></tr>
+        <tr><td><strong>Hash</strong></td><td>شیء با فیلدها (پروفایل، سبد خرید)</td></tr>
+        <tr><td><strong>List</strong></td><td>صف ساده (<code>LPUSH</code>/<code>BRPOP</code>)، آخرین N آیتم</td></tr>
+        <tr><td><strong>Set</strong></td><td>عضویت یکتا، tagها، اشتراک/اجتماع</td></tr>
+        <tr><td><strong>Sorted Set</strong></td><td>leaderboard، صف زمان‌بندی (delayed jobs)، sliding window rate limit</td></tr>
+        <tr><td><strong>Stream</strong></td><td>لاگ رویداد append-only با consumer group</td></tr>
+        <tr><td>Bitmap / HyperLogLog / Geo</td><td>حضور روزانه، شمارش تقریبی یکتا با حافظه‌ی ثابت، نزدیک‌ترین مکان‌ها</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid-2">
+      <div class="card"><h4>RDB (Snapshot)</h4><ul>
+        <li>تصویر لحظه‌ای کل داده در فواصل زمانی (fork + نوشتن فایل).</li>
+        <li>فایل فشرده، restart سریع، مناسب backup.</li>
+        <li>از دست رفتن داده از آخرین snapshot تا crash.</li>
+        <li>fork روی داده‌ی بزرگ ممکن است مکث و مصرف حافظه‌ی اضافه ایجاد کند.</li>
+      </ul></div>
+      <div class="card"><h4>AOF (Append Only File)</h4><ul>
+        <li>هر فرمان نوشتنی به فایل اضافه می‌شود؛ <code>appendfsync</code>: <code>always</code> (امن و کند)، <code>everysec</code> (پیش‌فرض؛ حداکثر حدود ۱ ثانیه از دست رفتن)، <code>no</code>.</li>
+        <li>durability بهتر، فایل بزرگ‌تر (با rewrite فشرده می‌شود).</li>
+        <li>در عمل اغلب RDB و AOF با هم استفاده می‌شوند.</li>
+      </ul></div>
+    </div>
+    <div class="callout warn"><p>Redis به‌عنوان cache باید <code>maxmemory</code> و <code>maxmemory-policy</code> مناسب (مثلاً <code>allkeys-lru</code>) داشته باشد؛ اما برای صف و lock، policyای که کلیدها را حذف کند خطرناک است (job گم می‌شود). برای همین معمولاً Redis cache و Redis queue را جدا می‌کنند. همچنین replication در Redis غیرهمگام است؛ پس داده‌ی مالی حساس را فقط در Redis نگه ندارید.</p></div>
+  </section>
+
+  <!-- ===================================================== QUESTIONS -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-advanced-database-1">
+      <summary>ویژگی‌های ACID را تعریف کنید و توضیح دهید دیتابیس هر کدام را با چه مکانیزمی تضمین می‌کند.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> ACID مجموعه‌ی تضمین‌هایی است که یک دیتابیس تراکنشی درباره‌ی هر <strong>Transaction</strong> (واحد منطقی کار) می‌دهد.</p>
+        <ul>
+          <li><strong>Atomicity</strong>: همه‌ی عملیات تراکنش یا با هم اعمال می‌شوند یا هیچ‌کدام. مکانیزم: <strong>undo log</strong> در InnoDB که نسخه‌ی قبلی را نگه می‌دارد و در rollback اعمال می‌شود؛ در PostgreSQL نسخه‌های ساخته‌شده توسط تراکنش abort شده هرگز visible نمی‌شوند.</li>
+          <li><strong>Consistency</strong>: تراکنش دیتابیس را از یک حالت معتبر به حالت معتبر دیگر می‌برد. مکانیزم: <strong>constraintها</strong> (PK، FK، UNIQUE، CHECK، NOT NULL) و بخشی هم <strong>منطق صحیح برنامه</strong>؛ تنها ویژگی‌ای است که مسئولیتش مشترک است.</li>
+          <li><strong>Isolation</strong>: تراکنش‌های هم‌زمان اثر ناخواسته روی هم نگذارند. مکانیزم: <strong>MVCC</strong> برای خواندن، <strong>قفل‌های سطری</strong> (و در InnoDB gap/next-key lock) برای نوشتن، و در PostgreSQL Serializable، الگوریتم <strong>SSI</strong>. میزان آن با Isolation Level تنظیم می‌شود.</li>
+          <li><strong>Durability</strong>: پس از COMMIT، تغییرات با crash از بین نمی‌رود. مکانیزم: <strong>Write-Ahead Logging</strong> (redo log در InnoDB، WAL در PostgreSQL): تغییر ابتدا به‌صورت ترتیبی در لاگ نوشته و <code>fsync</code> می‌شود و پس از crash، لاگ replay می‌شود. در MySQL تنظیم <code>innodb_flush_log_at_trx_commit=1</code> و <code>sync_binlog=1</code> برای durability کامل لازم است.</li>
+        </ul>
+        <p><strong>نکته‌ی تکمیلی:</strong> Consistency در ACID با Consistency در CAP (linearizability) متفاوت است. همچنین durability روی یک نود، در برابر از دست رفتن خود دیسک یا سرور محافظت نمی‌کند؛ برای آن replication و backup لازم است.</p>
+        <p><strong>مصالحه:</strong> کاهش durability (مثلاً flush هر ثانیه) throughput نوشتن را بالا می‌برد ولی خطر از دست رفتن تراکنش‌های آخرین ثانیه را می‌پذیرد؛ برای داده‌ی مالی قابل قبول نیست.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-2">
+      <summary>سطوح ایزولاسیون تراکنش را نام ببرید و با ذکر ناهنجاری‌هایی که هر سطح مجاز می‌داند مقایسه کنید. پیش‌فرض MySQL و PostgreSQL چیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Isolation Level تعیین می‌کند یک تراکنش تا چه حد اثر تراکنش‌های هم‌زمان را می‌بیند؛ مصالحه‌ای بین <strong>درستی</strong> و <strong>هم‌زمانی</strong>.</p>
+        <ul>
+          <li><strong>Read Uncommitted</strong>: حتی داده‌ی commit‌نشده دیده می‌شود ⇒ <strong>Dirty Read</strong>. تقریباً هرگز استفاده نمی‌شود.</li>
+          <li><strong>Read Committed</strong>: فقط داده‌ی commit‌شده؛ ولی هر statement snapshot تازه دارد ⇒ <strong>Non-Repeatable Read</strong> و <strong>Phantom</strong> ممکن است.</li>
+          <li><strong>Repeatable Read</strong>: کل تراکنش یک snapshot می‌بیند ⇒ خواندن مجدد یک سطر همان نتیجه را می‌دهد. در استاندارد phantom مجاز است؛ در PostgreSQL (Snapshot Isolation) phantom رخ نمی‌دهد و در InnoDB برای خواندن snapshot رخ نمی‌دهد و برای locking read با next-key lock جلوگیری می‌شود.</li>
+          <li><strong>Serializable</strong>: نتیجه معادل یک اجرای سریالی است؛ همه‌ی ناهنجاری‌ها از جمله <strong>Write Skew</strong> حذف می‌شوند.</li>
+        </ul>
+        <div class="table-wrap"><table>
+          <thead><tr><th>سطح</th><th>Dirty</th><th>Non-Repeatable</th><th>Phantom</th></tr></thead>
+          <tbody>
+            <tr><td>RU</td><td>✓</td><td>✓</td><td>✓</td></tr>
+            <tr><td>RC</td><td>✗</td><td>✓</td><td>✓</td></tr>
+            <tr><td>RR</td><td>✗</td><td>✗</td><td>✓ (استاندارد)</td></tr>
+            <tr><td>Serializable</td><td>✗</td><td>✗</td><td>✗</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>پیش‌فرض‌ها:</strong> MySQL InnoDB ⇒ <strong>REPEATABLE READ</strong>؛ PostgreSQL ⇒ <strong>READ COMMITTED</strong>.</p>
+        <p><strong>تفاوت پیاده‌سازی:</strong> Serializable در InnoDB قفل‌محور است (SELECTها shared lock می‌گیرند) و در PostgreSQL مبتنی بر SSI است که قفل خواندن نمی‌گذارد و در صورت تشخیص تداخل، تراکنش را با خطای <code>40001</code> abort می‌کند؛ پس برنامه باید retry داشته باشد. در RR مربوط به MySQL، lost update در الگوی «SELECT ساده سپس UPDATE با مقدار محاسبه‌شده در برنامه» ممکن است، در حالی که PostgreSQL در RR آن را با خطا تشخیص می‌دهد.</p>
+        <p><strong>جمع‌بندی:</strong> سطح بالاتر ⇒ ناهنجاری کمتر، ولی قفل/abort بیشتر و throughput کمتر. معمولاً سطح پیش‌فرض + قفل صریح یا عملیات atomic در نقاط حساس انتخاب عملی است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-3">
+      <summary>Write Skew چیست؟ چرا Snapshot Isolation (مثلاً Repeatable Read در PostgreSQL) جلوی آن را نمی‌گیرد و چه راه‌حل‌هایی دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Write Skew ناهنجاری‌ای است که در آن دو تراکنش هم‌زمان <strong>یک شرط مشترک را می‌خوانند</strong>، هر کدام بر اساس نتیجه‌ی آن تصمیم می‌گیرد و <strong>سطرهای متفاوتی</strong> را تغییر می‌دهد؛ هر تراکنش به‌تنهایی درست است، اما ترکیب آن‌ها یک invariant را نقض می‌کند.</p>
+        <p><strong>مثال:</strong> قانون «حداقل یک پزشک در هر شیفت on-call باشد». Ali و Sara هر دو on-call هستند. هر دو هم‌زمان درخواست مرخصی می‌دهند؛ هر تراکنش می‌شمارد «۲ نفر on-call هستند، پس من می‌توانم بروم» و سطر <em>خودش</em> را update می‌کند. نتیجه: صفر پزشک.</p>
+        <p><strong>چرا Snapshot Isolation جلویش را نمی‌گیرد:</strong> SI فقط تداخل <strong>نوشتن-نوشتن روی یک سطر</strong> را تشخیص می‌دهد (first-committer-wins). اینجا هر تراکنش سطر متفاوتی نوشته و هر دو از snapshot خودشان خوانده‌اند؛ تداخل از نوع <strong>خواندن-نوشتن</strong> است که SI ردیابی نمی‌کند. سایر مثال‌ها: رزرو دو جلسه در یک اتاق و زمان، انتخاب username تکراری بدون UNIQUE، خرج کردن هم‌زمان از دو حساب مرتبط با سقف مشترک.</p>
+        <p><strong>راه‌حل‌ها:</strong></p>
+        <ul>
+          <li><strong>Serializable</strong>: در PostgreSQL، SSI وابستگی خطرناک را تشخیص داده و یکی را abort می‌کند (با retry در برنامه).</li>
+          <li><strong>قفل صریح</strong> روی سطرهای شرط: <code>SELECT … FROM doctors WHERE shift_id = 7 AND on_call FOR UPDATE</code>؛ تراکنش دوم منتظر می‌ماند و پس از آن، تعداد به‌روز را می‌بیند (در InnoDB current read).</li>
+          <li><strong>Materializing conflicts</strong>: اگر سطری برای قفل وجود ندارد (مثلاً رزرو بازه‌ی خالی)، یک سطر مشترک بسازید/قفل کنید (مثلاً سطر <code>rooms</code> یا <code>shifts</code>).</li>
+          <li><strong>Constraint</strong> در صورت امکان: <code>UNIQUE</code>، یا در PostgreSQL <em>exclusion constraint</em> برای بازه‌های زمانی هم‌پوشان.</li>
+        </ul>
+        <p><strong>نکته:</strong> این مثال نشان می‌دهد «Repeatable Read» به معنای «امن برای همه‌ی invariantها» نیست.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-4">
+      <summary>MVCC چیست و چه مشکلی را حل می‌کند؟ پیاده‌سازی آن در InnoDB و PostgreSQL را مقایسه کنید و توضیح دهید چرا تراکنش‌های طولانی برای هر دو مضرند.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> <strong>Multi-Version Concurrency Control</strong> روشی است که دیتابیس از هر سطر چند نسخه نگه می‌دارد تا هر تراکنش یک <strong>snapshot سازگار</strong> از داده‌های commit‌شده ببیند.</p>
+        <p><strong>مشکلی که حل می‌کند:</strong> در کنترل هم‌زمانی صرفاً قفل‌محور، خواننده‌ها باید برای نویسنده‌ها صبر کنند و برعکس. در MVCC <strong>خواندن، نوشتن را بلاک نمی‌کند و نوشتن، خواندن را</strong>؛ فقط دو نوشتن روی یک سطر با قفل هماهنگ می‌شوند. نتیجه: هم‌زمانی بسیار بالاتر برای بارهای وب که عمدتاً خواندنی‌اند.</p>
+        <p><strong>InnoDB:</strong> نسخه‌ی جاری در جای خود در clustered index به‌روز می‌شود؛ سطر ستون‌های مخفی <code>DB_TRX_ID</code> و <code>DB_ROLL_PTR</code> دارد و نسخه‌های قبلی از زنجیره‌ی <strong>undo log</strong> بازسازی می‌شوند. هر snapshot یک <em>read view</em> است. <strong>purge thread</strong> undoهای غیرلازم را پاک می‌کند.</p>
+        <p><strong>PostgreSQL:</strong> هر UPDATE یک <strong>tuple جدید</strong> در heap می‌سازد؛ tupleها <code>xmin/xmax</code> دارند و visibility با مقایسه‌ی آن‌ها با snapshot تعیین می‌شود. tupleهای مرده با <strong>VACUUM</strong> پاک می‌شوند.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>InnoDB</th><th>PostgreSQL</th></tr></thead>
+          <tbody>
+            <tr><td>نسخه‌های قدیمی</td><td>undo log</td><td>داخل جدول</td></tr>
+            <tr><td>پاک‌سازی</td><td>purge</td><td>(auto)vacuum</td></tr>
+            <tr><td>مشکل رایج</td><td>رشد history list</td><td>bloat جدول و ایندکس</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>چرا تراکنش طولانی مضر است:</strong> تا وقتی تراکنشی با snapshot قدیمی باز است، دیتابیس نمی‌تواند نسخه‌هایی را که ممکن است آن تراکنش ببیند پاک کند. در InnoDB undo و history list length رشد می‌کند و خواندن‌ها برای پیمایش زنجیره‌ی طولانی undo کند می‌شوند؛ در PostgreSQL VACUUM نمی‌تواند dead tupleها را پاک کند و جدول bloat می‌شود. علاوه بر این، قفل‌های گرفته‌شده هم تا پایان تراکنش می‌مانند. پس: تراکنش کوتاه، بدون I/O خارجی، و پایش تراکنش‌های باز (<code>information_schema.innodb_trx</code>، <code>pg_stat_activity</code> با وضعیت <code>idle in transaction</code>).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-5">
+      <summary>Optimistic Locking و Pessimistic Locking را تعریف و مقایسه کنید. در Laravel هر کدام را چگونه پیاده‌سازی می‌کنید و در چه شرایطی کدام را انتخاب می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>Pessimistic Locking:</strong> فرض می‌کند تداخل محتمل است؛ پیش از تغییر، سطر را <strong>قفل انحصاری</strong> می‌کند تا تراکنش‌های دیگر تا پایان تراکنش منتظر بمانند. SQL: <code>SELECT … FOR UPDATE</code>؛ Laravel: <code>lockForUpdate()</code> (و <code>sharedLock()</code> برای قفل اشتراکی) که <strong>حتماً داخل تراکنش</strong> باید باشد.</p>
+        <p><strong>Optimistic Locking:</strong> فرض می‌کند تداخل نادر است؛ قفلی نگه نمی‌دارد و هنگام نوشتن بررسی می‌کند داده از زمان خواندن تغییر نکرده باشد، معمولاً با ستون <code>version</code> (یا <code>updated_at</code>): <code>UPDATE … SET …, version = version + 1 WHERE id = ? AND version = ?</code>. اگر affected rows صفر بود ⇒ conflict ⇒ خطای 409 یا retry.</p>
+        <pre><code class="language-php">&lt;?php
+// Pessimistic
+DB::transaction(function () use ($id) {
+    $w = Wallet::whereKey($id)-&gt;lockForUpdate()-&gt;firstOrFail();
+    $w-&gt;balance -= 100;
+    $w-&gt;save();
+});
+
+// Optimistic
+$ok = Wallet::whereKey($id)-&gt;where('version', $version)
+    -&gt;update(['balance' =&gt; $new, 'version' =&gt; DB::raw('version + 1')]);
+if (! $ok) { abort(409); }</code></pre>
+        <p><strong>معیار انتخاب:</strong></p>
+        <ul>
+          <li><strong>میزان تداخل:</strong> تداخل بالا (موجودی کالای پرفروش در حراج) ⇒ pessimistic (یا بهتر، UPDATE atomic)، چون optimistic به retry storm می‌رسد. تداخل پایین (ویرایش پروفایل) ⇒ optimistic.</li>
+          <li><strong>طول عملیات:</strong> اگر بین خواندن و نوشتن تعامل کاربر هست (فرم چنددقیقه‌ای) فقط optimistic ممکن است؛ قفل دیتابیس را نمی‌توان بین دو HTTP request نگه داشت. در API می‌توان version را با <code>ETag</code>/<code>If-Match</code> منتقل کرد.</li>
+          <li><strong>Deadlock:</strong> pessimistic ممکن است deadlock بسازد؛ optimistic نه.</li>
+          <li><strong>هزینه‌ی کار هدررفته:</strong> در optimistic کار انجام‌شده هنگام conflict دور ریخته می‌شود.</li>
+        </ul>
+        <p><strong>نکته:</strong> اگر منطق فقط کاهش/افزایش یک عدد است، ساده‌ترین و مقیاس‌پذیرترین راه، <strong>UPDATE atomic شرطی</strong> است: <code>UPDATE … SET stock = stock - 1 WHERE id = ? AND stock &gt; 0</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-6">
+      <summary>کد زیر برای ثبت سفارش نوشته شده و گاهی موجودی منفی می‌شود یا بیش از موجودی فروخته می‌شود. مشکل چیست و چگونه اصلاحش می‌کنید؟</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+public function order(int $productId, int $qty)
+{
+    $product = Product::find($productId);
+    if ($product-&gt;stock &gt;= $qty) {
+        $product-&gt;stock = $product-&gt;stock - $qty;
+        $product-&gt;save();
+        Order::create(['product_id' =&gt; $productId, 'qty' =&gt; $qty]);
+    }
+}</code></pre>
+        <p><strong>مشکل: Race Condition از نوع Lost Update (check-then-act).</strong> دو request هم‌زمان هر دو <code>stock = 1</code> را می‌خوانند، هر دو شرط را برقرار می‌بینند، هر دو <code>stock = 0</code> را ذخیره می‌کنند و دو سفارش ثبت می‌شود (oversell). چون مقدار جدید در PHP محاسبه شده و به‌صورت مقدار مطلق نوشته می‌شود، نوشتن دوم نوشتن اول را بی‌اثر می‌کند. مشکل دوم: به‌روزرسانی موجودی و ساخت سفارش در <strong>یک تراکنش</strong> نیستند؛ اگر <code>Order::create</code> شکست بخورد، موجودی کم شده ولی سفارشی نیست. همچنین <code>find</code> برای محصول ناموجود null برمی‌گرداند.</p>
+        <p><strong>اصلاح ۱: UPDATE atomic شرطی (بهترین برای این مورد):</strong></p>
+        <pre><code class="language-php">&lt;?php
+DB::transaction(function () use ($productId, $qty) {
+    $affected = Product::whereKey($productId)
+        -&gt;where('stock', '&gt;=', $qty)
+        -&gt;decrement('stock', $qty);   // یک statement؛ دیتابیس row lock می‌گیرد
+
+    if ($affected === 0) {
+        throw new OutOfStockException();
+    }
+    Order::create(['product_id' =&gt; $productId, 'qty' =&gt; $qty]);
+});</code></pre>
+        <p><strong>اصلاح ۲: قفل pessimistic</strong> وقتی منطق پیچیده‌تر است (چند شرط، قیمت، تخفیف):</p>
+        <pre><code class="language-php">&lt;?php
+DB::transaction(function () use ($productId, $qty) {
+    $p = Product::whereKey($productId)-&gt;lockForUpdate()-&gt;firstOrFail();
+    if ($p-&gt;stock &lt; $qty) throw new OutOfStockException();
+    $p-&gt;decrement('stock', $qty);
+    Order::create([...]);
+}, attempts: 3);</code></pre>
+        <p><strong>لایه‌ی دفاعی اضافه:</strong> constraint در دیتابیس: ستون <code>UNSIGNED</code> در MySQL یا <code>CHECK (stock &gt;= 0)</code> (در MySQL 8.0.16+ اعمال می‌شود) تا حتی باگ برنامه هم نتواند موجودی منفی بسازد. برای حراج‌های بسیار پرترافیک، می‌توان موجودی را در Redis با <code>DECRBY</code> atomic یا Lua script رزرو کرد و سپس به‌صورت async در دیتابیس ثبت نمود. همچنین برای جلوگیری از ثبت دوباره با double-click، <strong>idempotency key</strong> روی request.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-7">
+      <summary>Deadlock در دیتابیس چگونه رخ می‌دهد؟ InnoDB و PostgreSQL چگونه آن را تشخیص می‌دهند و شما به‌عنوان توسعه‌دهنده چه راهکارهایی برای پیشگیری و مدیریت آن دارید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Deadlock وضعیتی است که دو یا چند تراکنش هر یک قفلی را نگه داشته‌اند و منتظر قفلی هستند که دیگری نگه داشته؛ یعنی <strong>چرخه در wait-for graph</strong>. هیچ‌کدام بدون مداخله پیش نمی‌روند.</p>
+        <p><strong>مثال کلاسیک:</strong> انتقال پول هم‌زمان A⇒B و B⇒A. تراکنش اول سطر A را قفل می‌کند، دومی سطر B را؛ سپس اولی منتظر B و دومی منتظر A می‌ماند. منبع رایج دیگر در InnoDB: <strong>gap lock</strong>‌ها در الگوی «SELECT … FOR UPDATE روی سطر ناموجود و سپس INSERT» توسط دو تراکنش هم‌زمان؛ gap lockها با هم سازگارند، ولی insert intention هر کدام با gap lock دیگری تداخل دارد.</p>
+        <p><strong>تشخیص:</strong></p>
+        <ul>
+          <li><strong>InnoDB</strong>: تشخیص فوری چرخه (<code>innodb_deadlock_detect</code>) و rollback تراکنش «کوچک‌تر» با خطای <code>1213</code>. جزئیات در <code>SHOW ENGINE INNODB STATUS</code> و با <code>innodb_print_all_deadlocks</code> در error log. انتظار بدون چرخه به <code>innodb_lock_wait_timeout</code> (خطای 1205) می‌رسد.</li>
+          <li><strong>PostgreSQL</strong>: پس از <code>deadlock_timeout</code> (پیش‌فرض ۱ ثانیه) گراف بررسی و یک تراکنش با <code>40P01</code> abort می‌شود.</li>
+        </ul>
+        <p><strong>پیشگیری:</strong></p>
+        <ol>
+          <li><strong>ترتیب ثابت قفل‌گیری</strong> (مثلاً مرتب‌سازی idها) تا Circular Wait رخ ندهد.</li>
+          <li><strong>تراکنش کوتاه</strong>، بدون فراخوانی شبکه/API داخل آن.</li>
+          <li><strong>ایندکس</strong> روی ستون‌های شرط UPDATE/DELETE/FOR UPDATE تا سطرهای کمتری قفل شود.</li>
+          <li>استفاده از <strong>upsert</strong> (<code>ON DUPLICATE KEY</code> / <code>ON CONFLICT</code>) به‌جای الگوی select-then-insert.</li>
+          <li>در صورت قابل قبول بودن، <strong>READ COMMITTED</strong> در MySQL برای حذف gap lockها.</li>
+          <li>شکستن batchهای بزرگ به دسته‌های کوچک.</li>
+        </ol>
+        <p><strong>مدیریت:</strong> deadlock در سیستم پرهم‌زمان اجتناب‌ناپذیر است؛ باید آن را <strong>retry</strong> کرد. در Laravel: <code>DB::transaction($callback, attempts: 3)</code> که روی خطای deadlock کل closure را دوباره اجرا می‌کند؛ پس کد داخل closure باید عوارض جانبی خارجی نداشته باشد. در کنار آن، پایش و لاگ deadlockها برای پیدا کردن الگوی تکراری.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-8">
+      <summary>Gap Lock و Next-Key Lock در InnoDB چه هستند، چه مشکلی را حل می‌کنند و چه هزینه‌ای دارند؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> قفل‌های InnoDB روی رکوردهای ایندکس گرفته می‌شوند.</p>
+        <ul>
+          <li><strong>Record Lock</strong>: قفل روی یک رکورد ایندکس.</li>
+          <li><strong>Gap Lock</strong>: قفل روی <strong>فاصله‌ی بین</strong> رکوردهای ایندکس؛ مانع <strong>درج</strong> سطر جدید در آن بازه می‌شود (gap lockها با هم تداخل ندارند).</li>
+          <li><strong>Next-Key Lock</strong>: record lock + gap lock قبل از آن رکورد؛ قفل پیش‌فرض InnoDB برای اسکن ایندکس در REPEATABLE READ.</li>
+        </ul>
+        <p><strong>چه مشکلی را حل می‌کند:</strong> <strong>Phantom</strong> در locking readها. اگر تراکنشی <code>SELECT * FROM orders WHERE amount BETWEEN 100 AND 200 FOR UPDATE</code> بزند، فقط قفل کردن سطرهای موجود کافی نیست؛ تراکنش دیگری می‌تواند سطر جدیدی با <code>amount = 150</code> درج کند و اجرای دوم همان query نتیجه‌ی متفاوت بدهد. next-key lock بازه را قفل می‌کند تا insert منتظر بماند. این برای درستی replication مبتنی بر statement در گذشته هم مهم بود.</p>
+        <pre class="diagram">ایندکس: 100   180   250
+T1: … WHERE amount BETWEEN 100 AND 200 FOR UPDATE
+    قفل: رکوردهای 100 و 180 و gapها تا 250
+T2: INSERT amount=150 ⏳   INSERT amount=300 ✓</pre>
+        <p><strong>هزینه‌ها:</strong></p>
+        <ul>
+          <li><strong>هم‌زمانی کمتر</strong>: insertهای بی‌ربط در بازه هم منتظر می‌مانند.</li>
+          <li><strong>Deadlock</strong>: الگوی رایج «<code>SELECT … WHERE id = 7 FOR UPDATE</code> (سطر وجود ندارد ⇒ gap lock) سپس INSERT» توسط دو تراکنش، deadlock می‌سازد.</li>
+          <li>بدون ایندکس مناسب، اسکن کامل یعنی قفل شدن تقریباً کل جدول و gapهایش.</li>
+        </ul>
+        <p><strong>کنترل:</strong> با ایندکس یکتا و شرط تساوی روی سطر موجود فقط record lock گرفته می‌شود. در سطح <strong>READ COMMITTED</strong> gap lock برای جست‌وجوها غیرفعال است (به‌جز بررسی FK و duplicate key)؛ بسیاری از سیستم‌های پرنوشتن به همین دلیل RC را انتخاب می‌کنند و phantom را در صورت لزوم با طراحی دیگر (UNIQUE constraint، upsert) کنترل می‌کنند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-9">
+      <summary>تفاوت Clustered Index و Secondary Index را در InnoDB توضیح دهید. چرا استفاده از UUID نسخه‌ی ۴ به‌عنوان Primary Key در جداول بزرگ InnoDB توصیه نمی‌شود؟</summary>
+      <div class="answer">
+        <p><strong>Clustered Index:</strong> در InnoDB جدول خودش یک B+Tree مرتب بر اساس <strong>Primary Key</strong> است؛ برگ‌های این درخت <strong>کل سطر</strong> را نگه می‌دارند. هر جدول دقیقاً یک clustered index دارد (اگر PK نباشد، اولین UNIQUE NOT NULL یا یک row id مخفی). جست‌وجو با PK یک پیمایش درخت است و range scan روی PK داده‌های فیزیکی مجاور را می‌خواند.</p>
+        <p><strong>Secondary Index:</strong> B+Tree جداگانه‌ای که برگ‌هایش <strong>مقدار ستون‌های ایندکس + مقدار PK</strong> را دارند. جست‌وجو دو مرحله دارد: پیدا کردن PK در secondary، سپس پیمایش clustered index برای سطر کامل (مگر اینکه ایندکس <strong>covering</strong> باشد).</p>
+        <pre class="diagram">idx_email: 'a@x' → PK 42  ──►  PRIMARY: 42 → [کل سطر]</pre>
+        <p><strong>مشکلات UUIDv4 به‌عنوان PK:</strong></p>
+        <ol>
+          <li><strong>درج تصادفی</strong>: چون جدول به ترتیب PK ذخیره می‌شود، هر insert در جای تصادفی درخت انجام می‌شود ⇒ <strong>page split</strong> مکرر، صفحه‌های نیمه‌پر (fragmentation)، و نیاز به نگه‌داشتن تقریباً کل ایندکس در buffer pool. با AUTO_INCREMENT همه‌ی insertها به انتهای درخت می‌روند.</li>
+          <li><strong>اندازه</strong>: <code>CHAR(36)</code> (۳۶ بایت یا بیشتر بسته به charset) در برابر <code>BIGINT</code> ۸ بایتی؛ و چون PK در <strong>همه‌ی</strong> secondary indexها تکرار می‌شود، کل ایندکس‌ها بزرگ‌تر و cache کم‌اثرتر می‌شود.</li>
+          <li><strong>مقایسه‌ی کندتر</strong> رشته‌ها و collation.</li>
+        </ol>
+        <p><strong>راه‌حل‌ها:</strong> PK عددی داخلی (<code>BIGINT AUTO_INCREMENT</code>) و یک ستون UUID جداگانه با UNIQUE index برای شناسه‌ی عمومی در API؛ یا UUIDهای <strong>زمان‌مرتب</strong> (UUIDv7، ULID) که تقریباً ترتیبی درج می‌شوند، ذخیره‌شده به‌صورت <code>BINARY(16)</code>. UUID مزایای خودش را دارد: تولید در کلاینت/سرویس بدون رفت‌وبرگشت، عدم افشای تعداد رکوردها، و ادغام ساده‌ی داده بین shardها.</p>
+        <p><strong>مقایسه با PostgreSQL:</strong> جداول PostgreSQL heap هستند و clustered نیستند؛ پس جابه‌جایی سطرها رخ نمی‌دهد، اما خود ایندکس B-Tree روی UUID تصادفی همچنان پراکندگی و cache miss بیشتری دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-10">
+      <summary>Composite Index و قانون Leftmost Prefix را توضیح دهید. برای query زیر چه ایندکسی طراحی می‌کنید و چرا؟ <code>SELECT id, total FROM orders WHERE user_id = ? AND status = ? AND created_at &gt;= ? ORDER BY created_at DESC LIMIT 20</code></summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Composite Index ایندکسی روی چند ستون است که مقادیر را به‌صورت <strong>لغت‌نامه‌ای (lexicographic)</strong> مرتب می‌کند: ابتدا ستون اول، در صورت برابری ستون دوم و الی آخر.</p>
+        <p><strong>Leftmost Prefix:</strong> ایندکس <code>(a, b, c)</code> فقط برای شرط‌هایی قابل استفاده برای seek است که از <strong>چپ‌ترین ستون‌ها</strong> شروع شوند: <code>(a)</code>، <code>(a,b)</code>، <code>(a,b,c)</code>. شرط فقط روی <code>b</code> یا <code>c</code> نمی‌تواند از آن استفاده کند (مثل اینکه دفترچه‌ی تلفن مرتب‌شده بر اساس نام خانوادگی را با نام کوچک جست‌وجو کنید). همچنین پس از اولین شرط <strong>range</strong>، ستون‌های بعدی برای seek استفاده نمی‌شوند (فقط برای فیلتر، از طریق Index Condition Pushdown). ترتیب ستون‌ها در WHERE مهم نیست؛ ترتیب در تعریف ایندکس مهم است.</p>
+        <p><strong>طراحی برای query داده‌شده:</strong></p>
+        <pre><code class="language-sql">CREATE INDEX idx_orders_user_status_created
+    ON orders (user_id, status, created_at);</code></pre>
+        <ul>
+          <li><code>user_id</code> و <code>status</code> شرط <strong>تساوی</strong> دارند ⇒ اول می‌آیند؛ با هم بازه‌ی کوچکی از ایندکس را مشخص می‌کنند.</li>
+          <li><code>created_at</code> هم شرط <strong>range</strong> و هم <strong>ORDER BY</strong> است ⇒ آخر؛ داخل هر (user_id, status) مقادیر created_at مرتب‌اند، پس هم range seek انجام می‌شود، هم <strong>filesort حذف</strong> می‌شود (پیمایش معکوس برای DESC) و LIMIT 20 بعد از ۲۰ سطر متوقف می‌شود.</li>
+          <li>ستون‌های <code>id</code> (PK داخل secondary در InnoDB) و <code>total</code>: اگر <code>total</code> را هم به انتهای ایندکس اضافه کنیم <code>(user_id, status, created_at, total)</code>، ایندکس <strong>covering</strong> می‌شود و رجوع به جدول حذف می‌گردد (<code>Using index</code>). این را بر اساس اهمیت query و هزینه‌ی نوشتن تصمیم می‌گیریم.</li>
+        </ul>
+        <p><strong>چرا ترتیب دیگر بد است:</strong> <code>(created_at, user_id, status)</code> ⇒ range روی ستون اول، پس user_id و status فقط فیلترند و تعداد زیادی رکورد اسکن می‌شود. <code>(status, user_id, created_at)</code> هم برای این query درست کار می‌کند (هر دو تساوی‌اند)، اما <code>user_id</code> در اول ایندکس، queryهای دیگر مثل «همه‌ی سفارش‌های کاربر» را هم پوشش می‌دهد؛ پس ترتیب بین ستون‌های تساوی را بر اساس <strong>queryهای دیگر</strong> و استفاده‌ی مجدد انتخاب می‌کنیم.</p>
+        <p><strong>تأیید:</strong> با <code>EXPLAIN</code> بررسی می‌کنیم: <code>type = range</code>، <code>key</code> = ایندکس جدید، rows کم، و نبود <code>Using filesort</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-11">
+      <summary>یک صفحه‌ی گزارش در production کند شده است. خروجی EXPLAIN برای query اصلی <code>type: ALL</code>، <code>rows: 4,800,000</code> و <code>Extra: Using where; Using temporary; Using filesort</code> را نشان می‌دهد. این خروجی را تفسیر کنید و مراحل بهینه‌سازی را شرح دهید.</summary>
+      <div class="answer">
+        <p><strong>تفسیر:</strong></p>
+        <ul>
+          <li><code>type: ALL</code> ⇒ <strong>full table scan</strong>؛ هیچ ایندکسی برای شرط استفاده نشده (<code>key = NULL</code>).</li>
+          <li><code>rows: 4.8M</code> ⇒ تخمین تعداد سطرهای بررسی‌شده؛ تقریباً کل جدول.</li>
+          <li><code>Using where</code> ⇒ فیلتر پس از خواندن سطر در لایه‌ی سرور.</li>
+          <li><code>Using temporary</code> ⇒ جدول موقت برای <code>GROUP BY</code>/<code>DISTINCT</code>.</li>
+          <li><code>Using filesort</code> ⇒ مرتب‌سازی جداگانه چون ترتیب مناسبی از ایندکس در دسترس نیست.</li>
+        </ul>
+        <p><strong>مراحل:</strong></p>
+        <ol>
+          <li><strong>اندازه‌گیری دقیق</strong>: <code>EXPLAIN ANALYZE</code> برای زمان و سطرهای واقعی؛ بررسی اینکه query در slow log/<code>pg_stat_statements</code> چه سهمی از زمان کل دارد.</li>
+          <li><strong>بررسی sargability</strong>: آیا روی ستون تابع زده شده (<code>DATE(created_at) = …</code>)، تبدیل نوع ضمنی، <code>LIKE '%…'</code> یا <code>OR</code> بین ستون‌های مختلف وجود دارد؟ بازنویسی به شکل range: <code>created_at &gt;= ? AND created_at &lt; ?</code>.</li>
+          <li><strong>ایندکس composite</strong> مطابق الگو: ستون‌های تساوی، سپس ستون GROUP BY/ORDER BY، سپس range؛ در صورت امکان covering تا <code>Using index</code> بگیریم. اگر GROUP BY روی ستون‌هایی باشد که به ترتیب ایندکس‌اند، temporary و filesort می‌توانند حذف شوند.</li>
+          <li><strong>کاهش داده</strong>: فقط ستون‌های لازم به‌جای <code>SELECT *</code>؛ محدود کردن بازه‌ی زمانی پیش‌فرض گزارش؛ keyset pagination به‌جای OFFSET بزرگ.</li>
+          <li><strong>به‌روز کردن آمار</strong> (<code>ANALYZE TABLE</code>) اگر rows تخمینی با واقعی فاصله‌ی زیاد دارد.</li>
+          <li>اگر گزارش aggregate سنگین روی داده‌ی تاریخی است: <strong>summary table / materialized view</strong> که به‌صورت دوره‌ای یا افزایشی به‌روز شود، یا cache نتیجه با TTL.</li>
+          <li>انتقال گزارش‌ها به <strong>read replica</strong> یا data warehouse تا روی primary اثر نگذارد.</li>
+          <li>در جداول زمانی بسیار بزرگ: <strong>partitioning</strong> بر اساس تاریخ برای partition pruning.</li>
+          <li><strong>اندازه‌گیری مجدد</strong> و بررسی اثر ایندکس جدید روی نوشتن‌ها.</li>
+        </ol>
+        <p><strong>نکته:</strong> فقط ایندکس اضافه کردن کافی نیست اگر شرط بخش بزرگی از جدول را برگرداند؛ آنجا optimizer همچنان full scan را ترجیح می‌دهد و راه‌حل واقعی pre-aggregation است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-12">
+      <summary>Window Function چیست و چه تفاوتی با GROUP BY دارد؟ یک query بنویسید که سه محصول پرفروش هر دسته را برگرداند و تفاوت ROW_NUMBER، RANK و DENSE_RANK را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Window Function روی مجموعه‌ای از سطرهای مرتبط با سطر جاری («پنجره»، تعریف‌شده با <code>OVER (PARTITION BY … ORDER BY … frame)</code>) محاسبه انجام می‌دهد. برخلاف <strong>GROUP BY</strong> که هر گروه را به <strong>یک سطر</strong> تبدیل می‌کند، window function <strong>تعداد سطرها را حفظ می‌کند</strong> و فقط یک ستون محاسبه‌شده اضافه می‌کند. پس می‌توان هم‌زمان جزئیات سطر و مقدار تجمعی گروه را داشت.</p>
+        <pre><code class="language-sql">WITH sales AS (
+    SELECT p.category_id, p.id AS product_id, p.name, SUM(oi.qty) AS sold
+    FROM products p
+    JOIN order_items oi ON oi.product_id = p.id
+    GROUP BY p.category_id, p.id, p.name
+),
+ranked AS (
+    SELECT s.*,
+           DENSE_RANK() OVER (PARTITION BY category_id ORDER BY sold DESC) AS rnk
+    FROM sales s
+)
+SELECT category_id, product_id, name, sold, rnk
+FROM ranked
+WHERE rnk &lt;= 3
+ORDER BY category_id, rnk;</code></pre>
+        <p>از CTE استفاده کردیم چون window function پس از <code>WHERE</code> و <code>GROUP BY</code> محاسبه می‌شود و نمی‌توان مستقیم در WHERE روی آن فیلتر کرد.</p>
+        <p><strong>تفاوت توابع رتبه‌بندی</strong> برای فروش‌های 90، 80، 80، 70:</p>
+        <ul>
+          <li><code>ROW_NUMBER()</code> ⇒ 1، 2، 3، 4؛ همیشه یکتا؛ ترتیب ties نامعین مگر ORDER BY کامل (مثلاً اضافه کردن <code>product_id</code>). مناسب «دقیقاً ۳ سطر» یا deduplicate.</li>
+          <li><code>RANK()</code> ⇒ 1، 2، 2، 4؛ ties رتبه‌ی برابر و سپس <strong>فاصله</strong>. مثل رتبه‌بندی مسابقات.</li>
+          <li><code>DENSE_RANK()</code> ⇒ 1، 2، 2، 3؛ بدون فاصله. «سه سطح فروش برتر» ممکن است بیش از ۳ محصول برگرداند.</li>
+        </ul>
+        <p><strong>سایر کاربردها:</strong> جمع تجمعی <code>SUM(x) OVER (ORDER BY day ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)</code>، میانگین متحرک، مقایسه با دوره‌ی قبل با <code>LAG()</code>، درصد از کل با <code>SUM(x) OVER ()</code>. در MySQL از نسخه‌ی 8.0 پشتیبانی می‌شود.</p>
+        <p><strong>نکته‌ی کارایی:</strong> window function نیاز به مرتب‌سازی داخل partition دارد؛ ایندکس مناسب روی <code>(partition_col, order_col)</code> یا pre-aggregation برای داده‌ی بزرگ کمک می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-13">
+      <summary>Partitioning و Sharding را مقایسه کنید. جدول لاگ رویدادهای یک سیستم روزانه ۲۰ میلیون سطر رشد می‌کند و فقط داده‌ی ۹۰ روز اخیر لازم است؛ چه راهکاری پیشنهاد می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>Partitioning:</strong> تقسیم یک جدول به چند partition <strong>روی همان سرور</strong>؛ برای برنامه شفاف است (SQL تغییر نمی‌کند). انواع: <strong>RANGE</strong> (تاریخ)، <strong>LIST</strong> (مقادیر گسسته مثل region)، <strong>HASH/KEY</strong> (توزیع یکنواخت). مزایا: <strong>partition pruning</strong> (خواندن فقط partitionهای مرتبط)، حذف آنی داده‌ی قدیمی با <code>DROP PARTITION</code>، ایندکس‌های کوچک‌تر در هر partition و نگه‌داری ساده‌تر.</p>
+        <p><strong>Sharding:</strong> تقسیم داده بین <strong>چند سرور دیتابیس مستقل</strong> بر اساس shard key. هدف: scale <strong>نوشتن</strong> و حجم داده فراتر از یک سرور. هزینه‌ها: از دست رفتن JOIN و تراکنش بین shardها، نیاز به routing در برنامه یا لایه‌ی میانی (Vitess، Citus)، ID یکتای سراسری، resharding و پیچیدگی عملیاتی.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Partitioning</th><th>Sharding</th></tr></thead>
+          <tbody>
+            <tr><td>محل</td><td>یک سرور</td><td>چند سرور</td></tr>
+            <tr><td>scale نوشتن</td><td>خیر</td><td>بله</td></tr>
+            <tr><td>تغییر برنامه</td><td>تقریباً هیچ</td><td>زیاد</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>سناریو:</strong> ۲۰M سطر در روز ≈ ۲۳۰ insert در ثانیه به‌طور میانگین که برای یک سرور خوب قابل تحمل است؛ ۹۰ روز ≈ ۱.۸ میلیارد سطر. مشکل اصلی <strong>حجم و حذف داده‌ی قدیمی</strong> است، نه توان نوشتن. پس sharding لازم نیست:</p>
+        <ul>
+          <li><strong>RANGE partitioning روزانه</strong> روی <code>created_at</code> (حدود ۹۰ partition)؛ یک job روزانه (Laravel Scheduler) partition فردا را می‌سازد و partition قدیمی‌تر از ۹۰ روز را <code>DROP</code> می‌کند (یا قبلش به object storage/آرشیو export می‌کند). <code>DELETE</code> روزانه‌ی ۲۰M سطر، undo/WAL عظیم، lag در replication و bloat می‌سازد؛ DROP PARTITION تقریباً آنی است.</li>
+          <li><strong>PK</strong> باید شامل <code>created_at</code> باشد (محدودیت MySQL)؛ مثلاً <code>(id, created_at)</code>. ایندکس‌ها را حداقلی نگه داریم چون جدول write-heavy است.</li>
+          <li>queryها همیشه شرط زمانی داشته باشند تا pruning فعال شود.</li>
+          <li>insertها را batch کنیم (یا از طریق queue)، و گزارش‌ها را روی replica یا summary table اجرا کنیم.</li>
+          <li>اگر نیاز تحلیلی سنگین است، بررسی ذخیره‌ساز مناسب‌تر (ستونی مثل ClickHouse، یا TimescaleDB روی PostgreSQL).</li>
+        </ul>
+        <p>Sharding را زمانی در نظر می‌گیریم که توان نوشتن یا حجم داده‌ی <strong>فعال</strong> از ظرفیت بزرگ‌ترین سرور معقول فراتر برود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-14">
+      <summary>در یک برنامه‌ی Laravel با primary و دو read replica، کاربران گزارش می‌دهند بعد از ویرایش پروفایل، تغییرات را نمی‌بینند و پس از چند رفرش ظاهر می‌شود. علت را توضیح دهید و راه‌حل‌ها را بیان کنید.</summary>
+      <div class="answer">
+        <p><strong>علت: Replication Lag و نقض Read-Your-Writes.</strong> replication در MySQL و PostgreSQL به‌صورت پیش‌فرض <strong>asynchronous</strong> است؛ primary پس از commit محلی به کلاینت پاسخ می‌دهد و تغییرات کمی بعد (میلی‌ثانیه‌ها تا ثانیه‌ها، و زیر بار سنگین بیشتر) روی replicaها اعمال می‌شود. جریان: <code>POST /profile</code> روی primary نوشته می‌شود ⇒ redirect ⇒ <code>GET /profile</code> یک request جدید است و Laravel آن را از replica می‌خواند ⇒ داده‌ی قدیمی. «چند رفرش» هم ممکن است بین دو replica با lag متفاوت جابه‌جا شود و حتی داده‌ی عقب‌تر نشان دهد (نقض <strong>Monotonic Reads</strong>).</p>
+        <p><strong>چرا <code>sticky</code> کافی نیست:</strong> <code>'sticky' =&gt; true</code> فقط در <strong>همان request</strong> پس از نوشتن، خواندن‌ها را به write connection می‌برد؛ request بعد از redirect دوباره از replica می‌خواند.</p>
+        <p><strong>راه‌حل‌ها:</strong></p>
+        <ol>
+          <li><strong>Sticky زمانی در session</strong>: پس از هر نوشتن، یک timestamp در session (یا cookie) ذخیره و تا N ثانیه (بیشتر از lag معمول) خواندن‌های آن کاربر را از primary انجام دهیم. پیاده‌سازی با middleware که در صورت وجود flag، از <code>onWriteConnection()</code>/<code>useWritePdo()</code> یا connection جداگانه‌ی primary استفاده کند.</li>
+          <li><strong>خواندن‌های حساس از primary</strong>: پروفایل خود کاربر، کیف پول، وضعیت سفارش: <code>User::onWriteConnection()-&gt;find($id)</code>. خواندن‌های عمومی (لیست محصولات) از replica.</li>
+          <li><strong>ردیابی GTID/LSN</strong>: پس از نوشتن، GTID را در session نگه داریم و فقط از replicaای بخوانیم که به آن رسیده (<code>WAIT_FOR_EXECUTED_GTID_SET</code> با timeout)؛ دقیق‌ترین ولی پیچیده‌تر.</li>
+          <li><strong>بازگرداندن داده‌ی نوشته‌شده در پاسخ POST</strong> یا به‌روزرسانی UI از داده‌ی کلاینت، تا اصلاً نیازی به خواندن بلافاصله نباشد.</li>
+          <li><strong>Monotonic reads</strong>: هر کاربر به یک replica ثابت هدایت شود.</li>
+          <li><strong>کاهش خود lag</strong>: پایش <code>Seconds_Behind_Source</code>/<code>replay_lag</code>، replica هم‌توان primary، applier موازی، تقسیم تراکنش‌های حجیم، و خارج کردن replica با lag بالا از pool توسط proxy (مثلاً ProxySQL با <code>max_replication_lag</code>).</li>
+        </ol>
+        <p><strong>جمع‌بندی:</strong> read replica معامله‌ای بین scale خواندن و <strong>eventual consistency</strong> است و باید آگاهانه مسیرهای نیازمند consistency قوی را مشخص کرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-15">
+      <summary>قضیه‌ی CAP را توضیح دهید و بگویید چرا عبارت «دو از سه» گمراه‌کننده است. PACELC چه چیزی به CAP اضافه می‌کند؟</summary>
+      <div class="answer">
+        <p><strong>CAP:</strong> در یک سیستم داده‌ی توزیع‌شده (replicated)، هنگام وقوع <strong>Network Partition</strong> (عدم امکان ارتباط بین بخشی از نودها) نمی‌توان هم‌زمان این دو را تضمین کرد:</p>
+        <ul>
+          <li><strong>Consistency</strong>: هر خواندن آخرین نوشتن تأییدشده را برمی‌گرداند (linearizability؛ متفاوت با C در ACID).</li>
+          <li><strong>Availability</strong>: هر درخواست به یک نود سالم، پاسخ غیرخطا دریافت می‌کند.</li>
+        </ul>
+        <p><strong>چرا «دو از سه» گمراه‌کننده است:</strong> P یک انتخاب نیست؛ partition در شبکه‌های واقعی رخ می‌دهد (خرابی سوئیچ، GC طولانی، قطعی بین دیتاسنترها). پس سیستم توزیع‌شده باید تحمل partition داشته باشد و سوال واقعی این است: <strong>هنگام partition، C یا A؟</strong></p>
+        <ul>
+          <li><strong>CP</strong>: سمت اقلیت درخواست‌ها را رد می‌کند تا داده‌ی ناسازگار برنگرداند (etcd، ZooKeeper، سیستم‌های مبتنی بر Raft/Paxos). مناسب: lock توزیع‌شده، تنظیمات، پرداخت.</li>
+          <li><strong>AP</strong>: همه‌ی نودها پاسخ می‌دهند، شاید با داده‌ی کهنه، و پس از رفع partition همگرا می‌شوند (Cassandra، DynamoDB در حالت پیش‌فرض). مناسب: سبد خرید، شمارنده‌ی like، feed.</li>
+        </ul>
+        <p>همچنین انتخاب‌ها طیفی‌اند و می‌توانند <strong>per-operation</strong> باشند؛ مثلاً در Cassandra با consistency level <code>QUORUM</code> یا <code>ONE</code>.</p>
+        <p><strong>PACELC:</strong> CAP فقط درباره‌ی زمان partition است، در حالی که سیستم بیشتر وقت سالم است. PACELC می‌گوید: <strong>if P ⇒ A or C; Else ⇒ L or C</strong>. یعنی در حالت عادی هم بین <strong>Latency</strong> و <strong>Consistency</strong> مصالحه هست: replication همگام (منتظر تأیید replica) consistency را بالا می‌برد ولی latency هر نوشتن را زیاد می‌کند؛ خواندن از replica محلی سریع است ولی ممکن است کهنه باشد. مثال‌ها: Cassandra/DynamoDB ⇒ <strong>PA/EL</strong>؛ HBase و سیستم‌های اجماعی ⇒ <strong>PC/EC</strong>.</p>
+        <p><strong>کاربرد عملی در یک سیستم Laravel:</strong> MySQL با replicaهای async: خواندن از primary تقریباً سازگار است، خواندن از replica ⇒ انتخاب «EL». در failover با async، ممکن است تراکنش‌هایی از دست بروند؛ semi-sync این ریسک را با افزایش latency (EC) کاهش می‌دهد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-16">
+      <summary>برای دیتابیس ۵۰۰ گیگابایتی یک فروشگاه اینترنتی با الزام RPO کمتر از ۵ دقیقه و RTO کمتر از ۲ ساعت، استراتژی Backup طراحی کنید. Logical و Physical backup و PITR را در پاسخ توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعاریف:</strong> <strong>RPO</strong> حداکثر داده‌ی قابل قبول برای از دست رفتن (بر حسب زمان)؛ <strong>RTO</strong> حداکثر زمان بازگشت سرویس.</p>
+        <p><strong>Logical backup</strong> (<code>mysqldump</code>، <code>mydumper</code>، <code>pg_dump</code>): خروجی SQL/داده؛ قابل حمل بین نسخه‌ها و انتخاب جدول، اما restore آن کند است چون همه‌ی ایندکس‌ها بازسازی می‌شوند؛ برای ۵۰۰GB احتمالاً بیش از RTO دو ساعته طول می‌کشد. <strong>Physical backup</strong> (Percona XtraBackup، <code>pg_basebackup</code>/pgBackRest، snapshot دیسک): کپی فایل‌های داده؛ backup و restore سریع، incremental، ولی وابسته به نسخه و پلتفرم. <strong>PITR</strong>: restore یک backup کامل + replay لاگ تغییرات (binlog در MySQL، WAL در PostgreSQL) تا لحظه‌ی دلخواه.</p>
+        <p><strong>طراحی:</strong></p>
+        <ol>
+          <li><strong>Physical full backup</strong> هفتگی + <strong>incremental</strong> روزانه، گرفته‌شده از یک <strong>replica</strong> تا بار primary کم شود.</li>
+          <li><strong>آرشیو پیوسته‌ی binlog/WAL</strong> به object storage (مثلاً هر دقیقه یا با streaming) ⇒ RPO چند ثانیه تا حداکثر چند دقیقه. در MySQL: <code>sync_binlog=1</code>، GTID و نگه‌داری binlog به مدت کافی؛ در PostgreSQL: <code>archive_mode</code> و <code>archive_command</code> یا pgBackRest.</li>
+          <li><strong>Logical dump</strong> روزانه‌ی جداول حیاتی (مثلاً سفارش‌ها، کاربران) برای بازیابی انتخابی سریع یک جدول.</li>
+          <li><strong>قانون 3-2-1</strong>: نسخه در همان دیتاسنتر برای restore سریع، نسخه در region دیگر، و یک نسخه‌ی immutable (object lock) در برابر ransomware و حذف عمدی. رمزنگاری و کنترل دسترسی.</li>
+          <li><strong>HA جدا از backup</strong>: replica با failover خودکار برای خرابی سخت‌افزار (RTO دقیقه‌ای). backup برای خطای انسانی/داده‌ی خراب است که replication آن را هم کپی می‌کند. یک <strong>delayed replica</strong> (مثلاً با تأخیر یک ساعته) می‌تواند بازیابی از DELETE اشتباه را بسیار سریع‌تر کند.</li>
+          <li><strong>تست restore</strong> خودکار هفتگی روی سرور جدا، اندازه‌گیری زمان واقعی و مقایسه با RTO؛ و runbook مستند.</li>
+          <li><strong>پایش</strong>: هشدار در صورت شکست backup یا توقف آرشیو لاگ.</li>
+        </ol>
+        <p><strong>سناریوی بازیابی:</strong> DELETE اشتباه ساعت ۱۴:۳۲ ⇒ restore physical backup روی سرور جدا ⇒ replay binlog/WAL تا ۱۴:۳۱:۵۹ ⇒ استخراج سطرهای حذف‌شده و بازگرداندن به production یا جایگزینی کامل. زمان: کپی physical ۵۰۰GB با شبکه‌ی سریع + replay لاگ‌ها در محدوده‌ی RTO قابل انجام است، که با logical dump تقریباً ناممکن بود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-advanced-database-17">
+      <summary>کد زیر چه مشکلاتی دارد؟ آن را از نظر تراکنش، قفل و سازگاری داده تحلیل و اصلاح کنید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+DB::transaction(function () use ($order) {
+    $order = Order::lockForUpdate()-&gt;find($order-&gt;id);
+    $response = Http::timeout(30)-&gt;post('https://psp.example/charge', [
+        'amount' =&gt; $order-&gt;total,
+    ]);
+    $order-&gt;update(['status' =&gt; 'paid', 'ref' =&gt; $response['ref']]);
+    SendInvoiceEmail::dispatch($order);
+    Mail::to($order-&gt;user)-&gt;send(new OrderPaid($order));
+});</code></pre>
+        <p><strong>مشکلات:</strong></p>
+        <ol>
+          <li><strong>فراخوانی HTTP داخل تراکنش با قفل</strong>: سطر سفارش تا ۳۰ ثانیه قفل می‌ماند؛ تراکنش طولانی ⇒ انتظار سایر requestها، lock wait timeout، اشغال اتصال دیتابیس، و در MVCC جلوگیری از purge/vacuum. زیر بار، connection pool تمام می‌شود.</li>
+          <li><strong>ناسازگاری بین سیستم‌ها</strong>: rollback دیتابیس، شارژ انجام‌شده در درگاه پرداخت را برنمی‌گرداند. اگر بعد از charge، update یا dispatch خطا دهد، پول کسر شده ولی سفارش paid نیست.</li>
+          <li><strong>Retry خطرناک</strong>: اگر با <code>attempts</code> یا retry دستی دوباره اجرا شود، کاربر <strong>دو بار شارژ</strong> می‌شود؛ درخواست پرداخت idempotency key ندارد.</li>
+          <li><strong>Dispatch قبل از commit</strong>: job ممکن است قبل از commit اجرا شود و سفارش را با وضعیت قدیمی ببیند، یا اگر تراکنش rollback شود، ایمیل فاکتور برای سفارش پرداخت‌نشده ارسال شود.</li>
+          <li><strong>ارسال ایمیل هم‌زمان داخل تراکنش</strong>: کند و غیرقابل rollback؛ ایمیل ممکن است ارسال شود و تراکنش بعداً شکست بخورد.</li>
+          <li>بررسی نشدن وضعیت فعلی سفارش (شاید قبلاً paid شده) و نتیجه‌ی پاسخ HTTP.</li>
+        </ol>
+        <p><strong>اصلاح (الگوی چندمرحله‌ای با تراکنش‌های کوتاه):</strong></p>
+        <pre><code class="language-php">&lt;?php
+// 1) تراکنش کوتاه: انتقال به وضعیت میانی (فقط اگر pending است)
+$claimed = Order::whereKey($id)-&gt;where('status', 'pending')
+    -&gt;update(['status' =&gt; 'processing']);
+if (! $claimed) { return; } // قبلاً در حال پردازش یا پرداخت‌شده
+
+// 2) فراخوانی خارجی بیرون از تراکنش، با idempotency key پایدار
+$response = Http::timeout(10)
+    -&gt;withHeaders(['Idempotency-Key' =&gt; "order-{$id}"])
+    -&gt;post('https://psp.example/charge', ['amount' =&gt; $order-&gt;total])
+    -&gt;throw();
+
+// 3) تراکنش کوتاه دوم + jobهایی که فقط پس از commit dispatch شوند
+DB::transaction(function () use ($id, $response) {
+    Order::whereKey($id)-&gt;update(['status' =&gt; 'paid', 'ref' =&gt; $response['ref']]);
+    SendInvoiceEmail::dispatch($id)-&gt;afterCommit();
+    SendOrderPaidMail::dispatch($id)-&gt;afterCommit();
+});</code></pre>
+        <p>برای حالت‌هایی که فرایند وسط کار قطع شود (سفارش در <code>processing</code> بماند)، یک job دوره‌ای reconciliation وضعیت را از درگاه استعلام می‌کند. در معماری‌های پیچیده‌تر از الگوی <strong>Transactional Outbox</strong> استفاده می‌شود تا ثبت تغییر و انتشار رویداد اتمیک باشند.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ===================================================== CHEATSHEET -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>ACID و تراکنش</h3>
+      <ul>
+        <li><strong>A</strong> ⇐ undo log | <strong>C</strong> ⇐ constraint + منطق برنامه | <strong>I</strong> ⇐ MVCC + قفل | <strong>D</strong> ⇐ WAL/redo + fsync.</li>
+        <li><code>innodb_flush_log_at_trx_commit=1</code> و <code>sync_binlog=1</code> ⇒ durability کامل.</li>
+        <li>C در ACID ≠ C در CAP (linearizability).</li>
+        <li>تراکنش کوتاه؛ بدون HTTP/ایمیل داخلش؛ job با <code>afterCommit</code>؛ تودرتو = SAVEPOINT؛ <code>DB::transaction($fn, attempts: 3)</code> ⇒ retry در deadlock.</li>
+      </ul>
+
+      <h3>Isolation</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>سطح</th><th>Dirty</th><th>NonRep</th><th>Phantom</th><th>Lost Upd</th><th>Write Skew</th></tr></thead>
+        <tbody>
+          <tr><td>RU</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+          <tr><td>RC (پیش‌فرض PG)</td><td>✗</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+          <tr><td>RR (پیش‌فرض MySQL)</td><td>✗</td><td>✗</td><td>InnoDB/PG: عملاً ✗</td><td>MySQL ✓ / PG ✗</td><td>✓</td></tr>
+          <tr><td>Serializable</td><td>✗</td><td>✗</td><td>✗</td><td>✗</td><td>✗</td></tr>
+        </tbody>
+      </table></div>
+      <ul>
+        <li>PG Serializable = SSI ⇒ خطای <code>40001</code> ⇒ retry. InnoDB Serializable = قفل‌محور.</li>
+        <li>Write skew: دو تراکنش، شرط مشترک، سطرهای متفاوت ⇒ راه‌حل: Serializable، <code>FOR UPDATE</code> روی سطرهای شرط، materialize conflict، constraint.</li>
+      </ul>
+
+      <h3>MVCC</h3>
+      <ul>
+        <li>خواندن نوشتن را بلاک نمی‌کند و برعکس؛ فقط write-write قفل دارد.</li>
+        <li>InnoDB: نسخه‌ی قدیمی در undo، purge؛ PG: tuple جدید در heap (xmin/xmax)، VACUUM، bloat، HOT update.</li>
+        <li>تراکنش طولانی ⇒ history list بلند (InnoDB) / bloat (PG).</li>
+      </ul>
+
+      <h3>قفل‌ها و Deadlock</h3>
+      <ul>
+        <li>S با S سازگار؛ X با هیچ‌چیز. <code>lockForUpdate()</code> = FOR UPDATE، <code>sharedLock()</code> = FOR SHARE؛ فقط داخل تراکنش.</li>
+        <li>InnoDB قفل را روی <strong>رکورد ایندکس</strong> می‌گیرد ⇒ UPDATE بدون ایندکس = قفل همه‌ی سطرهای اسکن‌شده.</li>
+        <li>Gap lock = جلوی insert در بازه؛ Next-key = record + gap (پیش‌فرض RR)؛ در RC غیرفعال.</li>
+        <li>Lost update ⇒ UPDATE atomic شرطی | FOR UPDATE | version column.</li>
+        <li>Optimistic: تداخل کم، عملیات طولانی/فرم، بدون deadlock. Pessimistic: تداخل زیاد، تراکنش کوتاه.</li>
+        <li><code>SKIP LOCKED</code> ⇒ صف کار روی DB؛ <code>NOWAIT</code> ⇒ خطای فوری.</li>
+        <li>Deadlock = چرخه‌ی انتظار. InnoDB: فوری، خطای 1213، قربانی کوچک‌تر. PG: پس از <code>deadlock_timeout</code>، 40P01.</li>
+        <li>پیشگیری: ترتیب ثابت قفل، تراکنش کوتاه، ایندکس، upsert، RC، batch کوچک؛ و همیشه retry.</li>
+      </ul>
+
+      <h3>ایندکس</h3>
+      <ul>
+        <li>B+Tree: داده فقط در برگ، برگ‌ها پیوندی و مرتب ⇒ range و ORDER BY سریع؛ عمق ۳–۴.</li>
+        <li>InnoDB: clustered = جدول بر اساس PK؛ secondary = ستون‌ها + PK ⇒ lookup دوم.</li>
+        <li>UUIDv4 PK ⇒ page split، ایندکس بزرگ ⇒ BIGINT یا UUIDv7/ULID در <code>BINARY(16)</code>.</li>
+        <li>Composite: leftmost prefix؛ تساوی ⇒ ORDER BY ⇒ range؛ بعد از range بقیه seek نمی‌شوند.</li>
+        <li>Covering ⇒ <code>Using index</code> / Index Only Scan؛ PG: <code>INCLUDE</code>.</li>
+        <li>Selectivity پایین ⇒ ایندکس بی‌اثر (مگر توزیع نامتوازن ⇒ partial index در PG).</li>
+        <li>ضرر ایندکس: کندی نوشتن، فضا، cache؛ ایندکس زائد را حذف کنید (invisible index در MySQL 8).</li>
+      </ul>
+
+      <h3>EXPLAIN</h3>
+      <ul>
+        <li>type: <code>const &gt; eq_ref &gt; ref &gt; range &gt; index &gt; ALL</code>.</li>
+        <li>Extra: <code>Using index</code> عالی | <code>Using index condition</code> خوب | <code>Using filesort</code>/<code>Using temporary</code> روی داده‌ی بزرگ بد.</li>
+        <li><code>EXPLAIN ANALYZE</code> = اجرای واقعی؛ PG: <code>EXPLAIN (ANALYZE, BUFFERS)</code>.</li>
+        <li>Anti-patternها: تابع روی ستون، تبدیل نوع ضمنی، <code>LIKE '%x'</code>، OFFSET بزرگ (⇒ keyset/<code>cursorPaginate</code>)، <code>SELECT *</code>، N+1 (⇒ <code>with()</code>)، OR بین ستون‌ها.</li>
+      </ul>
+
+      <h3>SQL پیشرفته</h3>
+      <ul>
+        <li>CTE: خوانایی + <code>WITH RECURSIVE</code> برای درخت؛ PG12+ inline می‌شود.</li>
+        <li>Window: سطرها حفظ می‌شوند. ROW_NUMBER 1234 | RANK 1224 | DENSE_RANK 1223.</li>
+        <li>Top-N per group ⇒ ROW_NUMBER در CTE + <code>WHERE rn &lt;= N</code>.</li>
+        <li>Running total ⇒ <code>ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code> (پیش‌فرض RANGE با ties پرش دارد).</li>
+        <li>View = query ذخیره‌شده (امنیت، سادگی)؛ Materialized View = نتیجه‌ی ذخیره‌شده، stale تا refresh (فقط PG؛ MySQL ⇒ summary table).</li>
+        <li>Procedure/Trigger: نزدیک داده و مستقل از برنامه، ولی منطق پنهان، تست و scale سخت ⇒ فقط audit و integrity.</li>
+      </ul>
+
+      <h3>Scale و توزیع</h3>
+      <ul>
+        <li>Partitioning = یک سرور (RANGE/LIST/HASH)، pruning، DROP PARTITION آنی؛ کلید partition در همه‌ی UNIQUEها؛ بدون FK در MySQL.</li>
+        <li>Sharding = چند سرور؛ shard key با cardinality بالا و توزیع یکنواخت؛ hash / range / consistent hashing / directory؛ هزینه: JOIN، تراکنش، ID سراسری، resharding، hot shard.</li>
+        <li>مسیر scale: query/index ⇒ cache ⇒ replica ⇒ vertical ⇒ partition/archive ⇒ functional split ⇒ shard.</li>
+        <li>Replication: MySQL binlog (ROW) + GTID؛ PG streaming WAL + logical. Async (پیش‌فرض) / semi-sync / sync.</li>
+        <li>Replica ⇒ scale خواندن، نه نوشتن؛ lag ⇒ read-your-writes: sticky (فقط همان request)، session flag زمانی، GTID/LSN، خواندن حساس از primary (<code>onWriteConnection()</code>).</li>
+        <li>HA: failover خودکار (Orchestrator، Patroni، InnoDB Cluster)، quorum + fencing ضد split-brain؛ RPO/RTO.</li>
+        <li>CAP: هنگام partition ⇒ C یا A. PACELC: در غیر این صورت ⇒ Latency یا Consistency. Cassandra PA/EL، etcd/HBase PC/EC.</li>
+        <li>Pooling: PG process-per-connection ⇒ PgBouncer (transaction mode، مراقب ویژگی‌های session)؛ MySQL ⇒ ProxySQL؛ اتصال‌ها ≈ سرورها × <code>pm.max_children</code>.</li>
+      </ul>
+
+      <h3>Backup</h3>
+      <ul>
+        <li>Logical (mysqldump <code>--single-transaction</code>، pg_dump): قابل حمل، restore کند. Physical (XtraBackup، pg_basebackup): سریع، وابسته به نسخه.</li>
+        <li>PITR = full backup + replay binlog/WAL تا لحظه‌ی قبل از حادثه.</li>
+        <li>3-2-1، immutable copy، رمزنگاری، <strong>تست restore</strong>؛ replication ≠ backup؛ delayed replica.</li>
+      </ul>
+
+      <h3>MySQL / PG / جست‌وجو / Redis</h3>
+      <ul>
+        <li>PG: JSONB+GIN، partial/expression index، DDL تراکنشی، materialized view، extensionها. MySQL: سادگی عملیاتی، clustered PK، Vitess/ProxySQL.</li>
+        <li>FTS دیتابیس: ساده و همگام؛ Elasticsearch: relevance، analyzer فارسی، facet، scale؛ eventual و نباید source of truth باشد.</li>
+        <li>Redis: String، Hash، List، Set، Sorted Set، Stream، Bitmap، HyperLogLog، Geo؛ فرمان‌ها atomic.</li>
+        <li>RDB = snapshot دوره‌ای (restart سریع، از دست رفتن تا آخرین snapshot)؛ AOF = لاگ فرمان‌ها (<code>everysec</code> ≈ ۱ ثانیه)؛ معمولاً هر دو.</li>
+        <li>cache با <code>allkeys-lru</code>؛ queue/lock روی Redis جدا با policy بدون eviction.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

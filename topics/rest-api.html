@@ -1,0 +1,1374 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>REST API — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="rest-api">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>REST API</h1>
+    <p class="lead">اصول معماری REST، طراحی منابع و URI، متدها و status codeها، خطا با Problem Details، صفحه‌بندی، نسخه‌بندی، احراز هویت (OAuth 2.0، JWT، Sanctum)، caching، idempotency و پیاده‌سازی کامل در Laravel.</p>
+  </header>
+
+  <section class="lesson" id="rest-constraints" data-title="REST، قیدها و مدل Richardson">
+    <h2>REST، قیدها و مدل Richardson</h2>
+    <p><strong>REST (Representational State Transfer)</strong> یک <strong>سبک معماری</strong> است که Roy Fielding در رسالهٔ دکترای خود (سال ۲۰۰۰) تعریف کرد؛ نه پروتکل است و نه استاندارد. در REST همه‌چیز حول <strong>منبع (Resource)</strong> می‌چرخد: هر منبع با یک URI شناسایی می‌شود و client با <strong>نمایش (representation)</strong> آن منبع (مثلاً JSON) کار می‌کند و با متدهای استاندارد HTTP وضعیتش را منتقل یا تغییر می‌دهد. یک API فقط وقتی واقعاً RESTful است که این شش قید را رعایت کند:</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>قید</th><th>معنا</th><th>فایده</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Client–Server</strong></td><td>جداسازی دغدغهٔ رابط کاربری از ذخیره و منطق داده</td><td>تکامل مستقل frontend و backend؛ چند client (وب، موبایل) برای یک API</td></tr>
+        <tr><td><strong>Stateless</strong></td><td>هر درخواست همهٔ اطلاعات لازم (از جمله احراز هویت) را دارد؛ سرور state نشست client را بین درخواست‌ها نگه نمی‌دارد</td><td>scale افقی ساده (هر سرور می‌تواند هر درخواست را پاسخ دهد)، قابلیت اطمینان، سادگی</td></tr>
+        <tr><td><strong>Cacheable</strong></td><td>پاسخ‌ها باید صریحاً قابل cache بودن یا نبودن را اعلام کنند</td><td>کاهش تأخیر و بار سرور</td></tr>
+        <tr><td><strong>Uniform Interface</strong></td><td>رابط یکسان و استاندارد برای همهٔ منابع</td><td>سادگی، قابل‌پیش‌بینی بودن، decoupling</td></tr>
+        <tr><td><strong>Layered System</strong></td><td>client نمی‌داند مستقیم به سرور نهایی وصل است یا به proxy، CDN، gateway</td><td>امکان افزودن load balancer، cache و امنیت بدون تغییر client</td></tr>
+        <tr><td><strong>Code on Demand</strong> (اختیاری)</td><td>سرور می‌تواند کد اجرایی (مثل JS) به client بفرستد</td><td>گسترش قابلیت client؛ تنها قید اختیاری</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>چهار جزء Uniform Interface</h3>
+    <ol>
+      <li><strong>Identification of resources:</strong> هر منبع URI یکتا دارد (<code>/users/42</code>).</li>
+      <li><strong>Manipulation through representations:</strong> client با نمایشی که دریافت کرده (JSON) و متادیتای کافی، می‌تواند منبع را تغییر دهد.</li>
+      <li><strong>Self-descriptive messages:</strong> هر پیام با متد، status code و هدرهایی مثل <code>Content-Type</code> و <code>Cache-Control</code> خودش را توصیف می‌کند.</li>
+      <li><strong>HATEOAS</strong> (Hypermedia as the Engine of Application State): پاسخ‌ها شامل لینک به اقدامات و منابع مرتبط‌اند تا client مسیر را از پاسخ کشف کند.</li>
+    </ol>
+
+    <div class="callout exam"><p>«Stateless» یعنی <strong>state نشست client</strong> روی سرور نگه داشته نمی‌شود، نه اینکه سرور هیچ داده‌ای ندارد. <em>Resource state</em> (داده‌های دیتابیس) کاملاً مجاز است. پس API با session cookie سمت سرور به‌طور دقیق stateless نیست، در حالی که API با Bearer token که هر درخواست را مستقل احراز می‌کند stateless است.</p></div>
+    <div class="callout warn"><p>اشتباه رایج: «هر API که JSON روی HTTP برمی‌گرداند REST است». API با مسیرهایی مثل <code>POST /getUser</code> و <code>POST /deleteUser</code> در واقع RPC روی HTTP است، نه REST.</p></div>
+
+    <h3>مدل بلوغ Richardson</h3>
+    <p>Leonard Richardson مدلی چهارسطحی برای سنجش میزان RESTful بودن یک API ارائه کرد:</p>
+    <pre class="diagram">Level 3 ─ Hypermedia Controls (HATEOAS)      ← "Glory of REST"
+Level 2 ─ HTTP Verbs + Status Codes          ← اغلب APIهای «REST» امروزی
+Level 1 ─ Resources (URIهای جدا برای هر منبع)
+Level 0 ─ The Swamp of POX (یک endpoint، همه‌چیز POST)</pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>سطح</th><th>ویژگی</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>یک URI و یک متد؛ HTTP فقط تونل است (مثل SOAP یا XML-RPC)</td><td><code>POST /api</code> با بدنهٔ <code>{"action":"getUser","id":42}</code></td></tr>
+        <tr><td>1</td><td>منابع جدا با URI مستقل، اما همه با یک متد</td><td><code>POST /users/42</code> با <code>{"action":"delete"}</code></td></tr>
+        <tr><td>2</td><td>استفادهٔ درست از متدها (GET/POST/PUT/PATCH/DELETE) و status codeها</td><td><code>DELETE /users/42</code> ← <code>204</code></td></tr>
+        <tr><td>3</td><td>پاسخ‌ها لینک‌های hypermedia دارند</td><td>پاسخ سفارش شامل <code>"links": {"cancel": "/orders/7/cancel"}</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout note"><p>از دید Fielding، بدون HATEOAS یک API واقعاً REST نیست؛ اما در صنعت، <strong>Level 2</strong> استاندارد عملی است و Level 3 فقط در برخی APIهای عمومی دیده می‌شود.</p></div>
+  </section>
+
+  <section class="lesson" id="uri-design" data-title="طراحی منابع و URI">
+    <h2>طراحی منابع و URI</h2>
+    <h3>قواعد اصلی</h3>
+    <ul>
+      <li><strong>اسم، نه فعل:</strong> URI منبع را نام می‌برد؛ عمل را متد HTTP بیان می‌کند. <code>GET /orders</code> نه <code>GET /getOrders</code>.</li>
+      <li><strong>جمع برای collection:</strong> <code>/users</code> و <code>/users/42</code> (یکدستی مهم‌تر از قاعدهٔ دستوری است).</li>
+      <li><strong>حروف کوچک و kebab-case:</strong> <code>/order-items</code>؛ بدون پسوند فایل (<code>.json</code>) و بدون اسلش پایانی.</li>
+      <li><strong>شناسهٔ پایدار:</strong> ترجیحاً شناسه‌ای که تغییر نمی‌کند (ID، UUID یا ULID). UUID/ULID حدس‌زدن شناسه‌ها را دشوار می‌کند (ولی جایگزین authorization نیست).</li>
+      <li><strong>Nesting حداکثر یک سطح</strong> برای بیان مالکیت: <code>/users/42/orders</code>. به‌جای <code>/users/42/orders/7/items/3</code> از <code>/order-items/3</code> یا <code>/orders/7/items</code> استفاده کنید.</li>
+      <li><strong>Query string برای فیلتر، مرتب‌سازی، صفحه‌بندی و جستجو</strong>، نه برای شناسایی منبع: <code>/orders?status=paid&amp;sort=-created_at&amp;page[size]=20</code>.</li>
+      <li><strong>اقدامات غیر CRUD:</strong> یا به‌عنوان زیرمنبع مدل کنید (<code>POST /orders/7/cancellation</code>)، یا اگر واقعاً فعل است، به شکل زیرمسیر کنترل‌شده (<code>POST /orders/7/cancel</code>). مهم یکدستی در کل API است.</li>
+    </ul>
+    <div class="grid-2">
+      <div class="card"><h4>بد</h4><ul>
+        <li><code>GET /getAllUsers</code></li>
+        <li><code>POST /users/delete/42</code></li>
+        <li><code>GET /User_List.json</code></li>
+        <li><code>GET /users/42/orders/7/items/3/product</code></li>
+        <li><code>GET /orders/paid</code> (وضعیت به‌عنوان مسیر)</li>
+      </ul></div>
+      <div class="card"><h4>خوب</h4><ul>
+        <li><code>GET /users</code></li>
+        <li><code>DELETE /users/42</code></li>
+        <li><code>GET /users</code> با <code>Accept: application/json</code></li>
+        <li><code>GET /products/15</code></li>
+        <li><code>GET /orders?status=paid</code></li>
+      </ul></div>
+    </div>
+    <h3>نمونهٔ کامل منبع</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>عمل</th><th>متد و مسیر</th><th>پاسخ موفق</th></tr></thead>
+      <tbody>
+        <tr><td>فهرست</td><td><code>GET /articles</code></td><td>200 + آرایه و متادیتای صفحه‌بندی</td></tr>
+        <tr><td>نمایش</td><td><code>GET /articles/{id}</code></td><td>200</td></tr>
+        <tr><td>ایجاد</td><td><code>POST /articles</code></td><td>201 + هدر <code>Location</code></td></tr>
+        <tr><td>جایگزینی کامل</td><td><code>PUT /articles/{id}</code></td><td>200 یا 204</td></tr>
+        <tr><td>به‌روزرسانی جزئی</td><td><code>PATCH /articles/{id}</code></td><td>200 یا 204</td></tr>
+        <tr><td>حذف</td><td><code>DELETE /articles/{id}</code></td><td>204</td></tr>
+        <tr><td>زیرمجموعه</td><td><code>GET /articles/{id}/comments</code></td><td>200</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>نام‌گذاری فیلدهای JSON را در کل API یکدست کنید (معمولاً <code>snake_case</code> در اکوسیستم Laravel یا <code>camelCase</code>)، تاریخ‌ها را با ISO 8601 و منطقهٔ زمانی (UTC) برگردانید (<code>2026-11-11T08:30:00Z</code>) و مبالغ مالی را به‌صورت عدد صحیح در کوچک‌ترین واحد یا رشته برگردانید تا خطای float پیش نیاید.</p></div>
+  </section>
+
+  <section class="lesson" id="http-methods" data-title="متدهای HTTP، Safe و Idempotent">
+    <h2>متدهای HTTP، Safe و Idempotent</h2>
+    <dl class="terms">
+      <dt>Safe</dt><dd>متدی که قرار نیست وضعیت منبع را روی سرور تغییر دهد (فقط خواندن). لاگ یا شمارندهٔ بازدید نقض محسوب نمی‌شود چون client آن را درخواست نکرده است.</dd>
+      <dt>Idempotent</dt><dd>تکرار یک درخواست یکسان N بار، <strong>همان اثر نهایی</strong> روی وضعیت سرور را دارد که اجرای یک‌باره (پاسخ ممکن است متفاوت باشد؛ مثلاً DELETE دوم 404 می‌دهد). این ویژگی برای retry امن پس از timeout حیاتی است.</dd>
+      <dt>Cacheable</dt><dd>پاسخ آن به‌طور پیش‌فرض می‌تواند cache شود.</dd>
+    </dl>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متد</th><th>کاربرد</th><th>Safe</th><th>Idempotent</th><th>بدنهٔ درخواست</th><th>Cacheable</th></tr></thead>
+      <tbody>
+        <tr><td><code>GET</code></td><td>خواندن منبع یا collection</td><td>✓</td><td>✓</td><td>معنای تعریف‌شده‌ای ندارد</td><td>✓</td></tr>
+        <tr><td><code>HEAD</code></td><td>مثل GET فقط هدرها</td><td>✓</td><td>✓</td><td>خیر</td><td>✓</td></tr>
+        <tr><td><code>OPTIONS</code></td><td>قابلیت‌ها و متدهای مجاز (preflight CORS)</td><td>✓</td><td>✓</td><td>اختیاری</td><td>خیر</td></tr>
+        <tr><td><code>POST</code></td><td>ایجاد منبع زیر collection یا پردازش دلخواه</td><td>✗</td><td>✗</td><td>بله</td><td>به‌ندرت</td></tr>
+        <tr><td><code>PUT</code></td><td>ایجاد یا <strong>جایگزینی کامل</strong> منبع در URI مشخص</td><td>✗</td><td>✓</td><td>بله</td><td>خیر</td></tr>
+        <tr><td><code>PATCH</code></td><td>تغییر <strong>جزئی</strong></td><td>✗</td><td>✗ (می‌تواند باشد)</td><td>بله</td><td>خیر</td></tr>
+        <tr><td><code>DELETE</code></td><td>حذف منبع</td><td>✗</td><td>✓</td><td>معمولاً خیر</td><td>خیر</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>PUT در برابر PATCH در برابر POST</h3>
+    <div class="grid-2">
+      <div class="card"><h4>PUT</h4><ul>
+        <li>client <strong>نمایش کامل</strong> منبع را می‌فرستد؛ فیلدهای نفرستاده‌شده باید به پیش‌فرض برگردند یا حذف شوند.</li>
+        <li>URI را client تعیین می‌کند: <code>PUT /users/42/avatar</code>.</li>
+        <li>Idempotent: ارسال دوبارهٔ همان بدنه همان نتیجه را می‌دهد.</li>
+      </ul></div>
+      <div class="card"><h4>PATCH</h4><ul>
+        <li>فقط تغییرات را می‌فرستد: <code>{"name":"Ali"}</code>.</li>
+        <li>قالب‌های استاندارد: <strong>JSON Merge Patch</strong> (RFC 7396، <code>application/merge-patch+json</code>) و <strong>JSON Patch</strong> (RFC 6902، آرایه‌ای از عملیات).</li>
+        <li>لزوماً idempotent نیست: <code>{"op":"add","path":"/tags/-"}</code> یا «موجودی را ۵ تا افزایش بده» با تکرار اثر انباشته دارد.</li>
+      </ul></div>
+    </div>
+    <ul>
+      <li><strong>POST</strong> وقتی سرور شناسه را تعیین می‌کند (<code>POST /orders</code> ← <code>201</code> + <code>Location: /orders/981</code>) یا برای عملیات‌هایی که در قالب CRUD نمی‌گنجند. POST idempotent نیست: دو بار ارسال یعنی دو سفارش — مگر با <strong>Idempotency-Key</strong>.</li>
+    </ul>
+    <pre><code class="language-http">PUT /users/42 HTTP/1.1
+Content-Type: application/json
+
+{"name": "Ali Rezaei", "email": "ali@example.com", "phone": null}
+
+PATCH /users/42 HTTP/1.1
+Content-Type: application/merge-patch+json
+
+{"phone": "+989121234567"}</code></pre>
+    <div class="callout exam"><p>نمونه سوال: «آیا DELETE idempotent است وقتی بار دوم 404 برمی‌گرداند؟» بله؛ idempotency دربارهٔ <strong>اثر روی وضعیت سرور</strong> است نه یکسان بودن پاسخ. بعد از اولین DELETE منبع وجود ندارد و بعد از دهمین هم وجود ندارد.</p></div>
+    <div class="callout warn"><p>هرگز عمل تغییردهنده را با GET پیاده نکنید (<code>GET /users/42/delete</code>). crawlerها، prefetch مرورگر و cacheها GET را بی‌خطر فرض می‌کنند و ممکن است آن را خودکار اجرا کنند؛ همچنین در برابر CSRF آسیب‌پذیر است.</p></div>
+  </section>
+
+  <section class="lesson" id="status-codes" data-title="Status Codeها">
+    <h2>Status Codeها</h2>
+    <p>status code اولین چیزی است که client برای تصمیم‌گیری (retry، نمایش خطا، redirect) نگاه می‌کند. انتخاب دقیق آن بخش مهمی از قرارداد API است.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>کد</th><th>نام</th><th>چه زمانی</th></tr></thead>
+      <tbody>
+        <tr><td><code>200</code></td><td>OK</td><td>موفقیت عمومی؛ GET، PUT/PATCH با بدنهٔ پاسخ</td></tr>
+        <tr><td><code>201</code></td><td>Created</td><td>منبع جدید ساخته شد؛ هدر <code>Location</code> به URI منبع جدید</td></tr>
+        <tr><td><code>202</code></td><td>Accepted</td><td>درخواست پذیرفته شد اما پردازش async است (job در صف)؛ معمولاً لینک وضعیت برمی‌گردد</td></tr>
+        <tr><td><code>204</code></td><td>No Content</td><td>موفق، بدون بدنه (DELETE، PUT بدون نیاز به بازگرداندن منبع)</td></tr>
+        <tr><td><code>301</code> / <code>308</code></td><td>Moved Permanently / Permanent Redirect</td><td>انتقال دائمی؛ 308 متد و بدنه را حفظ می‌کند (301 ممکن است POST را به GET تبدیل کند)</td></tr>
+        <tr><td><code>302</code> / <code>307</code></td><td>Found / Temporary Redirect</td><td>انتقال موقت؛ 307 متد را حفظ می‌کند</td></tr>
+        <tr><td><code>304</code></td><td>Not Modified</td><td>پاسخ به درخواست شرطی (<code>If-None-Match</code>)؛ نسخهٔ cache‌شدهٔ client هنوز معتبر است، بدون بدنه</td></tr>
+        <tr><td><code>400</code></td><td>Bad Request</td><td>درخواست بدشکل: JSON نامعتبر، پارامتر با نوع غلط</td></tr>
+        <tr><td><code>401</code></td><td>Unauthorized</td><td>احراز هویت نشده یا توکن نامعتبر/منقضی؛ همراه هدر <code>WWW-Authenticate</code></td></tr>
+        <tr><td><code>403</code></td><td>Forbidden</td><td>هویت معلوم است ولی <strong>مجوز</strong> ندارد</td></tr>
+        <tr><td><code>404</code></td><td>Not Found</td><td>منبع وجود ندارد (یا برای پنهان کردن وجودش از کاربر غیرمجاز)</td></tr>
+        <tr><td><code>405</code></td><td>Method Not Allowed</td><td>متد روی این مسیر پشتیبانی نمی‌شود؛ هدر <code>Allow</code> الزامی</td></tr>
+        <tr><td><code>406</code></td><td>Not Acceptable</td><td>نمی‌توان نمایشی مطابق <code>Accept</code> client تولید کرد</td></tr>
+        <tr><td><code>409</code></td><td>Conflict</td><td>تعارض با وضعیت فعلی: ایمیل تکراری، تغییر وضعیت نامجاز، تعارض نسخه</td></tr>
+        <tr><td><code>412</code></td><td>Precondition Failed</td><td>شرط <code>If-Match</code> برقرار نیست (منبع از زمان خواندن تغییر کرده) — optimistic locking</td></tr>
+        <tr><td><code>415</code></td><td>Unsupported Media Type</td><td><code>Content-Type</code> بدنه پشتیبانی نمی‌شود (مثلاً XML فرستاده شده)</td></tr>
+        <tr><td><code>422</code></td><td>Unprocessable Content</td><td>نحو درست ولی <strong>معنا نامعتبر</strong>: خطای validation (پیش‌فرض Laravel)</td></tr>
+        <tr><td><code>429</code></td><td>Too Many Requests</td><td>عبور از rate limit؛ همراه <code>Retry-After</code></td></tr>
+        <tr><td><code>500</code></td><td>Internal Server Error</td><td>خطای پیش‌بینی‌نشدهٔ سرور (باگ)</td></tr>
+        <tr><td><code>502</code></td><td>Bad Gateway</td><td>gateway/proxy از upstream پاسخ نامعتبر گرفت (مثلاً PHP-FPM از کار افتاده)</td></tr>
+        <tr><td><code>503</code></td><td>Service Unavailable</td><td>سرویس موقتاً در دسترس نیست (overload، maintenance)؛ <code>Retry-After</code> مفید است</td></tr>
+        <tr><td><code>504</code></td><td>Gateway Timeout</td><td>upstream در مهلت مقرر پاسخ نداد</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p><strong>401 در برابر 403:</strong> 401 یعنی «نمی‌دانم کی هستی» (احراز هویت ناموفق یا نبود توکن، مشکل <em>authentication</em>)؛ 403 یعنی «می‌دانم کی هستی اما اجازه نداری» (مشکل <em>authorization</em>). <strong>400 در برابر 422:</strong> 400 برای درخواست بدشکل (JSON خراب)، 422 برای داده‌ای که از نظر قالب درست است ولی قوانین کسب‌وکار یا validation را نقض می‌کند. <strong>409 در برابر 422:</strong> 409 وقتی دادهٔ درخواست به‌تنهایی معتبر است ولی با <em>وضعیت فعلی منبع</em> تعارض دارد.</p></div>
+    <div class="callout warn"><p>ضدالگو: برگرداندن <code>200 OK</code> با بدنهٔ <code>{"success": false, "error": "..."}</code>. این کار monitoring، cache، retry و ابزارهای client را گمراه می‌کند. خطاهای 4xx یعنی «client باید درخواست را اصلاح کند» (retry بی‌فایده است)، 5xx یعنی «مشکل از سرور است» (retry با backoff ممکن است کمک کند).</p></div>
+  </section>
+
+  <section class="lesson" id="errors-validation" data-title="قالب خطا و Validation">
+    <h2>قالب خطا و Validation</h2>
+    <p>همهٔ خطاهای API باید <strong>قالب یکسان و قابل‌پردازش توسط ماشین</strong> داشته باشند. استاندارد <strong>RFC 9457 — Problem Details for HTTP APIs</strong> (جایگزین RFC 7807) این قالب را تعریف می‌کند و Content-Type آن <code>application/problem+json</code> است.</p>
+    <pre><code class="language-http">HTTP/1.1 422 Unprocessable Content
+Content-Type: application/problem+json
+
+{
+  "type": "https://api.example.com/problems/validation-error",
+  "title": "Your request is not valid.",
+  "status": 422,
+  "detail": "Two fields failed validation.",
+  "instance": "/orders",
+  "errors": {
+    "email": ["The email field must be a valid email address."],
+    "items.0.quantity": ["The quantity must be at least 1."]
+  },
+  "trace_id": "01JC8X2M5Q7K..."
+}</code></pre>
+    <dl class="terms">
+      <dt>type</dt><dd>URI شناسهٔ نوع خطا (ترجیحاً به مستندات اشاره کند)؛ پیش‌فرض <code>about:blank</code>. client بر اساس این فیلد تصمیم می‌گیرد، نه متن پیام.</dd>
+      <dt>title</dt><dd>خلاصهٔ انسانی و ثابت برای آن نوع خطا.</dd>
+      <dt>status</dt><dd>همان status code (برای راحتی).</dd>
+      <dt>detail</dt><dd>توضیح خاص همین رخداد.</dd>
+      <dt>instance</dt><dd>URI مربوط به این رخداد خاص.</dd>
+      <dt>extension members</dt><dd>فیلدهای اضافه مثل <code>errors</code> یا <code>trace_id</code> مجازند.</dd>
+    </dl>
+    <h3>اصول Validation</h3>
+    <ul>
+      <li>همه‌چیز را در سرور validate کنید؛ validation سمت client فقط برای تجربهٔ کاربری است.</li>
+      <li>همهٔ خطاها را یک‌جا برگردانید (نه فقط اولی) و آن‌ها را به فیلد مربوط نگاشت کنید.</li>
+      <li>از <strong>allow-list</strong> استفاده کنید: فقط فیلدهای validate‌شده را بپذیرید (<code>$request-&gt;validated()</code>) تا از <strong>Mass Assignment</strong> جلوگیری شود.</li>
+      <li>در خطاهای 500 جزئیات داخلی (stack trace، کوئری SQL) را افشا نکنید؛ <code>APP_DEBUG=false</code> در production. به‌جای آن یک <code>trace_id</code> بدهید که در لاگ قابل جستجو باشد.</li>
+      <li>کد خطای پایدار و مستند (مثلاً <code>type</code> یا یک فیلد <code>code</code> مثل <code>insufficient_balance</code>) بدهید تا client به متن پیام وابسته نشود.</li>
+    </ul>
+    <div class="callout note"><p>قالب پیش‌فرض خطای validation در Laravel <code>{"message": "...", "errors": {"field": ["..."]}}</code> با status 422 است. این قالب Problem Details نیست ولی ساختار یکدستی دارد؛ می‌توان در <code>bootstrap/app.php</code> با <code>withExceptions</code> آن را به RFC 9457 تبدیل کرد (نمونه در بخش پیاده‌سازی).</p></div>
+  </section>
+
+  <section class="lesson" id="pagination-filtering" data-title="صفحه‌بندی، فیلتر و مرتب‌سازی">
+    <h2>صفحه‌بندی، فیلتر و مرتب‌سازی</h2>
+    <p>هیچ endpoint فهرستی نباید کل جدول را برگرداند؛ <strong>صفحه‌بندی</strong> برای کارایی، حافظه و حفاظت از سرور ضروری است و باید سقف <code>per_page</code> داشته باشد.</p>
+    <div class="grid-2">
+      <div class="card"><h4>Offset / Page-based</h4><ul>
+        <li><code>?page=3&amp;per_page=20</code> ← <code>LIMIT 20 OFFSET 40</code></li>
+        <li>پرش مستقیم به صفحهٔ دلخواه و نمایش تعداد کل صفحات</li>
+        <li>در offsetهای بزرگ کند است: دیتابیس باید همهٔ ردیف‌های قبلی را بخواند و دور بریزد</li>
+        <li>با درج/حذف هم‌زمان، آیتم‌ها تکراری یا جاافتاده می‌شوند</li>
+        <li><code>COUNT(*)</code> روی جدول بزرگ هزینه دارد</li>
+        <li>مناسب: پنل ادمین، داده‌های کوچک‌تا‌متوسط</li>
+      </ul></div>
+      <div class="card"><h4>Cursor / Keyset-based</h4><ul>
+        <li><code>?cursor=eyJpZCI6MTAwfQ</code> ← <code>WHERE id &lt; 100 ORDER BY id DESC LIMIT 20</code></li>
+        <li>کارایی ثابت در هر عمق (با ایندکس روی ستون مرتب‌سازی)</li>
+        <li>پایدار در برابر درج‌های هم‌زمان</li>
+        <li>پرش به صفحهٔ N و تعداد کل ممکن نیست</li>
+        <li>ستون مرتب‌سازی باید یکتا یا ترکیبی یکتا باشد (<code>created_at, id</code>)</li>
+        <li>مناسب: infinite scroll، فید، همگام‌سازی، داده‌های بزرگ</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-json">{
+  "data": [ { "id": 120, "title": "..." } ],
+  "links": { "next": "https://api.example.com/v1/posts?cursor=eyJpZCI6MTAwfQ", "prev": null },
+  "meta":  { "per_page": 20, "next_cursor": "eyJpZCI6MTAwfQ" }
+}</code></pre>
+    <pre><code class="language-php">&lt;?php
+// Laravel: offset
+$posts = Post::query()-&gt;latest()-&gt;paginate(perPage: min($request-&gt;integer('per_page', 15), 100));
+// بدون COUNT(*) — فقط next/prev
+$posts = Post::query()-&gt;latest()-&gt;simplePaginate(20);
+// Cursor (keyset) — ORDER BY باید روی ستون‌های یکتا/ایندکس‌دار باشد
+$posts = Post::query()-&gt;orderByDesc('id')-&gt;cursorPaginate(20);
+
+return PostResource::collection($posts); // links و meta را خودکار اضافه می‌کند</code></pre>
+
+    <h3>فیلتر، مرتب‌سازی، sparse fieldsets و include</h3>
+    <ul>
+      <li><strong>فیلتر:</strong> <code>?status=paid&amp;created_after=2026-01-01</code> یا سبک JSON:API <code>?filter[status]=paid</code>.</li>
+      <li><strong>مرتب‌سازی:</strong> <code>?sort=-created_at,name</code> (منفی = نزولی).</li>
+      <li><strong>Sparse fieldsets:</strong> <code>?fields[users]=id,name</code> برای کاهش حجم پاسخ.</li>
+      <li><strong>Include روابط:</strong> <code>?include=author,comments</code> ← در Laravel با eager loading (<code>with()</code>) برای جلوگیری از N+1.</li>
+      <li><strong>جستجو:</strong> <code>?q=laptop</code>.</li>
+    </ul>
+    <div class="callout warn"><p>امنیت: هرگز مقدار <code>sort</code> یا نام فیلد را مستقیم در کوئری قرار ندهید (مثلاً <code>orderBy($request-&gt;sort)</code> یا <code>orderByRaw</code>). نام ستون‌ها را با <strong>allow-list</strong> بررسی کنید؛ وگرنه کاربر می‌تواند بر اساس ستون‌های حساس مرتب کند یا در حالت raw به SQL injection برسد. پکیج <code>spatie/laravel-query-builder</code> همین allow-list را پیاده می‌کند.</p></div>
+  </section>
+
+  <section class="lesson" id="versioning" data-title="نسخه‌بندی API">
+    <h2>نسخه‌بندی API</h2>
+    <p>وقتی API مصرف‌کنندهٔ خارجی یا اپ موبایل دارد (که کاربران دیر به‌روزرسانی می‌کنند)، تغییرات <strong>breaking</strong> نباید clientهای فعلی را خراب کنند.</p>
+    <div class="grid-2">
+      <div class="card"><h4>Non-breaking (بدون نسخهٔ جدید)</h4><ul>
+        <li>افزودن endpoint جدید</li>
+        <li>افزودن فیلد اختیاری به پاسخ</li>
+        <li>افزودن پارامتر اختیاری به درخواست</li>
+        <li>افزودن مقدار جدید به enum (اگر clientها tolerant باشند)</li>
+      </ul></div>
+      <div class="card"><h4>Breaking (نیاز به نسخهٔ جدید)</h4><ul>
+        <li>حذف یا تغییر نام فیلد</li>
+        <li>تغییر نوع یا معنای فیلد</li>
+        <li>اجباری کردن پارامتر</li>
+        <li>تغییر ساختار URL، قالب خطا یا رفتار احراز هویت</li>
+      </ul></div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>روش</th><th>مثال</th><th>مزایا</th><th>معایب</th></tr></thead>
+      <tbody>
+        <tr><td><strong>URI path</strong></td><td><code>/v1/users</code></td><td>واضح، تست آسان در مرورگر/curl، routing و cache ساده</td><td>از نظر نظری URI باید منبع را شناسایی کند نه نسخه را؛ تکرار مسیرها</td></tr>
+        <tr><td><strong>Query param</strong></td><td><code>/users?version=1</code></td><td>ساده</td><td>به‌راحتی فراموش می‌شود؛ cache و routing سخت‌تر</td></tr>
+        <tr><td><strong>Custom header</strong></td><td><code>Api-Version: 2026-11-01</code></td><td>URI تمیز؛ امکان نسخه‌بندی تاریخ‌محور</td><td>کمتر قابل‌مشاهده؛ cache باید <code>Vary</code> داشته باشد</td></tr>
+        <tr><td><strong>Media type</strong></td><td><code>Accept: application/vnd.example.v2+json</code></td><td>RESTfulترین؛ نسخه‌بندی هر representation</td><td>پیچیده‌تر برای مصرف‌کننده و ابزارها</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>در عمل <strong>URI versioning</strong> رایج‌ترین است به دلیل سادگی.</li>
+      <li>نسخه را فقط با عدد major نگه دارید (<code>v1</code>، <code>v2</code>)؛ تغییرات سازگار را بدون نسخهٔ جدید منتشر کنید.</li>
+      <li>نسخهٔ قدیمی را با برنامهٔ اعلام‌شده بازنشسته کنید: هدر <code>Deprecation</code> و <code>Sunset</code> (RFC 8594) همراه با لینک مستندات مهاجرت.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+// routes/api.php — پیشوند /api به‌طور خودکار اضافه می‌شود
+use Illuminate\Support\Facades\Route;
+
+Route::prefix('v1')-&gt;name('v1.')-&gt;group(function () {
+    Route::apiResource('orders', \App\Http\Controllers\Api\V1\OrderController::class);
+});
+
+Route::prefix('v2')-&gt;name('v2.')-&gt;group(function () {
+    Route::apiResource('orders', \App\Http\Controllers\Api\V2\OrderController::class);
+});</code></pre>
+    <div class="callout tip"><p>معمولاً لازم نیست کل کد را کپی کنید؛ لایهٔ دامنه (Service/Action، مدل‌ها) مشترک می‌ماند و فقط Controller، Form Request و API Resourceها (یعنی قرارداد ورودی و خروجی) برای هر نسخه جدا می‌شوند.</p></div>
+  </section>
+
+  <section class="lesson" id="auth" data-title="احراز هویت و مجوزدهی">
+    <h2>احراز هویت و مجوزدهی</h2>
+    <p><strong>Authentication</strong> یعنی «تو کی هستی؟» و <strong>Authorization</strong> یعنی «اجازهٔ این کار را داری؟». همهٔ روش‌های زیر فقط روی <strong>HTTPS</strong> امن‌اند.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>روش</th><th>شکل</th><th>مناسب برای</th><th>نکات</th></tr></thead>
+      <tbody>
+        <tr><td><strong>API Key</strong></td><td><code>X-API-Key: sk_live_...</code></td><td>سرور به سرور، شناسایی پروژهٔ مصرف‌کننده</td><td>معمولاً نمایندهٔ اپ است نه کاربر؛ هش‌شده ذخیره شود؛ قابل rotate و محدود به scope/IP</td></tr>
+        <tr><td><strong>HTTP Basic</strong></td><td><code>Authorization: Basic base64(user:pass)</code></td><td>ابزار داخلی، webhook ساده</td><td>Base64 رمزنگاری نیست؛ رمز در هر درخواست ارسال می‌شود</td></tr>
+        <tr><td><strong>Session cookie</strong></td><td><code>Cookie: laravel_session=...</code></td><td>SPA روی همان دامنهٔ اصلی (first-party)</td><td>stateful؛ نیاز به محافظت CSRF؛ cookie با <code>HttpOnly</code>، <code>Secure</code>، <code>SameSite</code></td></tr>
+        <tr><td><strong>Bearer token (opaque)</strong></td><td><code>Authorization: Bearer 1|abc...</code></td><td>اپ موبایل، client شخص ثالث</td><td>سرور توکن را در DB/cache lookup می‌کند؛ لغو فوری ممکن است</td></tr>
+        <tr><td><strong>JWT</strong></td><td><code>Authorization: Bearer eyJ...</code></td><td>سیستم‌های توزیع‌شده، احراز بدون lookup</td><td>self-contained؛ لغو قبل از انقضا سخت است</td></tr>
+        <tr><td><strong>OAuth 2.0</strong></td><td>فریم‌ورک صدور توکن</td><td>دسترسی تفویض‌شده به شخص ثالث، SSO (با OpenID Connect)</td><td>یک پروتکل authorization است؛ OIDC لایهٔ احراز هویت را رویش اضافه می‌کند</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>OAuth 2.0</h3>
+    <p><strong>OAuth 2.0</strong> فریم‌ورکی برای <strong>تفویض دسترسی (delegated authorization)</strong> است: کاربر (Resource Owner) به یک اپلیکیشن (Client) اجازه می‌دهد بدون دادن رمز عبورش، با یک <strong>access token</strong> محدود (scope) به منابعش روی Resource Server دسترسی داشته باشد. توکن را <strong>Authorization Server</strong> صادر می‌کند.</p>
+
+    <h4>Authorization Code + PKCE (برای اپ‌های کاربرمحور: SPA، موبایل، وب)</h4>
+    <pre class="diagram">1. Client یک code_verifier تصادفی می‌سازد و code_challenge = BASE64URL(SHA256(verifier))
+2. Browser ──► AuthServer /authorize?response_type=code&amp;client_id=..&amp;redirect_uri=..
+                 &amp;scope=orders:read&amp;state=xyz&amp;code_challenge=..&amp;code_challenge_method=S256
+3. کاربر login می‌کند و رضایت می‌دهد
+4. AuthServer ──► redirect_uri?code=AUTH_CODE&amp;state=xyz   (client مقدار state را چک می‌کند ← ضد CSRF)
+5. Client ──► AuthServer /token  (code + code_verifier [+ client_secret برای confidential client])
+6. AuthServer بررسی می‌کند SHA256(verifier) == challenge  ──► access_token (+ refresh_token)
+7. Client ──► Resource Server با Authorization: Bearer access_token</pre>
+    <ul>
+      <li>چرا «code» و نه مستقیم توکن؟ توکن هرگز در URL و تاریخچهٔ مرورگر قرار نمی‌گیرد؛ تبادل code با توکن از کانال پشتی انجام می‌شود.</li>
+      <li><strong>PKCE</strong> جلوی <strong>authorization code interception</strong> را می‌گیرد: حتی اگر مهاجم code را بدزدد، <code>code_verifier</code> را ندارد. برای public clientها (که نمی‌توانند secret نگه دارند) ضروری است و در OAuth 2.1 برای همهٔ clientها توصیه/الزام شده است.</li>
+      <li><strong>Implicit flow</strong> (توکن مستقیم در fragment URL) و <strong>Password grant</strong> (ROPC) منسوخ و ناامن تلقی می‌شوند.</li>
+    </ul>
+
+    <h4>Client Credentials (ماشین به ماشین)</h4>
+    <pre><code class="language-http">POST /oauth/token HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&amp;client_id=billing-svc&amp;client_secret=...&amp;scope=invoices:write</code></pre>
+    <p>هیچ کاربری در کار نیست؛ خود سرویس هویت دارد (مثلاً cron سرویس billing که API سرویس دیگری را صدا می‌زند).</p>
+
+    <h4>Refresh token</h4>
+    <p>access token کوتاه‌عمر (مثلاً ۱۵ دقیقه) و refresh token بلندعمر که فقط به Authorization Server ارسال می‌شود. <strong>Refresh token rotation</strong>: با هر استفاده، refresh token جدید صادر و قبلی باطل می‌شود؛ استفادهٔ مجدد از توکن قدیمی نشانهٔ سرقت است و کل زنجیره باطل می‌شود.</p>
+
+    <h3>JWT</h3>
+    <pre class="diagram">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9 . eyJzdWIiOiI0MiIsImV4cCI6MTc2Mjg1MDAwMH0 . SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+└──────── Header (base64url) ────────┘   └──────────── Payload (claims) ───────────┘   └──────── Signature ────────┘
+{"alg":"HS256","typ":"JWT"}              {"sub":"42","exp":1762850000,"scope":"..."}    HMAC/RSA/ECDSA(header.payload)</pre>
+    <ul>
+      <li>claimهای استاندارد: <code>iss</code> (صادرکننده)، <code>sub</code> (موضوع/کاربر)، <code>aud</code> (مخاطب)، <code>exp</code> (انقضا)، <code>nbf</code>، <code>iat</code>، <code>jti</code> (شناسهٔ یکتا).</li>
+      <li>الگوریتم: <strong>HS256</strong> (متقارن، کلید مشترک — هر کس بتواند verify کند، می‌تواند sign هم کند) یا <strong>RS256/ES256</strong> (نامتقارن — Authorization Server با کلید خصوصی امضا می‌کند و سرویس‌ها با کلید عمومی از JWKS بررسی می‌کنند؛ مناسب microservice).</li>
+    </ul>
+    <div class="callout warn"><p><strong>دام‌های JWT:</strong></p><ul>
+      <li>Payload فقط <strong>base64url-encode</strong> شده، <strong>رمزنگاری نشده</strong>؛ هر کسی می‌تواند آن را بخواند. اطلاعات حساس نگذارید (برای رمزنگاری JWE لازم است).</li>
+      <li>پذیرفتن <code>alg: none</code> یا <strong>algorithm confusion</strong> (سرور کلید عمومی RSA را به‌عنوان secret HMAC به کار ببرد). الگوریتم مجاز را در سرور ثابت کنید و به هدر توکن اعتماد نکنید.</li>
+      <li>بررسی نکردن <code>exp</code>، <code>aud</code> و <code>iss</code>.</li>
+      <li><strong>لغو (revocation) سخت است:</strong> JWT تا انقضا معتبر می‌ماند؛ راه‌حل: عمر کوتاه + refresh token، یا denylist بر اساس <code>jti</code> (که بخشی از مزیت stateless را از بین می‌برد).</li>
+      <li>ذخیره در <code>localStorage</code> در برابر XSS آسیب‌پذیر است؛ برای SPA مرورگری cookie با <code>HttpOnly</code> امن‌تر است (ولی CSRF باید مدیریت شود).</li>
+      <li>secret ضعیف برای HS256 با brute-force شکسته می‌شود.</li>
+      <li>JWTهای حجیم سربار هر درخواست را بالا می‌برند.</li>
+    </ul></div>
+
+    <h3>Laravel Sanctum در برابر Passport</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Sanctum</h4><ul>
+        <li>سبک و ساده؛ نصب با <code>php artisan install:api</code></li>
+        <li><strong>Personal access token</strong>های opaque (هش SHA-256 در جدول <code>personal_access_tokens</code>) با <strong>abilities</strong> و تاریخ انقضا</li>
+        <li><strong>SPA authentication</strong> مبتنی بر session cookie و CSRF برای frontendهای first-party روی همان دامنهٔ اصلی</li>
+        <li>مناسب: SPA خودتان، اپ موبایل خودتان، توکن API ساده</li>
+        <li>OAuth server نیست</li>
+      </ul></div>
+      <div class="card"><h4>Passport</h4><ul>
+        <li>پیاده‌سازی کامل <strong>OAuth 2.0 Authorization Server</strong> (بر پایهٔ league/oauth2-server)</li>
+        <li>grantها: authorization code (+PKCE)، client credentials، refresh token، device code</li>
+        <li>access tokenها به‌صورت JWT امضاشده</li>
+        <li>مناسب: وقتی <strong>اپلیکیشن‌های شخص ثالث</strong> باید از طرف کاربران شما دسترسی بگیرند («Login with YourApp»)</li>
+        <li>پیچیده‌تر؛ اگر به OAuth نیاز ندارید، Sanctum کافی است</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+// صدور توکن با Sanctum (مثلاً در login اپ موبایل)
+$token = $user-&gt;createToken(
+    name: 'iphone-15',
+    abilities: ['orders:read', 'orders:create'],
+    expiresAt: now()-&gt;addDays(30),
+)-&gt;plainTextToken; // فقط همین یک بار به‌صورت plain در دسترس است
+
+// routes/api.php
+Route::middleware('auth:sanctum')-&gt;group(function () {
+    Route::get('/me', fn (Request $r) =&gt; new UserResource($r-&gt;user()));
+    Route::post('/orders', [OrderController::class, 'store'])
+        -&gt;middleware('abilities:orders:create');
+});
+
+// Authorization در سطح منبع با Policy
+public function update(UpdateOrderRequest $request, Order $order)
+{
+    Gate::authorize('update', $order); // 403 در صورت عدم مجوز
+    // ...
+}</code></pre>
+    <div class="callout exam"><p>آسیب‌پذیری شمارهٔ ۱ در OWASP API Security Top 10، <strong>BOLA</strong> (Broken Object Level Authorization، همان IDOR) است: کاربر با تغییر <code>/orders/1001</code> به <code>/orders/1002</code> به سفارش دیگران دسترسی پیدا می‌کند. احراز هویت کافی نیست؛ برای هر شیء باید مالکیت/مجوز (Policy، scope کردن کوئری به کاربر جاری) بررسی شود.</p></div>
+  </section>
+
+  <section class="lesson" id="rate-limiting" data-title="Rate Limiting">
+    <h2>Rate Limiting</h2>
+    <p><strong>Rate limiting</strong> تعداد درخواست‌های یک client (بر اساس کاربر، API key یا IP) را در بازهٔ زمانی محدود می‌کند تا از سوءاستفاده، brute-force، scraping و DoS جلوگیری شود و منابع عادلانه تقسیم شوند.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>الگوریتم</th><th>ایده</th><th>ویژگی</th></tr></thead>
+      <tbody>
+        <tr><td>Fixed window</td><td>شمارنده در هر بازهٔ ثابت (مثلاً هر دقیقه)</td><td>ساده؛ انفجار درخواست در مرز دو بازه (تا ۲ برابر)</td></tr>
+        <tr><td>Sliding window</td><td>شمارش در پنجرهٔ متحرک (log یا تقریب وزنی)</td><td>دقیق‌تر؛ حافظه/محاسبهٔ بیشتر</td></tr>
+        <tr><td>Token bucket</td><td>سطل با ظرفیت B که با نرخ R پر می‌شود؛ هر درخواست یک توکن</td><td>اجازهٔ burst کنترل‌شده با میانگین ثابت</td></tr>
+        <tr><td>Leaky bucket</td><td>صف با نرخ خروج ثابت</td><td>هموار کردن ترافیک خروجی</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-http">HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 0
+Content-Type: application/problem+json
+
+{"type":"about:blank","title":"Too Many Requests","status":429,"detail":"Try again in 30 seconds."}</code></pre>
+    <ul>
+      <li>هدر <code>Retry-After</code> استاندارد HTTP است؛ هدرهای <code>X-RateLimit-*</code> عرف رایج‌اند (و پیش‌نویس IETF برای <code>RateLimit</code> و <code>RateLimit-Policy</code> در جریان است).</li>
+      <li>Client باید با <strong>exponential backoff + jitter</strong> واکنش نشان دهد.</li>
+      <li>در چند سرور، شمارنده باید در store مشترک (Redis) باشد.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+// App\Providers\AppServiceProvider::boot()
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Support\Facades\RateLimiter;
+
+RateLimiter::for('api', function (Request $request) {
+    return $request-&gt;user()
+        ? Limit::perMinute(120)-&gt;by($request-&gt;user()-&gt;id)
+        : Limit::perMinute(30)-&gt;by($request-&gt;ip());
+});
+
+RateLimiter::for('login', fn (Request $r) =&gt; [
+    Limit::perMinute(5)-&gt;by(strtolower($r-&gt;input('email')).'|'.$r-&gt;ip()),
+]);
+
+// routes/api.php
+Route::post('/login', LoginController::class)-&gt;middleware('throttle:login');
+Route::middleware(['auth:sanctum', 'throttle:api'])-&gt;group(/* ... */);</code></pre>
+    <div class="callout tip"><p>Laravel middleware <code>throttle</code> به‌طور خودکار پاسخ 429 همراه با <code>Retry-After</code> و <code>X-RateLimit-Limit/Remaining</code> برمی‌گرداند. برای endpointهای حساس (login، OTP، reset password) limiter سخت‌گیرانهٔ جداگانه تعریف کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="caching" data-title="Caching و درخواست‌های شرطی">
+    <h2>Caching و درخواست‌های شرطی</h2>
+    <h3>Cache-Control</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دستور</th><th>معنا</th></tr></thead>
+      <tbody>
+        <tr><td><code>max-age=60</code></td><td>تا ۶۰ ثانیه تازه (fresh) است و بدون پرسیدن از سرور استفاده می‌شود</td></tr>
+        <tr><td><code>s-maxage=300</code></td><td>مثل max-age ولی فقط برای cacheهای مشترک (CDN، proxy)</td></tr>
+        <tr><td><code>public</code> / <code>private</code></td><td>قابل cache در cacheهای مشترک / فقط در cache مرورگر کاربر (دادهٔ شخصی)</td></tr>
+        <tr><td><code>no-cache</code></td><td>می‌توان ذخیره کرد اما <strong>قبل از هر استفاده باید revalidate شود</strong></td></tr>
+        <tr><td><code>no-store</code></td><td>اصلاً ذخیره نکن (دادهٔ حساس: اطلاعات بانکی، توکن)</td></tr>
+        <tr><td><code>must-revalidate</code></td><td>پس از stale شدن، بدون revalidation استفاده نکن</td></tr>
+        <tr><td><code>stale-while-revalidate=30</code></td><td>تا ۳۰ ثانیه نسخهٔ stale را بده و در پس‌زمینه به‌روزرسانی کن</td></tr>
+        <tr><td><code>immutable</code></td><td>هرگز تغییر نمی‌کند (فایل‌های static با hash در نام)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p><code>no-cache</code> یعنی «cache کن ولی همیشه اعتبارسنجی کن»، نه «cache نکن». برای منع کامل از <code>no-store</code> استفاده کنید. پاسخ‌هایی که به کاربر وابسته‌اند باید <code>private</code> باشند تا CDN آن‌ها را به کاربر دیگری ندهد.</p></div>
+
+    <h3>ETag و If-None-Match (اعتبارسنجی)</h3>
+    <pre><code class="language-http">GET /products/15 HTTP/1.1
+
+HTTP/1.1 200 OK
+ETag: "a3f9c1"
+Cache-Control: private, max-age=0, must-revalidate
+{...}
+
+GET /products/15 HTTP/1.1
+If-None-Match: "a3f9c1"
+
+HTTP/1.1 304 Not Modified
+ETag: "a3f9c1"</code></pre>
+    <ul>
+      <li><strong>ETag</strong> شناسهٔ نسخهٔ representation است (هش محتوا یا شمارهٔ نسخه). Strong (<code>"abc"</code>) یعنی بایت‌به‌بایت یکسان؛ weak (<code>W/"abc"</code>) یعنی از نظر معنایی معادل.</li>
+      <li><strong>Last-Modified / If-Modified-Since:</strong> همان ایده بر اساس زمان با دقت ثانیه؛ ETag دقیق‌تر است و هر دو را می‌توان با هم فرستاد.</li>
+      <li>304 بدنه ندارد ← صرفه‌جویی در پهنای باند؛ اما سرور همچنان باید ETag را محاسبه کند (مگر بتواند ارزان محاسبه کند، مثلاً از <code>updated_at</code>).</li>
+    </ul>
+
+    <h3>Optimistic concurrency با If-Match</h3>
+    <pre><code class="language-http">PUT /products/15 HTTP/1.1
+If-Match: "a3f9c1"
+Content-Type: application/json
+
+{"name":"Laptop","price":42000000}
+
+HTTP/1.1 412 Precondition Failed      ← کسی دیگر قبلاً منبع را تغییر داده است</code></pre>
+    <p>این الگو مشکل <strong>lost update</strong> را حل می‌کند: دو ادمین هم‌زمان یک محصول را ویرایش می‌کنند و دومی بدون اطلاع، تغییرات اولی را بازنویسی می‌کند. اگر سرور بخواهد اجبار کند که client حتماً شرط بفرستد، برای درخواست بدون <code>If-Match</code> کد <code>428 Precondition Required</code> برمی‌گرداند.</p>
+    <pre><code class="language-php">&lt;?php
+public function show(Request $request, Product $product)
+{
+    $etag = '"'.sha1($product-&gt;id.'|'.$product-&gt;updated_at?-&gt;timestamp).'"';
+
+    if (in_array($etag, $request-&gt;getETags(), true)) {
+        return response()-&gt;noContent(304)-&gt;setEtag(trim($etag, '"'));
+    }
+
+    return (new ProductResource($product))
+        -&gt;response()
+        -&gt;setEtag(trim($etag, '"'))
+        -&gt;header('Cache-Control', 'private, max-age=0, must-revalidate');
+}</code></pre>
+    <div class="callout note"><p>Laravel middleware آماده‌ای به نام <code>cache.headers</code> دارد (<code>SetCacheHeaders</code>) که با گزینهٔ <code>etag</code> هش محتوای پاسخ را به‌عنوان ETag تنظیم و در صورت تطابق 304 برمی‌گرداند: <code>-&gt;middleware('cache.headers:public;max_age=60;etag')</code>. این روش ساده است ولی پاسخ را کامل تولید می‌کند و فقط پهنای باند را صرفه‌جویی می‌کند.</p></div>
+  </section>
+
+  <section class="lesson" id="idempotency-hateoas" data-title="Idempotency Key، HATEOAS و Content Negotiation">
+    <h2>Idempotency Key، HATEOAS و Content Negotiation</h2>
+    <h3>Idempotency key برای POST</h3>
+    <p>سناریو: اپ موبایل <code>POST /payments</code> می‌فرستد، سرور پرداخت را انجام می‌دهد اما پاسخ به دلیل قطعی شبکه نمی‌رسد. client نمی‌داند پرداخت انجام شده یا نه؛ اگر retry کند ممکن است دو بار پول کسر شود. راه‌حل: client یک کلید یکتا (UUID) برای هر <em>عمل منطقی</em> تولید می‌کند و در هدر <code>Idempotency-Key</code> می‌فرستد (الگویی که Stripe رایج کرد و پیش‌نویس IETF برای استانداردسازی آن وجود دارد).</p>
+    <ol>
+      <li>سرور کلید را (در محدودهٔ کاربر/client) بررسی می‌کند.</li>
+      <li>اگر کلید جدید است: آن را با وضعیت «در حال پردازش» به‌صورت <strong>اتمیک</strong> ثبت می‌کند (unique constraint یا <code>Cache::lock</code>/<code>add</code>)، عملیات را انجام می‌دهد و پاسخ (status + body) را کنار کلید ذخیره می‌کند.</li>
+      <li>اگر کلید تکراری با همان بدنه است: پاسخ ذخیره‌شده را بدون اجرای مجدد برمی‌گرداند.</li>
+      <li>اگر کلید در حال پردازش است: <code>409 Conflict</code>. اگر کلید تکراری با بدنهٔ متفاوت است: <code>422</code> (سوءاستفاده یا باگ client).</li>
+      <li>کلیدها پس از مدتی (مثلاً ۲۴ ساعت) منقضی می‌شوند.</li>
+    </ol>
+    <pre><code class="language-php">&lt;?php
+final class EnsureIdempotency
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        $key = $request-&gt;header('Idempotency-Key');
+        if (! $key || ! $request-&gt;isMethod('POST')) {
+            return $next($request);
+        }
+
+        $cacheKey  = "idem:{$request-&gt;user()-&gt;id}:{$key}";
+        $signature = hash('sha256', $request-&gt;getContent());
+
+        if ($saved = Cache::get($cacheKey)) {
+            abort_if($saved['sig'] !== $signature, 422, 'Idempotency-Key reused with a different payload.');
+            return response($saved['body'], $saved['status'], $saved['headers'] + ['Idempotent-Replayed' =&gt; 'true']);
+        }
+
+        $lock = Cache::lock("{$cacheKey}:lock", 30);
+        abort_unless($lock-&gt;get(), 409, 'A request with this Idempotency-Key is in progress.');
+
+        try {
+            $response = $next($request);
+            if ($response-&gt;getStatusCode() &lt; 500) { // خطای سرور را ذخیره نکن تا retry ممکن باشد
+                Cache::put($cacheKey, [
+                    'sig'     =&gt; $signature,
+                    'status'  =&gt; $response-&gt;getStatusCode(),
+                    'body'    =&gt; $response-&gt;getContent(),
+                    'headers' =&gt; ['Content-Type' =&gt; $response-&gt;headers-&gt;get('Content-Type')],
+                ], now()-&gt;addDay());
+            }
+            return $response;
+        } finally {
+            $lock-&gt;release();
+        }
+    }
+}</code></pre>
+    <div class="callout tip"><p>در عملیات مالی، علاوه بر idempotency key، یک <strong>unique constraint در دیتابیس</strong> (مثلاً روی <code>(user_id, idempotency_key)</code> یا شناسهٔ تراکنش درگاه) لایهٔ دفاعی نهایی است، چون cache ممکن است پاک شود.</p></div>
+
+    <h3>HATEOAS</h3>
+    <pre><code class="language-json">{
+  "id": 7,
+  "status": "pending_payment",
+  "total": 1250000,
+  "_links": {
+    "self":    { "href": "/v1/orders/7" },
+    "pay":     { "href": "/v1/orders/7/payments", "method": "POST" },
+    "cancel":  { "href": "/v1/orders/7/cancellation", "method": "POST" },
+    "customer":{ "href": "/v1/customers/42" }
+  }
+}</code></pre>
+    <p>client به‌جای hardcode کردن قوانین («اگر وضعیت pending است دکمهٔ لغو را نشان بده»)، وجود لینک <code>cancel</code> را بررسی می‌کند. مزیت: سرور می‌تواند جریان کار و URIها را تغییر دهد بدون شکستن client؛ عیب: پیچیدگی و حجم بیشتر پاسخ و پشتیبانی کم ابزارها. قالب‌های رایج: HAL، JSON:API، Siren.</p>
+
+    <h3>Content Negotiation</h3>
+    <ul>
+      <li>client با <code>Accept: application/json</code> قالب پاسخ مورد نظر و با <code>Content-Type</code> قالب بدنهٔ ارسالی را اعلام می‌کند. همچنین <code>Accept-Language</code> و <code>Accept-Encoding</code> (gzip، br).</li>
+      <li>سرور اگر قالب درخواستی را نداشت <code>406 Not Acceptable</code> و اگر بدنهٔ ارسالی را نمی‌فهمید <code>415 Unsupported Media Type</code> برمی‌گرداند.</li>
+      <li>وقتی پاسخ به هدری بستگی دارد، باید <code>Vary: Accept</code> (یا <code>Vary: Accept-Language</code>) تنظیم شود تا cacheها نسخه‌ها را قاطی نکنند.</li>
+    </ul>
+    <div class="callout warn"><p>در Laravel اگر client هدر <code>Accept: application/json</code> نفرستد، خطای validation یا احراز هویت ممکن است به‌جای JSON به redirect (302) تبدیل شود. در Laravel 11+ برای مسیرهای API می‌توان در <code>bootstrap/app.php</code> با <code>$exceptions-&gt;shouldRenderJsonWhen(fn ($request) =&gt; $request-&gt;is('api/*'))</code> رندر JSON را اجباری کرد.</p></div>
+  </section>
+
+  <section class="lesson" id="cors-openapi" data-title="CORS و مستندسازی با OpenAPI">
+    <h2>CORS و مستندسازی با OpenAPI</h2>
+    <h3>CORS</h3>
+    <p><strong>Same-Origin Policy</strong> مرورگر اجازه نمی‌دهد JavaScript صفحه‌ای از <code>https://app.example.com</code> پاسخ درخواستی به origin دیگر (مثلاً <code>https://api.example.com</code>) را بخواند. <strong>CORS (Cross-Origin Resource Sharing)</strong> سازوکاری است که <strong>سرور</strong> با هدرها اعلام کند کدام originها مجازند.</p>
+    <pre><code class="language-http">OPTIONS /v1/orders HTTP/1.1                       ← preflight (چون متد PUT/DELETE یا هدر Authorization یا Content-Type: application/json دارد)
+Origin: https://app.example.com
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: authorization, content-type
+
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: https://app.example.com
+Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE
+Access-Control-Allow-Headers: authorization, content-type
+Access-Control-Allow-Credentials: true
+Access-Control-Max-Age: 600
+Vary: Origin</code></pre>
+    <ul>
+      <li>CORS را <strong>مرورگر</strong> اعمال می‌کند؛ curl، Postman و سرورها آن را نادیده می‌گیرند. پس CORS <strong>ابزار امنیتی سمت سرور نیست</strong> و جای احراز هویت را نمی‌گیرد.</li>
+      <li><code>Access-Control-Allow-Origin: *</code> با <code>Allow-Credentials: true</code> مجاز نیست؛ برای ارسال cookie باید origin دقیق برگردانده شود.</li>
+      <li>در Laravel تنظیمات در <code>config/cors.php</code> است (با <code>php artisan config:publish cors</code>) و middleware <code>HandleCors</code> به‌طور پیش‌فرض فعال است.</li>
+    </ul>
+
+    <h3>OpenAPI</h3>
+    <p><strong>OpenAPI Specification</strong> (نام قبلی Swagger) قالبی استاندارد و ماشین‌خوان (YAML/JSON) برای توصیف قرارداد REST API است: مسیرها، پارامترها، schemaی درخواست و پاسخ، status codeها و روش امنیتی. از آن می‌توان مستندات تعاملی (Swagger UI، Redoc)، SDK برای client، mock server و تست قرارداد تولید کرد.</p>
+    <pre><code class="language-yaml">openapi: 3.1.0
+info: { title: Shop API, version: 1.0.0 }
+paths:
+  /v1/orders/{id}:
+    get:
+      summary: Get an order
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  schemas:
+    Order:
+      type: object
+      required: [id, status, total]
+      properties:
+        id: { type: integer }
+        status: { type: string, enum: [pending_payment, paid, shipped, cancelled] }
+        total: { type: integer, description: "Amount in Rials" }</code></pre>
+    <ul>
+      <li><strong>Design-first:</strong> ابتدا قرارداد نوشته و بازبینی می‌شود، سپس پیاده‌سازی؛ frontend و backend موازی کار می‌کنند.</li>
+      <li><strong>Code-first:</strong> مستندات از کد تولید می‌شود (در Laravel ابزارهایی مثل Scramble یا l5-swagger). خطر: مستندات با رفتار واقعی همگام نماند مگر در CI بررسی شود.</li>
+      <li>مستندات خوب شامل: مثال درخواست/پاسخ، همهٔ کدهای خطا، روش احراز هویت، rate limit، سیاست نسخه‌بندی و changelog.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="rest-graphql-grpc" data-title="REST در برابر GraphQL و gRPC">
+    <h2>REST در برابر GraphQL و gRPC</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>REST</th><th>GraphQL</th><th>gRPC</th></tr></thead>
+      <tbody>
+        <tr><td>مدل</td><td>منابع + متدهای HTTP</td><td>یک endpoint، زبان کوئری با schema تایپ‌دار</td><td>RPC؛ سرویس و متد در فایل proto</td></tr>
+        <tr><td>Transport/قالب</td><td>HTTP، معمولاً JSON</td><td>معمولاً HTTP POST، JSON</td><td>HTTP/2، protobuf باینری</td></tr>
+        <tr><td>Over/Under-fetching</td><td>ممکن است (پاسخ ثابت؛ چند درخواست برای داده‌های مرتبط)</td><td>client دقیقاً فیلدهای لازم را می‌خواهد</td><td>پیام‌های تعریف‌شده و ثابت</td></tr>
+        <tr><td>Caching</td><td>HTTP caching و CDN به‌سادگی</td><td>سخت (همه POST به یک URL)؛ cache در سطح client/persisted query</td><td>بدون HTTP cache استاندارد</td></tr>
+        <tr><td>خطاها</td><td>status codeهای HTTP</td><td>معمولاً 200 با آرایهٔ <code>errors</code></td><td>status codeهای gRPC</td></tr>
+        <tr><td>نسخه‌بندی</td><td>v1، v2</td><td>تکامل schema با deprecate کردن فیلدها</td><td>تکامل protobuf با شمارهٔ فیلد</td></tr>
+        <tr><td>Real-time</td><td>جداگانه (WebSocket/SSE)</td><td>Subscriptions</td><td>streaming دوطرفه داخلی</td></tr>
+        <tr><td>چالش‌ها</td><td>چند round-trip، طراحی دقیق منابع</td><td>N+1 (نیاز به DataLoader)، کوئری‌های پرهزینه (محدودیت عمق/پیچیدگی)، authorization در سطح فیلد</td><td>پشتیبانی محدود مرورگر، دیباگ سخت‌تر</td></tr>
+        <tr><td>مناسب برای</td><td>API عمومی، CRUD، cache‌پذیری</td><td>frontendهای متنوع با نیاز دادهٔ متغیر، BFF</td><td>ارتباط داخلی microserviceها، کارایی بالا</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>پاسخ خوب به «کدام بهتر است؟» همیشه «بستگی دارد» به‌علاوهٔ معیار است: نوع مصرف‌کننده (عمومی/داخلی/مرورگر)، نیاز به cache، تنوع نیاز داده‌ای clientها، کارایی و مهارت تیم. ترکیب رایج: REST یا GraphQL برای لبه (مرورگر و موبایل) و gRPC برای ارتباط داخلی سرویس‌ها.</p></div>
+  </section>
+
+  <section class="lesson" id="laravel-implementation" data-title="پیاده‌سازی در Laravel و چک‌لیست">
+    <h2>پیاده‌سازی در Laravel و چک‌لیست</h2>
+    <p>در Laravel 11+ فایل <code>routes/api.php</code> به‌طور پیش‌فرض وجود ندارد و با <code>php artisan install:api</code> ساخته می‌شود (Sanctum هم نصب می‌شود). مسیرهای این فایل پیشوند <code>/api</code> می‌گیرند.</p>
+
+    <h3>Route</h3>
+    <pre><code class="language-php">&lt;?php
+// routes/api.php
+use App\Http\Controllers\Api\V1\OrderController;
+use Illuminate\Support\Facades\Route;
+
+Route::prefix('v1')-&gt;middleware(['auth:sanctum', 'throttle:api'])-&gt;group(function () {
+    // index, store, show, update, destroy  (بدون create/edit که فرم HTML هستند)
+    Route::apiResource('orders', OrderController::class);
+    // nested + shallow: /orders/{order}/items و /items/{item}
+    Route::apiResource('orders.items', OrderItemController::class)-&gt;shallow();
+});</code></pre>
+    <pre><code class="language-plaintext">GET       /api/v1/orders            orders.index
+POST      /api/v1/orders            orders.store
+GET       /api/v1/orders/{order}    orders.show
+PUT|PATCH /api/v1/orders/{order}    orders.update
+DELETE    /api/v1/orders/{order}    orders.destroy</code></pre>
+
+    <h3>Form Request (validation + authorization)</h3>
+    <pre><code class="language-php">&lt;?php
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class StoreOrderRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return $this-&gt;user()-&gt;can('create', \App\Models\Order::class);
+    }
+
+    public function rules(): array
+    {
+        return [
+            'shipping_address_id' =&gt; ['required', 'integer',
+                Rule::exists('addresses', 'id')-&gt;where('user_id', $this-&gt;user()-&gt;id)],
+            'items'               =&gt; ['required', 'array', 'min:1', 'max:50'],
+            'items.*.product_id'  =&gt; ['required', 'integer', 'exists:products,id'],
+            'items.*.quantity'    =&gt; ['required', 'integer', 'min:1', 'max:100'],
+            'note'                =&gt; ['nullable', 'string', 'max:500'],
+        ];
+    }
+}</code></pre>
+    <p>اگر validation شکست بخورد، Laravel به‌طور خودکار <code>422</code> با فهرست خطاها برمی‌گرداند (برای درخواست‌هایی که JSON می‌خواهند) و اگر <code>authorize()</code> false باشد، <code>403</code>.</p>
+
+    <h3>API Resource (لایهٔ تبدیل خروجی)</h3>
+    <pre><code class="language-php">&lt;?php
+namespace App\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+class OrderResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [
+            'id'         =&gt; $this-&gt;id,
+            'status'     =&gt; $this-&gt;status,
+            'total'      =&gt; $this-&gt;total,
+            'items'      =&gt; OrderItemResource::collection($this-&gt;whenLoaded('items')),
+            'customer'   =&gt; new UserResource($this-&gt;whenLoaded('user')),
+            'can_cancel' =&gt; $request-&gt;user()?-&gt;can('cancel', $this-&gt;resource),
+            'created_at' =&gt; $this-&gt;created_at-&gt;toIso8601String(),
+            'links'      =&gt; ['self' =&gt; route('orders.show', $this-&gt;id)],
+        ];
+    }
+}</code></pre>
+    <p>Resource قرارداد خروجی را از ساختار جدول جدا می‌کند: تغییر نام ستون، API را نمی‌شکند؛ فیلدهای حساس (مثل <code>password</code>) هرگز ناخواسته لو نمی‌روند؛ <code>whenLoaded</code> از کوئری‌های N+1 پنهان جلوگیری می‌کند.</p>
+
+    <h3>Controller</h3>
+    <pre><code class="language-php">&lt;?php
+namespace App\Http\Controllers\Api\V1;
+
+use App\Actions\PlaceOrder;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\{StoreOrderRequest, UpdateOrderRequest};
+use App\Http\Resources\OrderResource;
+use App\Models\Order;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class OrderController extends Controller
+{
+    public function index(Request $request)
+    {
+        $orders = $request-&gt;user()-&gt;orders()          // scope به کاربر جاری ← ضد BOLA
+            -&gt;with('items')
+            -&gt;when($request-&gt;query('status'), fn ($q, $s) =&gt; $q-&gt;where('status', $s))
+            -&gt;latest('id')
+            -&gt;cursorPaginate(min($request-&gt;integer('per_page', 20), 100));
+
+        return OrderResource::collection($orders);
+    }
+
+    public function store(StoreOrderRequest $request, PlaceOrder $placeOrder)
+    {
+        $order = $placeOrder-&gt;handle($request-&gt;user(), $request-&gt;validated());
+
+        return (new OrderResource($order-&gt;load('items')))
+            -&gt;response()
+            -&gt;setStatusCode(201)
+            -&gt;header('Location', route('orders.show', $order));
+    }
+
+    public function show(Order $order)
+    {
+        Gate::authorize('view', $order);
+        return new OrderResource($order-&gt;load('items'));
+    }
+
+    public function update(UpdateOrderRequest $request, Order $order)
+    {
+        $order-&gt;update($request-&gt;validated());
+        return new OrderResource($order);
+    }
+
+    public function destroy(Order $order)
+    {
+        Gate::authorize('delete', $order);
+        $order-&gt;delete();
+        return response()-&gt;noContent(); // 204
+    }
+}</code></pre>
+
+    <h3>رندر یکدست خطاها (Laravel 11+)</h3>
+    <pre><code class="language-php">&lt;?php
+// bootstrap/app.php
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Foundation\Configuration\Exceptions;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+
+-&gt;withExceptions(function (Exceptions $exceptions) {
+    $exceptions-&gt;shouldRenderJsonWhen(fn (Request $r) =&gt; $r-&gt;is('api/*') || $r-&gt;expectsJson());
+
+    $exceptions-&gt;render(function (ValidationException $e, Request $request) {
+        if ($request-&gt;is('api/*')) {
+            return response()-&gt;json([
+                'type'   =&gt; 'https://api.example.com/problems/validation-error',
+                'title'  =&gt; 'The given data was invalid.',
+                'status' =&gt; 422,
+                'errors' =&gt; $e-&gt;errors(),
+            ], 422, ['Content-Type' =&gt; 'application/problem+json']);
+        }
+    });
+
+    $exceptions-&gt;render(function (HttpExceptionInterface $e, Request $request) {
+        if ($request-&gt;is('api/*')) {
+            return response()-&gt;json([
+                'type'   =&gt; 'about:blank',
+                'title'  =&gt; \Symfony\Component\HttpFoundation\Response::$statusTexts[$e-&gt;getStatusCode()] ?? 'Error',
+                'status' =&gt; $e-&gt;getStatusCode(),
+                'detail' =&gt; $e-&gt;getMessage() ?: null,
+            ], $e-&gt;getStatusCode(), ['Content-Type' =&gt; 'application/problem+json'] + $e-&gt;getHeaders());
+        }
+    });
+})</code></pre>
+    <div class="callout note"><p>Route model binding برای شناسهٔ ناموجود <code>ModelNotFoundException</code> می‌دهد که Laravel آن را به <code>NotFoundHttpException</code> (۴۰۴) تبدیل می‌کند؛ <code>Gate::authorize</code> هم <code>AuthorizationException</code> می‌دهد که به ۴۰۳ تبدیل می‌شود. بنابراین handler بالا آن‌ها را هم یکدست می‌کند. ترتیب callbackها و جزئیات تبدیل را در نسخهٔ پروژه‌تان تست کنید.</p></div>
+    <div class="callout tip"><p>تست API در Laravel ساده است: <code>$this-&gt;actingAs($user, 'sanctum')-&gt;postJson('/api/v1/orders', [...])-&gt;assertCreated()-&gt;assertHeader('Location')-&gt;assertJsonPath('data.status', 'pending_payment');</code> و برای خطاها <code>assertUnprocessable()-&gt;assertJsonValidationErrors(['items'])</code>.</p></div>
+
+    <h3>چک‌لیست طراحی API</h3>
+    <div class="grid-2">
+      <div class="card"><h4>قرارداد و طراحی</h4><ul>
+        <li>منابع اسم و جمع؛ nesting حداکثر یک سطح</li>
+        <li>متد درست؛ GET بدون اثر جانبی</li>
+        <li>status code دقیق؛ 201 + Location برای ایجاد</li>
+        <li>قالب خطای یکسان (RFC 9457) با کد پایدار</li>
+        <li>نام‌گذاری یکدست فیلدها، تاریخ ISO 8601 در UTC</li>
+        <li>صفحه‌بندی برای همهٔ فهرست‌ها با سقف per_page</li>
+        <li>فیلتر/مرتب‌سازی با allow-list</li>
+        <li>سیاست نسخه‌بندی و deprecation</li>
+        <li>مستندات OpenAPI با مثال</li>
+      </ul></div>
+      <div class="card"><h4>امنیت و عملیات</h4><ul>
+        <li>فقط HTTPS؛ HSTS</li>
+        <li>احراز هویت مناسب (Sanctum/OAuth)؛ توکن کوتاه‌عمر</li>
+        <li>authorization در سطح هر شیء (ضد BOLA) و فیلد</li>
+        <li>validation سخت‌گیرانه و فقط فیلدهای validated (ضد mass assignment)</li>
+        <li>rate limiting با 429 و Retry-After</li>
+        <li>Idempotency-Key برای POSTهای حساس</li>
+        <li>Cache-Control و ETag مناسب؛ <code>private</code>/<code>no-store</code> برای دادهٔ شخصی</li>
+        <li>CORS با allow-list دقیق</li>
+        <li>عدم افشای stack trace؛ trace_id و لاگ ساختاریافته</li>
+        <li>timeout و محدودیت حجم بدنه</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-rest-api-1">
+      <summary>REST را تعریف کنید و قیدهای معماری آن را نام ببرید. قید Stateless چه مزایا و هزینه‌هایی دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> REST یک <strong>سبک معماری</strong> برای سیستم‌های توزیع‌شده است (Roy Fielding، ۲۰۰۰) که در آن هر چیز یک <strong>منبع</strong> با URI یکتاست و client با <strong>نمایش</strong>های آن منبع از طریق یک رابط یکنواخت (متدهای HTTP) کار می‌کند. REST پروتکل یا استاندارد نیست.</p>
+        <p><strong>قیدها:</strong></p>
+        <ul>
+          <li><strong>Client–Server:</strong> جداسازی UI از داده و منطق.</li>
+          <li><strong>Stateless:</strong> هر درخواست خودکفاست.</li>
+          <li><strong>Cacheable:</strong> پاسخ‌ها قابلیت cache خود را اعلام می‌کنند.</li>
+          <li><strong>Uniform Interface:</strong> شناسایی منابع، تغییر از طریق representation، پیام‌های خودتوصیف، HATEOAS.</li>
+          <li><strong>Layered System:</strong> امکان وجود proxy، CDN و gateway بدون اطلاع client.</li>
+          <li><strong>Code on Demand:</strong> اختیاری.</li>
+        </ul>
+        <p><strong>Stateless یعنی</strong> سرور state نشست client را بین درخواست‌ها نگه نمی‌دارد و هر درخواست (مثلاً با Bearer token) همهٔ اطلاعات لازم را دارد. دادهٔ منابع در دیتابیس مجاز است.</p>
+        <p><strong>مزایا:</strong> <strong>scale افقی</strong> ساده (هر سرور پشت load balancer می‌تواند هر درخواست را پاسخ دهد، بدون sticky session)، تحمل خطا (از کار افتادن یک سرور نشستی را از بین نمی‌برد)، سادگی و قابلیت cache بهتر.</p>
+        <p><strong>هزینه‌ها:</strong> هر درخواست بزرگ‌تر است (توکن و context تکرار می‌شود)، احراز هویت در هر درخواست تکرار می‌شود (lookup توکن یا verify امضای JWT)، و جریان‌های چندمرحله‌ای (wizard) باید state را در client یا به شکل منبع در سرور (مثلاً <code>/carts/{id}</code>) نگه دارند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-2">
+      <summary>مدل بلوغ Richardson را شرح دهید. API موجود شما در کدام سطح است اگر همهٔ عملیات را با <code>POST /api/users/action</code> انجام دهد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> مدلی چهارسطحی برای سنجش میزان پایبندی API به اصول REST:</p>
+        <ul>
+          <li><strong>Level 0 — Swamp of POX:</strong> یک endpoint و معمولاً فقط POST؛ HTTP صرفاً تونل انتقال است (مثل SOAP یا XML-RPC).</li>
+          <li><strong>Level 1 — Resources:</strong> منابع URI جداگانه دارند (<code>/users/42</code>)، اما متدها و status codeها درست استفاده نمی‌شوند.</li>
+          <li><strong>Level 2 — HTTP Verbs:</strong> استفادهٔ درست از GET/POST/PUT/PATCH/DELETE با رعایت safe/idempotent، و status codeهای معنادار (201، 404، 409). اکثر APIهای «RESTful» در صنعت این‌جا هستند.</li>
+          <li><strong>Level 3 — Hypermedia Controls:</strong> پاسخ‌ها شامل لینک‌هایی به اقدامات ممکن‌اند (HATEOAS)؛ client جریان را از پاسخ کشف می‌کند.</li>
+        </ul>
+        <p><strong>تحلیل مثال:</strong> <code>POST /api/users/action</code> با بدنه‌ای مثل <code>{"action":"delete","id":5}</code> منبع را تا حدی (users) جدا کرده ولی عمل را در بدنه رمز کرده است؛ این بین سطح 0 و 1 است و در واقع <strong>RPC روی HTTP</strong> محسوب می‌شود.</p>
+        <p><strong>پیامدها:</strong> cache کار نمی‌کند (همه POST)، retry امن ممکن نیست (چون idempotent بودن قابل‌تشخیص نیست)، monitoring بر اساس status code بی‌معنی می‌شود و مستندسازی سخت است.</p>
+        <p><strong>بهبود به Level 2:</strong> <code>GET /users</code>، <code>GET /users/5</code>، <code>POST /users</code> ← 201، <code>PATCH /users/5</code>، <code>DELETE /users/5</code> ← 204، و خطاها با 404/422/409.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-3">
+      <summary>مفاهیم Safe و Idempotent را تعریف کنید و متدهای HTTP را از این نظر دسته‌بندی کنید. چرا این ویژگی‌ها در عمل مهم‌اند؟</summary>
+      <div class="answer">
+        <p><strong>Safe:</strong> متدی که client با آن درخواست تغییر وضعیت سرور را نمی‌دهد (فقط خواندن): <code>GET</code>، <code>HEAD</code>، <code>OPTIONS</code>.</p>
+        <p><strong>Idempotent:</strong> اجرای N بارهٔ یک درخواست یکسان، همان <em>اثر نهایی روی وضعیت سرور</em> را دارد که اجرای یک‌باره. پاسخ می‌تواند متفاوت باشد.</p>
+        <ul>
+          <li>Safe و idempotent: GET، HEAD، OPTIONS.</li>
+          <li>Idempotent ولی نه safe: <strong>PUT</strong> (جایگزینی با همان مقدار)، <strong>DELETE</strong> (بار دوم منبع همچنان حذف‌شده است، حتی اگر 404 برگردد).</li>
+          <li>هیچ‌کدام: <strong>POST</strong> (دو بار ارسال = دو منبع) و <strong>PATCH</strong> در حالت کلی (مثل «افزایش موجودی به اندازهٔ ۵»).</li>
+        </ul>
+        <p><strong>اهمیت عملی:</strong></p>
+        <ul>
+          <li><strong>Retry امن:</strong> وقتی timeout رخ می‌دهد، client نمی‌داند درخواست اجرا شده یا نه. درخواست idempotent را می‌توان بی‌خطر تکرار کرد؛ HTTP clientها، proxyها و load balancerها هم فقط درخواست‌های idempotent را خودکار retry می‌کنند.</li>
+          <li><strong>Caching و prefetch:</strong> مرورگر، crawler و CDN فرض می‌کنند GET بی‌خطر است؛ اگر GET تغییری ایجاد کند (مثلاً <code>/delete?id=5</code>)، crawler ممکن است داده‌ها را پاک کند.</li>
+          <li><strong>امنیت:</strong> عملیات تغییردهنده با GET در برابر CSRF آسیب‌پذیرتر است (یک تگ تصویر کافی است).</li>
+        </ul>
+        <p><strong>راه‌حل برای POST:</strong> هدر <code>Idempotency-Key</code> که سرور با ذخیرهٔ نتیجهٔ اولین اجرا، POST را عملاً idempotent می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-4">
+      <summary>تفاوت PUT، PATCH و POST را با مثال توضیح دهید. برای به‌روزرسانی فقط شمارهٔ تلفن کاربر کدام را انتخاب می‌کنید؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>POST:</strong> ایجاد منبع جدید زیر یک collection که <em>سرور</em> شناسه‌اش را تعیین می‌کند (<code>POST /users</code> ← <code>201 Created</code> + <code>Location: /users/42</code>) یا اجرای پردازشی که در CRUD نمی‌گنجد. idempotent نیست.</li>
+          <li><strong>PUT:</strong> ارسال <strong>نمایش کامل</strong> منبع برای <strong>جایگزینی</strong> در URI مشخص (یا ایجادش در آن URI اگر client شناسه را تعیین می‌کند). فیلدهای ارسال‌نشده باید به مقدار پیش‌فرض/null برگردند. idempotent است.</li>
+          <li><strong>PATCH:</strong> ارسال <strong>تغییرات جزئی</strong>. قالب‌های استاندارد: JSON Merge Patch (RFC 7396) که شیء جزئی می‌فرستد و <code>null</code> یعنی حذف فیلد، و JSON Patch (RFC 6902) که فهرست عملیات (<code>add</code>، <code>replace</code>، <code>remove</code>) می‌فرستد. لزوماً idempotent نیست.</li>
+        </ul>
+        <pre><code class="language-http">PUT /users/42      {"name":"Ali","email":"ali@x.com","phone":"0912..."}   ← همهٔ فیلدها
+PATCH /users/42    {"phone":"0912..."}                                    ← فقط تغییر</code></pre>
+        <p><strong>انتخاب:</strong> برای تغییر فقط تلفن، <strong>PATCH</strong> مناسب است: payload کوچک‌تر، و مهم‌تر از آن، خطر <strong>lost update</strong> کمتر — با PUT، client باید کل منبع را بفرستد و اگر نسخهٔ قدیمی را خوانده باشد، تغییرات هم‌زمان دیگران در سایر فیلدها را بازنویسی می‌کند.</p>
+        <p><strong>نکتهٔ پیاده‌سازی در Laravel:</strong> در PATCH از قوانین <code>sometimes</code> استفاده کنید تا فقط فیلدهای ارسال‌شده validate شوند، و برای جلوگیری از تعارض هم‌زمان از <code>ETag</code> و <code>If-Match</code> (پاسخ <code>412</code>) استفاده کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-5">
+      <summary>تفاوت status codeهای 400، 401، 403، 404، 409 و 422 را توضیح دهید و برای هر کدام یک مثال در یک API فروشگاهی بزنید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>400 Bad Request:</strong> درخواست از نظر نحوی بدشکل است و سرور نمی‌تواند آن را تفسیر کند. مثال: بدنهٔ JSON نیمه‌کاره، یا <code>?page=abc</code>.</li>
+          <li><strong>401 Unauthorized:</strong> در واقع یعنی <em>unauthenticated</em>: توکن ارسال نشده، نامعتبر یا منقضی است. پاسخ باید هدر <code>WWW-Authenticate</code> داشته باشد. مثال: درخواست <code>GET /me</code> بدون Bearer token.</li>
+          <li><strong>403 Forbidden:</strong> کاربر شناخته شده ولی اجازهٔ این عمل را ندارد. مثال: کاربر عادی <code>DELETE /products/5</code> را می‌زند که فقط ادمین مجاز است.</li>
+          <li><strong>404 Not Found:</strong> منبع وجود ندارد. مثال: <code>GET /orders/999999</code>. گاهی برای منابع متعلق به دیگران هم به‌جای 403 از 404 استفاده می‌شود تا وجود منبع افشا نشود.</li>
+          <li><strong>409 Conflict:</strong> درخواست معتبر است اما با <em>وضعیت فعلی منبع</em> تعارض دارد. مثال: لغو سفارشی که قبلاً ارسال شده، یا ثبت‌نام با ایمیلی که قبلاً وجود دارد (برخی تیم‌ها برای ایمیل تکراری 422 را ترجیح می‌دهند؛ مهم یکدستی است).</li>
+          <li><strong>422 Unprocessable Content:</strong> نحو درست است ولی داده‌ها قوانین validation را نقض می‌کنند. مثال: <code>quantity: -2</code> یا ایمیل نامعتبر. پیش‌فرض Laravel برای خطای validation.</li>
+        </ul>
+        <p><strong>چرا دقت مهم است؟</strong> client بر اساس status تصمیم می‌گیرد: در 401 کاربر را به login یا refresh توکن می‌برد؛ در 403 پیام عدم دسترسی نشان می‌دهد؛ در 422 خطاها را کنار فیلدهای فرم نمایش می‌دهد؛ در 409 داده را دوباره می‌خواند. همهٔ 4xxها یعنی retry بدون تغییر درخواست بی‌فایده است، برخلاف 503 یا 429.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-6">
+      <summary>یک قالب استاندارد و یکدست برای پاسخ خطا در API طراحی کنید. RFC 9457 (Problem Details) چه فیلدهایی دارد و چرا استفاده از آن مفید است؟</summary>
+      <div class="answer">
+        <p><strong>اصل:</strong> همهٔ خطاها — validation، احراز هویت، not found، خطای سرور — باید یک ساختار ماشین‌خوان یکسان داشته باشند تا client یک‌بار parser بنویسد.</p>
+        <p><strong>RFC 9457</strong> (جانشین RFC 7807) قالب <code>application/problem+json</code> را تعریف می‌کند:</p>
+        <ul>
+          <li><code>type</code>: URI که نوع خطا را شناسایی می‌کند (ترجیحاً به مستندات اشاره کند)؛ پیش‌فرض <code>about:blank</code>.</li>
+          <li><code>title</code>: خلاصهٔ انسانی ثابت برای آن نوع.</li>
+          <li><code>status</code>: status code HTTP.</li>
+          <li><code>detail</code>: توضیح مخصوص همین رخداد.</li>
+          <li><code>instance</code>: URI این رخداد خاص.</li>
+          <li>فیلدهای اضافه (extension) مثل <code>errors</code> برای خطاهای فیلدها یا <code>trace_id</code>.</li>
+        </ul>
+        <pre><code class="language-json">{
+  "type": "https://api.shop.ir/problems/insufficient-stock",
+  "title": "Insufficient stock",
+  "status": 409,
+  "detail": "Only 2 items of product 15 are available.",
+  "instance": "/v1/orders",
+  "product_id": 15,
+  "available": 2,
+  "trace_id": "01JC8X2M5Q"
+}</code></pre>
+        <p><strong>مزایا:</strong> استاندارد است و ابزارها و کتابخانه‌ها آن را می‌شناسند؛ <code>type</code> پایدار به client اجازه می‌دهد بدون وابستگی به متن پیام (که ممکن است ترجمه یا تغییر کند) منطق بنویسد؛ قابل توسعه است.</p>
+        <p><strong>نکات امنیتی:</strong> در خطاهای 5xx هرگز stack trace، کوئری یا مسیر فایل برنگردانید (<code>APP_DEBUG=false</code>)؛ به‌جایش <code>trace_id</code> بدهید که در لاگ‌ها قابل جستجو باشد. در Laravel این قالب با <code>withExceptions</code> و <code>render</code> در <code>bootstrap/app.php</code> پیاده می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-7">
+      <summary>صفحه‌بندی offset-based و cursor-based را مقایسه کنید. برای فید یک اپ اجتماعی با میلیون‌ها پست کدام را انتخاب می‌کنید و چرا؟</summary>
+      <div class="answer">
+        <p><strong>Offset-based:</strong> <code>?page=500&amp;per_page=20</code> ← <code>LIMIT 20 OFFSET 9980</code>.</p>
+        <ul>
+          <li>مزایا: ساده، امکان پرش به صفحهٔ دلخواه و نمایش تعداد کل صفحات.</li>
+          <li>معایب: دیتابیس باید همهٔ ردیف‌های قبل از offset را اسکن و دور بریزد ← در صفحات عمیق بسیار کند؛ <code>COUNT(*)</code> روی جدول بزرگ گران است؛ با درج پست جدید در حین مرور، آیتم‌ها جابه‌جا شده و <strong>تکراری یا جاافتاده</strong> دیده می‌شوند.</li>
+        </ul>
+        <p><strong>Cursor/Keyset-based:</strong> client یک cursor مبهم (معمولاً base64 از مقدار ستون مرتب‌سازی آخرین آیتم) می‌فرستد ← <code>WHERE (created_at, id) &lt; (?, ?) ORDER BY created_at DESC, id DESC LIMIT 20</code>.</p>
+        <ul>
+          <li>مزایا: با ایندکس مناسب، کارایی <strong>ثابت</strong> در هر عمق؛ پایدار در برابر درج‌های هم‌زمان.</li>
+          <li>معایب: پرش به صفحهٔ N و شمارش کل ممکن نیست؛ ترتیب باید بر ستون(های) یکتا و ایندکس‌دار باشد؛ مرتب‌سازی دلخواه کاربر پیچیده‌تر می‌شود.</li>
+        </ul>
+        <p><strong>انتخاب برای فید:</strong> <strong>Cursor-based</strong>. فید به‌صورت infinite scroll مصرف می‌شود (نیازی به «صفحهٔ ۵۰۰» نیست)، داده دائماً در حال درج است و حجم جدول زیاد است. ترتیب را با ستون ترکیبی <code>(created_at, id)</code> و ایندکس ترکیبی متناظر تعریف می‌کنیم تا ردیف‌های با زمان یکسان گم نشوند.</p>
+        <pre><code class="language-php">Post::query()-&gt;orderByDesc('created_at')-&gt;orderByDesc('id')-&gt;cursorPaginate(20);</code></pre>
+        <p>در همهٔ حالات، <code>per_page</code> باید سقف داشته باشد (مثلاً ۱۰۰) تا client نتواند با <code>per_page=1000000</code> سرور را از کار بیندازد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-8">
+      <summary>روش‌های نسخه‌بندی API را با مزایا و معایب مقایسه کنید. چه تغییری breaking محسوب می‌شود و چگونه یک نسخه را بازنشسته می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>روش‌ها:</strong></p>
+        <ul>
+          <li><strong>URI path</strong> (<code>/v1/orders</code>): رایج‌ترین؛ واضح، قابل‌تست در مرورگر، routing و cache ساده. ایراد نظری: نسخه بخشی از هویت منبع نیست.</li>
+          <li><strong>Query parameter</strong> (<code>?version=2</code>): ساده ولی به‌راحتی فراموش یا حذف می‌شود.</li>
+          <li><strong>Custom header</strong> (<code>Api-Version: 2</code> یا تاریخ‌محور): URI تمیز؛ ولی کمتر قابل‌مشاهده و cache باید <code>Vary</code> داشته باشد.</li>
+          <li><strong>Media type</strong> (<code>Accept: application/vnd.shop.v2+json</code>): نزدیک‌ترین به فلسفهٔ REST (نسخه‌بندی representation)، اما پیچیده‌تر برای مصرف‌کننده.</li>
+        </ul>
+        <p><strong>Breaking:</strong> حذف یا تغییر نام فیلد، تغییر نوع (عدد به رشته) یا معنای فیلد، اجباری کردن پارامتر، تغییر قالب خطا، تغییر URL یا رفتار احراز هویت. <strong>Non-breaking:</strong> افزودن endpoint، فیلد اختیاری در پاسخ یا پارامتر اختیاری (به شرط اینکه clientها فیلدهای ناشناخته را نادیده بگیرند — اصل tolerant reader).</p>
+        <p><strong>بازنشستگی:</strong></p>
+        <ol>
+          <li>اعلام عمومی و مستند مهاجرت؛ انتشار نسخهٔ جدید به‌موازات قدیمی.</li>
+          <li>افزودن هدرهای <code>Deprecation</code> و <code>Sunset</code> (تاریخ خاموشی) به پاسخ‌های نسخهٔ قدیمی و لینک مستندات.</li>
+          <li>پایش ترافیک نسخهٔ قدیمی به تفکیک client و تماس با مصرف‌کنندگان فعال.</li>
+          <li>پس از تاریخ sunset، پاسخ <code>410 Gone</code> با توضیح.</li>
+        </ol>
+        <p><strong>در Laravel:</strong> گروه‌های route با <code>prefix('v1')</code> و controller/Resource/Form Request جدا برای هر نسخه؛ لایهٔ دامنه (Actionها و مدل‌ها) مشترک می‌ماند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-9">
+      <summary>OAuth 2.0 چیست؟ جریان Authorization Code با PKCE را شرح دهید و بگویید PKCE دقیقاً چه حمله‌ای را خنثی می‌کند. Client Credentials در چه شرایطی استفاده می‌شود؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> OAuth 2.0 فریم‌ورکی برای <strong>تفویض دسترسی</strong> است: کاربر (Resource Owner) به یک Client اجازه می‌دهد بدون افشای رمز عبورش، با یک <strong>access token</strong> محدود به <strong>scope</strong> مشخص، به منابعش روی Resource Server دسترسی داشته باشد. توکن را Authorization Server صادر می‌کند. OAuth خودش پروتکل احراز هویت نیست؛ <strong>OpenID Connect</strong> با افزودن <code>id_token</code> این لایه را اضافه می‌کند.</p>
+        <p><strong>Authorization Code + PKCE:</strong></p>
+        <ol>
+          <li>client یک <code>code_verifier</code> تصادفی می‌سازد و <code>code_challenge = BASE64URL(SHA256(verifier))</code> را حساب می‌کند.</li>
+          <li>کاربر به <code>/authorize</code> هدایت می‌شود با <code>client_id</code>، <code>redirect_uri</code>، <code>scope</code>، <code>state</code> و <code>code_challenge</code>.</li>
+          <li>کاربر login و رضایت می‌دهد؛ Authorization Server با یک <strong>code</strong> کوتاه‌عمر و یک‌بارمصرف به <code>redirect_uri</code> برمی‌گرداند. client مقدار <code>state</code> را بررسی می‌کند (ضد CSRF).</li>
+          <li>client در کانال پشتی، code را همراه <code>code_verifier</code> به <code>/token</code> می‌فرستد.</li>
+          <li>سرور بررسی می‌کند هش verifier با challenge برابر باشد و access token (و refresh token) صادر می‌کند.</li>
+        </ol>
+        <p><strong>حملهٔ خنثی‌شده:</strong> <strong>Authorization code interception</strong> — در اپ موبایل یا SPA، اپ مخرب ممکن است با ثبت همان custom URL scheme یا از طریق لاگ‌ها، code را رهگیری کند. بدون PKCE و در public clientها که secret ندارند، مهاجم می‌توانست code را با توکن عوض کند؛ با PKCE بدون داشتن <code>code_verifier</code> (که هرگز از دستگاه خارج نشده) تبادل شکست می‌خورد.</p>
+        <p><strong>Client Credentials:</strong> ارتباط <strong>ماشین به ماشین</strong> بدون حضور کاربر؛ سرویس با <code>client_id</code> و <code>client_secret</code> مستقیماً توکن می‌گیرد. مثال: سرویس گزارش‌گیری که شبانه API سرویس فاکتور را صدا می‌زند.</p>
+        <p><strong>منسوخ‌ها:</strong> Implicit flow و Password grant به دلیل افشای توکن و دریافت مستقیم رمز کاربر توصیه نمی‌شوند. در Laravel، <strong>Passport</strong> این grantها را پیاده‌سازی می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-10">
+      <summary>ساختار JWT را توضیح دهید. مهم‌ترین اشتباهات امنیتی در استفاده از JWT چیست و مشکل لغو (revocation) توکن را چگونه حل می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>ساختار:</strong> سه بخش base64url که با نقطه جدا شده‌اند: <code>header.payload.signature</code>.</p>
+        <ul>
+          <li><strong>Header:</strong> الگوریتم (<code>alg</code>: HS256، RS256، ES256) و نوع.</li>
+          <li><strong>Payload:</strong> claimها: <code>iss</code>، <code>sub</code>، <code>aud</code>، <code>exp</code>، <code>iat</code>، <code>nbf</code>، <code>jti</code> و claimهای سفارشی مثل scope.</li>
+          <li><strong>Signature:</strong> امضای <code>header.payload</code> با secret (HMAC) یا کلید خصوصی (RSA/ECDSA). امضا <strong>یکپارچگی و اصالت</strong> را تضمین می‌کند، نه محرمانگی.</li>
+        </ul>
+        <p><strong>اشتباهات رایج:</strong></p>
+        <ul>
+          <li>قرار دادن اطلاعات حساس در payload با این تصور که رمز شده است؛ payload فقط encode شده و قابل خواندن است.</li>
+          <li>پذیرفتن <code>alg: none</code> یا <strong>algorithm confusion</strong> (استفاده از کلید عمومی RS256 به‌عنوان secret HS256). الگوریتم مورد انتظار را در سرور ثابت کنید.</li>
+          <li>بررسی نکردن <code>exp</code>، <code>aud</code>، <code>iss</code>.</li>
+          <li>secret ضعیف در HS256 (قابل brute-force آفلاین).</li>
+          <li>عمر طولانی access token (روزها یا ماه‌ها).</li>
+          <li>ذخیره در <code>localStorage</code> که با هر XSS قابل سرقت است.</li>
+        </ul>
+        <p><strong>مسئلهٔ revocation:</strong> JWT self-contained است و سرور بدون lookup آن را معتبر می‌داند؛ پس logout یا مسدود کردن کاربر فوراً اثر نمی‌کند. راه‌حل‌ها:</p>
+        <ul>
+          <li><strong>access token کوتاه‌عمر</strong> (۵–۱۵ دقیقه) + <strong>refresh token</strong> stateful با rotation که در سرور قابل لغو است.</li>
+          <li><strong>Denylist</strong> بر اساس <code>jti</code> در Redis تا زمان انقضا (بخشی از مزیت stateless از دست می‌رود).</li>
+          <li><strong>Token version</strong> در رکورد کاربر و claim متناظر؛ افزایش نسخه همهٔ توکن‌های قبلی را باطل می‌کند.</li>
+        </ul>
+        <p><strong>نکته:</strong> اگر یک اپلیکیشن monolith دارید، توکن opaque (مثل Sanctum) که در دیتابیس lookup می‌شود، ساده‌تر و قابل لغو فوری است؛ JWT در سیستم‌های توزیع‌شده که سرویس‌ها می‌خواهند بدون تماس با Authorization Server توکن را verify کنند ارزش دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-11">
+      <summary>Laravel Sanctum و Passport را مقایسه کنید. برای (الف) SPA و اپ موبایل خود شرکت و (ب) پلتفرمی که می‌خواهد به اپ‌های شخص ثالث اجازهٔ دسترسی به دادهٔ کاربران بدهد، کدام را انتخاب می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>Sanctum:</strong> پکیج سبک احراز هویت API با دو قابلیت:</p>
+        <ul>
+          <li><strong>API tokens:</strong> توکن‌های opaque که هش آن‌ها در جدول <code>personal_access_tokens</code> ذخیره می‌شود، با <strong>abilities</strong> (شبیه scope) و انقضا؛ با <code>$user-&gt;createToken()</code> صادر و با <code>auth:sanctum</code> بررسی می‌شوند. لغو فوری با حذف رکورد.</li>
+          <li><strong>SPA authentication:</strong> برای SPA first-party روی همان دامنهٔ اصلی (مثلاً <code>app.shop.ir</code> و <code>api.shop.ir</code>)، از session cookie و محافظت CSRF (دریافت <code>/sanctum/csrf-cookie</code>) استفاده می‌کند؛ هیچ توکنی در JS ذخیره نمی‌شود ← مقاوم در برابر سرقت توکن با XSS.</li>
+        </ul>
+        <p><strong>Passport:</strong> پیاده‌سازی کامل <strong>OAuth 2.0 Authorization Server</strong>: ثبت client، صفحهٔ رضایت، grantهای authorization code + PKCE، client credentials، refresh token و device؛ access tokenها به‌صورت JWT امضاشده.</p>
+        <p><strong>انتخاب:</strong></p>
+        <ul>
+          <li><strong>(الف)</strong> <strong>Sanctum</strong>: SPA با cookie-based authentication و اپ موبایل با API token (ترجیحاً با انقضا و ذخیره در Keychain/Keystore). نیازی به پیچیدگی OAuth نیست چون clientها متعلق به خود شما هستند.</li>
+          <li><strong>(ب)</strong> <strong>Passport</strong>: اپ‌های شخص ثالث نباید رمز کاربران را ببینند؛ کاربر باید از طریق صفحهٔ رضایت با scopeهای مشخص دسترسی بدهد و بتواند آن را لغو کند — دقیقاً سناریوی OAuth 2.0 با Authorization Code + PKCE. برای ارتباط سرور به سرور شرکا هم client credentials.</li>
+        </ul>
+        <p><strong>نکته:</strong> اگر به SSO سازمانی نیاز دارید، ممکن است یک Identity Provider خارجی (Keycloak، Auth0 و …) با OpenID Connect انتخاب بهتری از ساختن Authorization Server باشد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-12">
+      <summary>یک سناریو: کاربران اپ موبایل گزارش می‌دهند گاهی برای یک خرید دو بار پول از حسابشان کسر شده است. علت محتمل چیست و چه راه‌حلی در سطح API پیاده می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>علت محتمل:</strong> <code>POST /payments</code> یا <code>POST /orders</code> idempotent نیست. درخواست به سرور رسیده و پردازش شده، اما پاسخ به دلیل timeout یا قطعی شبکهٔ موبایل به client نرسیده است؛ client (یا کاربر با زدن دوبارهٔ دکمه، یا کتابخانهٔ HTTP با retry خودکار) همان درخواست را دوباره فرستاده و سرور آن را عملیات جدیدی تلقی کرده است.</p>
+        <p><strong>راه‌حل: Idempotency Key</strong></p>
+        <ol>
+          <li>client برای هر <em>قصد خرید</em> یک UUID تولید و در هدر <code>Idempotency-Key</code> می‌فرستد و در retryها همان کلید را تکرار می‌کند.</li>
+          <li>سرور (در middleware) کلید را در محدودهٔ کاربر بررسی می‌کند: اگر جدید است، به‌صورت <strong>اتمیک</strong> (unique constraint یا lock در Redis) آن را رزرو، عملیات را اجرا و پاسخ (status و body) را همراه هش بدنهٔ درخواست ذخیره می‌کند.</li>
+          <li>درخواست تکراری با همان کلید و بدنه: همان پاسخ ذخیره‌شده بدون اجرای مجدد برگردانده می‌شود.</li>
+          <li>درخواست هم‌زمان با کلیدی که در حال پردازش است: <code>409</code>؛ کلید یکسان با بدنهٔ متفاوت: <code>422</code>.</li>
+          <li>کلیدها پس از مثلاً ۲۴ ساعت منقضی می‌شوند؛ خطاهای 5xx ذخیره نمی‌شوند تا retry ممکن باشد.</li>
+        </ol>
+        <p><strong>لایه‌های تکمیلی:</strong></p>
+        <ul>
+          <li><strong>Unique constraint</strong> در دیتابیس روی شناسهٔ تراکنش/کلید به‌عنوان دفاع نهایی.</li>
+          <li>اجرای عملیات در <strong>تراکنش دیتابیس</strong> و در صورت نیاز <code>lockForUpdate</code> روی سفارش.</li>
+          <li>ارسال کلید idempotency به درگاه پرداخت (اگر پشتیبانی کند) و تطبیق با callback درگاه.</li>
+          <li>در UI غیرفعال کردن دکمه پس از کلیک — مفید ولی کافی نیست.</li>
+        </ul>
+        <p>این الگو یک POST ناامن را برای retry عملاً idempotent می‌کند — همان کاری که Stripe و بسیاری از APIهای پرداخت انجام می‌دهند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-13">
+      <summary>Caching در REST API را توضیح دهید: نقش Cache-Control، ETag و Last-Modified چیست؟ تفاوت <code>no-cache</code> و <code>no-store</code> و نحوهٔ جلوگیری از lost update با If-Match را بنویسید.</summary>
+      <div class="answer">
+        <p><strong>دو مکانیزم اصلی:</strong></p>
+        <ul>
+          <li><strong>Expiration (تازگی):</strong> <code>Cache-Control: max-age=60</code> یعنی تا ۶۰ ثانیه بدون تماس با سرور از cache استفاده کن. <code>s-maxage</code> برای CDN، <code>public/private</code> برای مشخص کردن cache مشترک یا فقط مرورگر.</li>
+          <li><strong>Validation (اعتبارسنجی):</strong> پس از stale شدن، client با درخواست شرطی می‌پرسد «تغییر کرده؟». سرور در پاسخ اول <code>ETag: "v7"</code> (شناسهٔ نسخه) یا <code>Last-Modified</code> می‌فرستد؛ client بعداً <code>If-None-Match: "v7"</code> یا <code>If-Modified-Since</code> می‌فرستد و اگر تغییری نباشد، <code>304 Not Modified</code> بدون بدنه دریافت می‌کند.</li>
+        </ul>
+        <p><strong>no-cache در برابر no-store:</strong> <code>no-cache</code> یعنی ذخیره مجاز است اما <em>قبل از هر استفاده باید با سرور revalidate شود</em> (معمولاً با ETag)؛ <code>no-store</code> یعنی هیچ‌جا ذخیره نشود — برای اطلاعات حساس مثل موجودی حساب یا توکن. پاسخ‌های شخصی باید حداقل <code>private</code> باشند تا CDN آن‌ها را به کاربر دیگر ندهد.</p>
+        <p><strong>ETag در برابر Last-Modified:</strong> Last-Modified دقت ثانیه دارد و به ساعت سرور وابسته است؛ ETag دقیق‌تر است و می‌تواند هش محتوا یا نسخهٔ رکورد باشد.</p>
+        <p><strong>Optimistic concurrency:</strong></p>
+        <pre><code class="language-http">GET /products/15        → 200, ETag: "v7"
+PUT /products/15
+If-Match: "v7"          → 200 (اگر هنوز v7 است) یا 412 Precondition Failed</code></pre>
+        <p>دو ادمین هم‌زمان محصول را ویرایش می‌کنند؛ اولی موفق می‌شود و نسخه به v8 می‌رسد؛ دومی با <code>If-Match: "v7"</code> پاسخ <code>412</code> می‌گیرد و باید دادهٔ تازه را بخواند — بدون این مکانیزم تغییرات اولی بی‌صدا بازنویسی می‌شد (lost update).</p>
+        <p><strong>در Laravel:</strong> middleware <code>cache.headers</code> (مثلاً <code>public;max_age=60;etag</code>)، یا محاسبهٔ دستی ETag از <code>updated_at</code>/ستون version و بررسی <code>$request-&gt;getETags()</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-14">
+      <summary>CORS چیست و چرا وجود دارد؟ یک سناریو: frontend روی <code>https://app.shop.ir</code> هنگام فراخوانی <code>https://api.shop.ir</code> خطای CORS می‌گیرد اما همان درخواست در Postman کار می‌کند. توضیح دهید و رفع کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> مرورگر با <strong>Same-Origin Policy</strong> اجازه نمی‌دهد اسکریپت یک origin (ترکیب scheme + host + port) پاسخ درخواست به origin دیگر را بخواند. <strong>CORS</strong> مکانیزمی است که سرور با هدرهای <code>Access-Control-Allow-*</code> صراحتاً اجازهٔ دسترسی originهای مشخص را اعلام کند. هدف: جلوگیری از اینکه سایت مخرب با استفاده از cookieهای کاربر، داده‌های او را از سایت دیگری بخواند.</p>
+        <p><strong>چرا Postman کار می‌کند؟</strong> CORS را <strong>فقط مرورگر</strong> اعمال می‌کند. Postman و curl مرورگر نیستند و این سیاست را ندارند. پس CORS ابزار امنیتی سمت سرور برای جلوگیری از دسترسی نیست.</p>
+        <p><strong>علل محتمل:</strong></p>
+        <ul>
+          <li>origin frontend در <code>allowed_origins</code> سرور نیست.</li>
+          <li>درخواست به دلیل هدر <code>Authorization</code>، <code>Content-Type: application/json</code> یا متد PUT/DELETE، <strong>preflight</strong> (<code>OPTIONS</code>) می‌فرستد و سرور به OPTIONS پاسخ درست نمی‌دهد (مثلاً middleware احراز هویت، OPTIONS را 401 می‌کند یا route آن وجود ندارد).</li>
+          <li>ارسال cookie (<code>credentials: 'include'</code>) در حالی که سرور <code>Allow-Origin: *</code> برمی‌گرداند یا <code>Allow-Credentials: true</code> نمی‌دهد.</li>
+          <li>خطای 500 در سرور که پاسخش هدرهای CORS ندارد و مرورگر آن را به‌عنوان خطای CORS نشان می‌دهد.</li>
+        </ul>
+        <p><strong>رفع در Laravel:</strong> در <code>config/cors.php</code>: <code>'paths' =&gt; ['api/*', 'sanctum/csrf-cookie']</code>، <code>'allowed_origins' =&gt; ['https://app.shop.ir']</code>، و در صورت استفاده از cookie، <code>'supports_credentials' =&gt; true</code>. middleware <code>HandleCors</code> به‌طور پیش‌فرض در پشتهٔ global است و preflight را پاسخ می‌دهد. برای عیب‌یابی، تب Network مرورگر را برای درخواست OPTIONS و هدرهای پاسخ بررسی کنید.</p>
+        <p><strong>هشدار:</strong> «رفع» با <code>*</code> برای همه‌چیز، به‌خصوص همراه credentials، ناامن است؛ از allow-list دقیق استفاده کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-15">
+      <summary>کد زیر چه مشکلاتی دارد؟ آن را بازنویسی کنید.
+        <code>public function update(Request $r, $id) { $o = Order::find($id); $o-&gt;update($r-&gt;all()); return response()-&gt;json(['success' =&gt; true, 'data' =&gt; $o], 200); }</code></summary>
+      <div class="answer">
+        <p><strong>مشکلات:</strong></p>
+        <ol>
+          <li><strong>Mass assignment:</strong> <code>$r-&gt;all()</code> هر فیلدی را می‌پذیرد؛ مهاجم می‌تواند <code>status</code>، <code>total</code> یا <code>user_id</code> را تغییر دهد (اگر <code>$fillable</code>/<code>$guarded</code> درست نباشد).</li>
+          <li><strong>بدون validation:</strong> داده‌های نامعتبر مستقیم به دیتابیس می‌روند.</li>
+          <li><strong>BOLA/IDOR:</strong> هیچ بررسی مالکیت یا مجوزی وجود ندارد؛ هر کاربر می‌تواند سفارش دیگران را با تغییر <code>$id</code> ویرایش کند.</li>
+          <li><strong>Null pointer:</strong> اگر سفارش وجود نداشته باشد، <code>find</code> مقدار null برمی‌گرداند و فراخوانی <code>update</code> روی null خطای 500 می‌دهد، به‌جای 404.</li>
+          <li><strong>افشای داده:</strong> برگرداندن مستقیم مدل همهٔ ستون‌ها (شاید فیلدهای داخلی) را لو می‌دهد و قرارداد خروجی را به schema دیتابیس گره می‌زند.</li>
+          <li><strong>قالب پاسخ:</strong> wrapper <code>success: true</code> با status ثابت 200 الگوی ضعیفی است؛ موفقیت/شکست را status code بیان می‌کند.</li>
+        </ol>
+        <p><strong>بازنویسی:</strong></p>
+        <pre><code class="language-php">&lt;?php
+// routes/api.php: Route::apiResource('orders', OrderController::class)-&gt;middleware('auth:sanctum');
+
+class UpdateOrderRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return $this-&gt;user()-&gt;can('update', $this-&gt;route('order'));
+    }
+
+    public function rules(): array
+    {
+        return [
+            'shipping_address_id' =&gt; ['sometimes', 'integer',
+                Rule::exists('addresses', 'id')-&gt;where('user_id', $this-&gt;user()-&gt;id)],
+            'note' =&gt; ['sometimes', 'nullable', 'string', 'max:500'],
+        ];
+    }
+}
+
+public function update(UpdateOrderRequest $request, Order $order): OrderResource
+{
+    $order-&gt;update($request-&gt;validated());   // فقط فیلدهای مجاز
+    return new OrderResource($order);         // 200 با قالب کنترل‌شده
+}</code></pre>
+        <p>Route model binding برای سفارش ناموجود خودکار <code>404</code>، Policy در <code>authorize()</code> برای عدم مالکیت <code>403</code> و Form Request برای داده نامعتبر <code>422</code> برمی‌گرداند. اگر سفارش در وضعیت غیرقابل‌ویرایش است (مثلاً ارسال‌شده)، Policy یا منطق دامنه باید <code>409</code> بدهد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-16">
+      <summary>Rate limiting چیست و چرا لازم است؟ الگوریتم‌های رایج را مقایسه کنید و نحوهٔ پیاده‌سازی و اطلاع‌رسانی آن به client را در Laravel توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> محدود کردن تعداد درخواست‌های یک شناسه (کاربر، API key، IP یا ترکیب آن‌ها) در یک بازهٔ زمانی.</p>
+        <p><strong>چرا؟</strong> جلوگیری از brute-force روی login و OTP، کاهش اثر DoS و scraping، تقسیم عادلانهٔ منابع بین مشتریان، کنترل هزینه (مثلاً APIهای پولی پشت سرویس) و پیاده‌سازی پلن‌های تجاری (Free: ۶۰/دقیقه، Pro: ۱۰۰۰/دقیقه).</p>
+        <p><strong>الگوریتم‌ها:</strong></p>
+        <ul>
+          <li><strong>Fixed window:</strong> شمارنده در هر دقیقهٔ تقویمی؛ ساده ولی در مرز پنجره‌ها تا دو برابر سقف اجازه می‌دهد.</li>
+          <li><strong>Sliding window:</strong> پنجرهٔ متحرک؛ دقیق‌تر با هزینهٔ حافظه/محاسبهٔ بیشتر.</li>
+          <li><strong>Token bucket:</strong> سطلی با ظرفیت B که با نرخ R پر می‌شود؛ اجازهٔ burst کوتاه با میانگین کنترل‌شده — رایج در API gatewayها.</li>
+          <li><strong>Leaky bucket:</strong> خروجی با نرخ ثابت؛ هموارسازی ترافیک.</li>
+        </ul>
+        <p><strong>اطلاع‌رسانی:</strong> پاسخ <code>429 Too Many Requests</code> با هدر <code>Retry-After</code> و معمولاً <code>X-RateLimit-Limit</code> و <code>X-RateLimit-Remaining</code>. client باید با exponential backoff و jitter پاسخ دهد.</p>
+        <p><strong>Laravel:</strong></p>
+        <pre><code class="language-php">RateLimiter::for('api', fn (Request $r) =&gt; $r-&gt;user()
+    ? Limit::perMinute($r-&gt;user()-&gt;isPro() ? 1000 : 60)-&gt;by($r-&gt;user()-&gt;id)
+    : Limit::perMinute(20)-&gt;by($r-&gt;ip()));
+
+Route::middleware(['auth:sanctum', 'throttle:api'])-&gt;group(/* ... */);</code></pre>
+        <p>middleware <code>throttle</code> هدرها و پاسخ 429 را خودکار تولید می‌کند. در محیط چندسروری، cache store باید مشترک باشد (Redis). نکته: محدودیت فقط بر اساس IP برای کاربرانی که پشت NAT مشترک (شبکهٔ شرکت یا اپراتور موبایل) هستند، مشکل‌ساز است؛ بهتر است برای کاربران احراز شده بر اساس user ID محدود کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-17">
+      <summary>REST، GraphQL و gRPC را مقایسه کنید. برای یک اپ موبایل با صفحاتی که داده‌های متنوعی از چند منبع نیاز دارند، کدام را پیشنهاد می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>REST:</strong> منبع‌محور با متدهای HTTP، معمولاً JSON. مزایا: سادگی، HTTP caching و CDN، ابزارهای فراوان، status codeهای معنادار. معایب: <strong>over-fetching</strong> (فیلدهای اضافه) و <strong>under-fetching</strong> (چند round-trip برای جمع کردن داده‌های مرتبط).</p>
+        <p><strong>GraphQL:</strong> یک endpoint با schema تایپ‌دار؛ client دقیقاً فیلدها و روابط لازم را در یک کوئری می‌خواهد. مزایا: حل over/under-fetching، تکامل schema بدون نسخه‌بندی، introspection. معایب: HTTP caching دشوار (POST به یک URL)، خطر <strong>N+1</strong> در resolverها (نیاز به DataLoader/batching)، کوئری‌های پرهزینه (نیاز به محدودیت عمق و پیچیدگی)، authorization در سطح فیلد، و معمولاً 200 حتی برای خطا.</p>
+        <p><strong>gRPC:</strong> RPC روی HTTP/2 با protobuf باینری و قرارداد سخت؛ کارایی بالا و streaming. معایب: پشتیبانی محدود مرورگر، دیباگ سخت‌تر، نبود HTTP cache. مناسب ارتباط داخلی سرویس‌ها.</p>
+        <p><strong>پیشنهاد برای اپ موبایل:</strong> دو گزینهٔ معقول:</p>
+        <ul>
+          <li><strong>GraphQL</strong> اگر صفحات متنوع و نیازهای داده‌ای سریعاً تغییر می‌کنند و چند client (iOS، Android، وب) با نیازهای متفاوت وجود دارد؛ کاهش round-trip روی شبکهٔ موبایل ارزشمند است.</li>
+          <li>یا <strong>REST با الگوی BFF</strong> (Backend for Frontend): endpointهای مخصوص صفحه که داده‌های تجمیعی برمی‌گردانند، به‌همراه <code>?include=</code> و sparse fieldsets؛ سادگی و cache‌پذیری REST حفظ می‌شود.</li>
+        </ul>
+        <p>ارتباط بین سرویس‌های داخلی پشت آن می‌تواند gRPC باشد. انتخاب نهایی به مهارت تیم، نیاز به cache و پیچیدگی قابل‌پذیرش بستگی دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-rest-api-18">
+      <summary>یک endpoint برای ثبت سفارش طراحی کنید: URI، متد، بدنهٔ درخواست، پاسخ‌های موفق و خطا، و اجزای پیاده‌سازی آن در Laravel را مشخص کنید. اگر پردازش سفارش طولانی باشد چه تغییری می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>قرارداد:</strong></p>
+        <pre><code class="language-http">POST /api/v1/orders
+Authorization: Bearer ...
+Idempotency-Key: 6f1c2e0a-...
+Content-Type: application/json
+Accept: application/json
+
+{"shipping_address_id": 12, "items": [{"product_id": 15, "quantity": 2}]}</code></pre>
+        <ul>
+          <li><strong>201 Created</strong> + <code>Location: /api/v1/orders/981</code> + بدنهٔ OrderResource.</li>
+          <li><strong>401</strong> بدون توکن؛ <strong>403</strong> اگر کاربر مجاز به خرید نیست (مثلاً حساب مسدود).</li>
+          <li><strong>422</strong> برای خطای validation (Problem Details با <code>errors</code>).</li>
+          <li><strong>409</strong> برای موجودی ناکافی یا کلید idempotency در حال پردازش.</li>
+          <li><strong>429</strong> عبور از rate limit؛ <strong>415</strong> اگر Content-Type JSON نیست.</li>
+        </ul>
+        <p><strong>اجزای Laravel:</strong></p>
+        <ul>
+          <li>Route: <code>Route::apiResource('orders', OrderController::class)</code> در گروه <code>prefix('v1')</code> با middlewareهای <code>auth:sanctum</code>، <code>throttle:api</code> و middleware سفارشی idempotency.</li>
+          <li><code>StoreOrderRequest</code>: قوانین validation و <code>authorize()</code> با Policy.</li>
+          <li>یک <strong>Action/Service</strong> (<code>PlaceOrder</code>) که در <code>DB::transaction</code> موجودی را با <code>lockForUpdate</code> بررسی و کم می‌کند، سفارش و آیتم‌ها را می‌سازد و event <code>OrderPlaced</code> را dispatch می‌کند (ارسال ایمیل و ... در listenerهای queue‌شده).</li>
+          <li><code>OrderResource</code> برای خروجی؛ رندر یکدست خطاها در <code>bootstrap/app.php</code>.</li>
+          <li>تست Feature با <code>postJson</code> و <code>assertCreated</code>، <code>assertUnprocessable</code>.</li>
+        </ul>
+        <p><strong>پردازش طولانی (مثلاً هماهنگی با انبار یا تأیید تقلب):</strong> مدل <strong>asynchronous</strong> با <code>202 Accepted</code>:</p>
+        <pre><code class="language-http">HTTP/1.1 202 Accepted
+Location: /api/v1/orders/981
+{"id": 981, "status": "processing"}</code></pre>
+        <p>سفارش با وضعیت <code>processing</code> ثبت و یک Job در صف قرار می‌گیرد. client با polling روی <code>GET /orders/981</code> (همراه <code>Retry-After</code>)، یا از طریق WebSocket/SSE یا webhook از نتیجه مطلع می‌شود. این کار timeout در لایه‌های proxy را حذف می‌کند و API را در برابر بار ناگهانی مقاوم‌تر می‌کند.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>REST</h3>
+      <ul>
+        <li>سبک معماری (Fielding)، نه پروتکل.</li>
+        <li>۶ قید: Client-Server، Stateless، Cacheable، Uniform Interface، Layered، Code on Demand (اختیاری).</li>
+        <li>Uniform Interface: URI منبع، representation، self-descriptive، HATEOAS.</li>
+        <li>Stateless = بدون session state در سرور ⇒ scale افقی.</li>
+        <li>Richardson: 0 (POX) ← 1 (Resources) ← 2 (Verbs) ← 3 (Hypermedia).</li>
+      </ul>
+      <h3>URI</h3>
+      <ul>
+        <li>اسم جمع، kebab-case، بدون فعل و پسوند.</li>
+        <li>Nesting یک سطح؛ فیلتر/sort/page در query.</li>
+        <li><code>?filter[status]=paid&amp;sort=-created_at&amp;fields[users]=id,name&amp;include=author</code></li>
+      </ul>
+      <h3>متدها</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>متد</th><th>Safe</th><th>Idem.</th></tr></thead>
+        <tbody>
+          <tr><td>GET/HEAD/OPTIONS</td><td>✓</td><td>✓</td></tr>
+          <tr><td>PUT/DELETE</td><td>✗</td><td>✓</td></tr>
+          <tr><td>POST/PATCH</td><td>✗</td><td>✗</td></tr>
+        </tbody>
+      </table></div>
+      <ul>
+        <li>PUT = جایگزینی کامل؛ PATCH = جزئی (Merge Patch / JSON Patch)؛ POST = ایجاد، سرور ID می‌دهد.</li>
+      </ul>
+      <h3>Status</h3>
+      <ul>
+        <li>200 OK · 201 Created + Location · 202 Accepted (async) · 204 No Content.</li>
+        <li>301/308 دائمی · 302/307 موقت (307/308 متد را حفظ می‌کنند) · 304 Not Modified.</li>
+        <li>400 بدشکل · 401 احراز نشده · 403 مجوز ندارد · 404 · 405 + Allow · 409 تعارض وضعیت · 412 If-Match شکست · 415 Content-Type · 422 validation · 429 + Retry-After.</li>
+        <li>500 باگ · 502 upstream بد · 503 در دسترس نیست · 504 upstream timeout.</li>
+      </ul>
+      <h3>خطا</h3>
+      <ul>
+        <li>RFC 9457 · <code>application/problem+json</code> · type، title، status، detail، instance + extensions.</li>
+        <li>بدون stack trace؛ trace_id بدهید.</li>
+      </ul>
+      <h3>صفحه‌بندی</h3>
+      <ul>
+        <li>Offset: پرش به صفحه، کند در عمق، ناپایدار.</li>
+        <li>Cursor: ثابت و پایدار، بدون پرش؛ ORDER BY یکتا + ایندکس.</li>
+        <li>Laravel: <code>paginate</code>، <code>simplePaginate</code>، <code>cursorPaginate</code>؛ سقف per_page.</li>
+      </ul>
+      <h3>نسخه‌بندی</h3>
+      <ul>
+        <li>URI (رایج) · Query · Header · Media type (RESTfulترین).</li>
+        <li>Breaking: حذف/تغییر نام/نوع فیلد، اجباری کردن پارامتر.</li>
+        <li>بازنشستگی: Deprecation، Sunset، 410 Gone.</li>
+      </ul>
+      <h3>Auth</h3>
+      <ul>
+        <li>401 = authentication، 403 = authorization.</li>
+        <li>OAuth 2.0 = delegated authorization؛ OIDC = احراز هویت.</li>
+        <li>Auth Code + PKCE (کاربرمحور)، Client Credentials (M2M)؛ Implicit و Password منسوخ.</li>
+        <li>PKCE ضد code interception؛ state ضد CSRF.</li>
+        <li>JWT = header.payload.signature؛ امضا شده نه رمز شده؛ alg را ثابت کنید؛ exp/aud/iss؛ لغو سخت ⇒ عمر کوتاه + refresh rotation.</li>
+        <li>Sanctum: token opaque + SPA cookie؛ Passport: OAuth2 server کامل.</li>
+        <li>BOLA/IDOR: همیشه مالکیت شیء را چک کنید (Policy).</li>
+      </ul>
+      <h3>عملیاتی</h3>
+      <ul>
+        <li>Rate limit: fixed/sliding window، token/leaky bucket؛ 429 + Retry-After؛ Redis مشترک.</li>
+        <li>Cache-Control: max-age، s-maxage، private/public، no-cache (revalidate)، no-store (هرگز).</li>
+        <li>ETag + If-None-Match ⇒ 304؛ If-Match ⇒ 412 (ضد lost update).</li>
+        <li>Idempotency-Key برای POST: ذخیرهٔ اتمیک پاسخ، 409 در حال پردازش، 422 بدنهٔ متفاوت.</li>
+        <li>Content negotiation: Accept/Content-Type، 406/415، Vary.</li>
+        <li>CORS را مرورگر اعمال می‌کند؛ preflight OPTIONS؛ <code>*</code> با credentials ممنوع.</li>
+        <li>OpenAPI 3.x: قرارداد ماشین‌خوان؛ design-first در برابر code-first.</li>
+      </ul>
+      <h3>Laravel</h3>
+      <ul>
+        <li><code>php artisan install:api</code> · <code>Route::apiResource</code> (۵ مسیر) · <code>-&gt;shallow()</code>.</li>
+        <li>Form Request: <code>rules()</code> ⇒ 422، <code>authorize()</code> ⇒ 403؛ فقط <code>validated()</code>.</li>
+        <li>API Resource: قرارداد خروجی، <code>whenLoaded</code>.</li>
+        <li><code>201</code> با <code>-&gt;setStatusCode(201)</code> + Location؛ <code>response()-&gt;noContent()</code> ⇒ 204.</li>
+        <li>خطاها: <code>withExceptions</code> + <code>render</code> + <code>shouldRenderJsonWhen</code>.</li>
+        <li><code>throttle</code>، <code>auth:sanctum</code>، <code>abilities:</code>، <code>cache.headers</code>.</li>
+      </ul>
+      <h3>مقایسه</h3>
+      <ul>
+        <li>REST: عمومی، cache‌پذیر · GraphQL: دادهٔ انعطاف‌پذیر، N+1 و cache سخت · gRPC: داخلی، سریع، streaming.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

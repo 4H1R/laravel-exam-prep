@@ -1,0 +1,2047 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Design Patterns — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="design-patterns">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Design Patterns</h1>
+    <p class="lead">الگوهای طراحی GoF (Creational، Structural، Behavioral) و الگوهای معماری رایج در اپلیکیشن‌های PHP — هر کدام با هدف، مسئله، پیاده‌سازی PHP 8، مزایا و معایب و جایی که Laravel از آن استفاده می‌کند؛ به‌علاوهٔ بحث‌های مهم مثل Facade لاراول در برابر GoF، Repository، Service Locator و Active Record در برابر Data Mapper.</p>
+  </header>
+
+  <section class="lesson" id="intro" data-title="الگوی طراحی چیست">
+    <h2>الگوی طراحی چیست</h2>
+    <p><strong>Design Pattern</strong> یک <strong>راه‌حل عمومی، اثبات‌شده و قابل استفادهٔ مجدد</strong> برای یک <strong>مسئلهٔ تکرارشونده</strong> در طراحی نرم‌افزار است. الگو کد آماده نیست؛ یک «قالب» یا «ایده» است که باید با شرایط مسئله تطبیق داده شود. کتاب <em>Design Patterns: Elements of Reusable Object-Oriented Software</em> (1994) از چهار نویسنده معروف به <strong>Gang of Four (GoF)</strong>، 23 الگو را در سه دسته معرفی کرد.</p>
+    <p>هر الگو چهار جزء اصلی دارد: <strong>نام</strong> (واژگان مشترک تیم)، <strong>مسئله</strong> (چه زمانی کاربرد دارد)، <strong>راه‌حل</strong> (ساختار کلاس‌ها و روابطشان) و <strong>پیامدها</strong> (trade-offها).</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دسته</th><th>دغدغه</th><th>الگوهای GoF</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Creational</strong></td><td>چگونه object ساخته شود؛ جدا کردن کد استفاده‌کننده از جزئیات ساخت</td><td>Singleton، Factory Method، Abstract Factory، Builder، Prototype</td></tr>
+        <tr><td><strong>Structural</strong></td><td>چگونه کلاس‌ها و objectها ترکیب شوند تا ساختار بزرگ‌تر بسازند</td><td>Adapter، Bridge، Composite، Decorator، Facade، Flyweight، Proxy</td></tr>
+        <tr><td><strong>Behavioral</strong></td><td>تقسیم مسئولیت و نحوهٔ ارتباط بین objectها</td><td>Chain of Responsibility، Command، Interpreter، Iterator، Mediator، Memento، Observer، State، Strategy، Template Method، Visitor</td></tr>
+      </tbody>
+    </table></div>
+    <p>علاوه بر GoF، الگوهای <strong>معماری/Enterprise</strong> (از کتاب Martin Fowler، <em>Patterns of Enterprise Application Architecture</em>) مثل MVC، Repository، Service Layer، Active Record، Data Mapper، DTO و Unit of Work در توسعهٔ بک‌اند بسیار مهم‌اند.</p>
+
+    <h3>اصول پایه‌ای که الگوها از آن‌ها پیروی می‌کنند</h3>
+    <ul>
+      <li><strong>Program to an interface, not an implementation</strong>: وابستگی به abstraction.</li>
+      <li><strong>Favor composition over inheritance</strong>: ترکیب objectها انعطاف بیشتری از ارث‌بری دارد (Strategy، Decorator).</li>
+      <li><strong>Encapsulate what varies</strong>: بخشی که تغییر می‌کند را جدا کنید.</li>
+      <li><strong>SOLID</strong>: به‌ویژه Open/Closed (افزودن رفتار بدون تغییر کد موجود) و Dependency Inversion.</li>
+    </ul>
+
+    <h3>الگو کِی کمک می‌کند و کِی over-engineering است؟</h3>
+    <div class="grid-2">
+      <div class="card"><h4>نشانه‌های استفادهٔ درست</h4><ul>
+        <li>مسئلهٔ واقعی و تکرارشونده وجود دارد (مثلاً سه درگاه پرداخت، نه یکی).</li>
+        <li>نقطهٔ تغییر مشخص است و انتظار می‌رود تغییر کند.</li>
+        <li>تست‌پذیری یا جایگزینی پیاده‌سازی نیاز واقعی است.</li>
+        <li>الگو ارتباط تیم را ساده می‌کند («این یک Decorator است»).</li>
+      </ul></div>
+      <div class="card"><h4>نشانه‌های over-engineering</h4><ul>
+        <li>interface با تنها یک پیاده‌سازی که هرگز دومی نخواهد داشت (بدون نیاز تست).</li>
+        <li>لایه‌های پوشاننده که فقط فراخوانی را پاس می‌دهند.</li>
+        <li>الگو برای «آینده‌ای فرضی» (نقض YAGNI).</li>
+        <li>پیچیدگی بیشتر از مسئله؛ فهم کد برای عضو جدید تیم سخت‌تر می‌شود.</li>
+      </ul></div>
+    </div>
+    <div class="callout exam"><p>جملهٔ طلایی: «الگو را برای حل مسئله به کار ببرید، نه برای اینکه از الگو استفاده کرده باشید.» در پاسخ تشریحی، همیشه برای هر الگو هم <strong>مزیت</strong> و هم <strong>هزینه</strong> (کلاس‌های بیشتر، indirection، پیچیدگی) را بنویسید.</p></div>
+  </section>
+
+  <section class="lesson" id="singleton" data-title="Singleton">
+    <h2>Singleton</h2>
+    <p><strong>هدف:</strong> تضمین اینکه یک کلاس <strong>فقط یک instance</strong> داشته باشد و یک <strong>نقطهٔ دسترسی سراسری</strong> به آن فراهم شود.</p>
+    <p><strong>مسئله:</strong> منابعی که باید یکتا باشند: اتصال دیتابیس، logger، تنظیمات، connection pool.</p>
+    <pre><code class="language-php">&lt;?php
+final class Config
+{
+    private static ?self $instance = null;
+    private array $items = [];
+
+    private function __construct() { $this-&gt;items = require 'config.php'; }  // جلوگیری از new
+    private function __clone() {}                                            // جلوگیری از clone
+    public function __wakeup(): never { throw new LogicException('Cannot unserialize singleton'); }
+
+    public static function getInstance(): self
+    {
+        return self::$instance ??= new self();     // lazy initialization
+    }
+
+    public function get(string $key): mixed { return $this-&gt;items[$key] ?? null; }
+}
+
+Config::getInstance()-&gt;get('app.name');</code></pre>
+
+    <h3>چرا Singleton کلاسیک اغلب Anti-pattern است؟</h3>
+    <ul>
+      <li><strong>Global state پنهان</strong>: هر جای کد می‌تواند <code>Config::getInstance()</code> را صدا بزند؛ وابستگی در امضای کلاس دیده نمی‌شود.</li>
+      <li><strong>تست‌پذیری پایین</strong>: نمی‌توان به‌راحتی یک fake جایگزین کرد؛ state بین تست‌ها نشت می‌کند.</li>
+      <li><strong>نقض SRP</strong>: کلاس هم منطق خودش را دارد و هم مدیریت چرخهٔ عمر خودش را.</li>
+      <li><strong>coupling محکم</strong> به کلاس concrete.</li>
+      <li>در PHP-FPM «یکتایی» فقط در محدودهٔ یک درخواست است؛ در Octane بین درخواست‌ها می‌ماند و ممکن است دادهٔ کاربر قبلی نشت کند.</li>
+    </ul>
+
+    <h3>راه‌حل بهتر: Singleton در Container</h3>
+    <p>به‌جای اینکه کلاس خودش یکتایی را تضمین کند، <strong>Service Container</strong> چرخهٔ عمر را مدیریت می‌کند. کلاس یک کلاس معمولی و قابل تست است و از طریق DI تزریق می‌شود:</p>
+    <pre><code class="language-php">&lt;?php
+// AppServiceProvider::register()
+$this-&gt;app-&gt;singleton(GeoIpClient::class, fn ($app) =&gt; new GeoIpClient(
+    apiKey: config('services.geoip.key'),
+));
+
+// scoped: یکتا در طول یک درخواست/job؛ در Octane و queue بین درخواست‌ها reset می‌شود
+$this-&gt;app-&gt;scoped(TenantContext::class);
+
+// bind: هر بار instance جدید
+$this-&gt;app-&gt;bind(ReportBuilder::class);
+
+final class LocationController
+{
+    public function __construct(private GeoIpClient $geo) {}   // وابستگی صریح؛ در تست قابل swap
+}</code></pre>
+    <div class="callout exam"><p>تفاوت Singleton GoF با <code>$app-&gt;singleton()</code>: در دومی کلاس «نمی‌داند» singleton است؛ یکتایی یک تصمیم <strong>پیکربندی</strong> در composition root است نه بخشی از طراحی کلاس. پس constructor عمومی است، قابل تست است و در تست می‌توان با <code>$this-&gt;app-&gt;instance()</code> یا <code>$this-&gt;mock()</code> آن را جایگزین کرد. در Laravel، خود <code>Application</code> (container)، <code>DatabaseManager</code> و <code>CacheManager</code> به‌صورت singleton ثبت شده‌اند.</p></div>
+  </section>
+
+  <section class="lesson" id="factories" data-title="Factory Method، Abstract Factory و Simple Factory">
+    <h2>Factoryها: Simple Factory، Static Factory، Factory Method و Abstract Factory</h2>
+    <p>هدف مشترک همهٔ factoryها: <strong>جدا کردن «تصمیم ساخت» از «استفاده»</strong> تا کد استفاده‌کننده به کلاس‌های concrete وابسته نباشد و منطق ساخت در یک جا متمرکز شود.</p>
+
+    <h3>Simple Factory (یک idiom، نه الگوی GoF)</h3>
+    <p>یک کلاس یا متد که بر اساس ورودی تصمیم می‌گیرد کدام کلاس را بسازد.</p>
+    <pre><code class="language-php">&lt;?php
+final class NotifierFactory
+{
+    public function __construct(private Container $container) {}
+
+    public function make(string $channel): Notifier
+    {
+        return match ($channel) {
+            'sms'   =&gt; $this-&gt;container-&gt;make(SmsNotifier::class),
+            'email' =&gt; $this-&gt;container-&gt;make(EmailNotifier::class),
+            'push'  =&gt; $this-&gt;container-&gt;make(PushNotifier::class),
+            default =&gt; throw new InvalidArgumentException("Unknown channel: $channel"),
+        };
+    }
+}</code></pre>
+    <p>عیب: برای افزودن نوع جدید باید factory را ویرایش کرد (نقض جزئی Open/Closed). راه‌حل: یک registry (آرایهٔ نگاشت نام → کلاس) که قابل گسترش باشد؛ دقیقاً کاری که Manager لاراول با <code>extend()</code> انجام می‌دهد.</p>
+
+    <h3>Static Factory / Named Constructor</h3>
+    <pre><code class="language-php">&lt;?php
+final class Money
+{
+    private function __construct(public readonly int $minor, public readonly string $currency) {}
+
+    public static function rial(int $amount): self { return new self($amount, 'IRR'); }
+    public static function fromString(string $s): self { /* parse "100 USD" */ }
+    public static function zero(string $currency): self { return new self(0, $currency); }
+}
+// Laravel: Carbon::now()، Carbon::parse()، Str::of()، Collection::make()، Response::json()</code></pre>
+    <p>مزیت: نام گویا (<code>fromString</code>)، امکان چند «constructor» با معنای مختلف، اعتبارسنجی، cache یا برگرداندن زیرکلاس. عیب: متد static قابل mock نیست (برای Value Object مشکلی نیست).</p>
+
+    <h3>Factory Method (GoF)</h3>
+    <p><strong>هدف:</strong> یک interface برای ساخت object تعریف می‌شود، اما <strong>زیرکلاس‌ها تصمیم می‌گیرند</strong> کدام کلاس ساخته شود. کلاس پایه الگوریتم کلی را دارد و ساخت محصول را به یک متد abstract (factory method) واگذار می‌کند.</p>
+    <pre><code class="language-php">&lt;?php
+interface Transport { public function deliver(Order $o): void; }
+
+abstract class Logistics
+{
+    abstract protected function createTransport(): Transport;   // factory method
+
+    public function planDelivery(Order $order): void            // منطق مشترک
+    {
+        $transport = $this-&gt;createTransport();
+        $transport-&gt;deliver($order);
+    }
+}
+
+final class RoadLogistics extends Logistics
+{
+    protected function createTransport(): Transport { return new Truck(); }
+}
+
+final class SeaLogistics extends Logistics
+{
+    protected function createTransport(): Transport { return new Ship(); }
+}</code></pre>
+    <p><strong>در Laravel:</strong> متد <code>newCollection()</code> در مدل Eloquent یک factory method است؛ با override کردن آن در مدل، می‌توانید کالکشن سفارشی (<code>UserCollection</code>) برگردانید. <code>newEloquentBuilder()</code> هم به همین شکل یک Builder سفارشی برمی‌گرداند.</p>
+    <pre><code class="language-php">&lt;?php
+class User extends Model
+{
+    public function newCollection(array $models = []): UserCollection
+    {
+        return new UserCollection($models);   // همهٔ کوئری‌ها اکنون UserCollection برمی‌گردانند
+    }
+}</code></pre>
+
+    <h3>Abstract Factory (GoF)</h3>
+    <p><strong>هدف:</strong> یک interface برای ساخت <strong>خانواده‌ای از objectهای مرتبط</strong> بدون مشخص کردن کلاس concrete آن‌ها. تضمین می‌کند محصولات یک خانواده با هم سازگارند.</p>
+    <pre><code class="language-php">&lt;?php
+interface PaymentProviderFactory
+{
+    public function createGateway(): Gateway;
+    public function createWebhookVerifier(): WebhookVerifier;
+    public function createRefunder(): Refunder;
+}
+
+final class ZarinpalFactory implements PaymentProviderFactory
+{
+    public function createGateway(): Gateway { return new ZarinpalGateway(); }
+    public function createWebhookVerifier(): WebhookVerifier { return new ZarinpalVerifier(); }
+    public function createRefunder(): Refunder { return new ZarinpalRefunder(); }
+}
+
+final class StripeFactory implements PaymentProviderFactory { /* ... خانوادهٔ Stripe */ }
+
+// کلاینت فقط به abstract factory وابسته است؛ امکان ترکیب ZarinpalGateway با StripeVerifier وجود ندارد
+final class CheckoutService
+{
+    public function __construct(private PaymentProviderFactory $provider) {}
+}</code></pre>
+    <p><strong>در Laravel:</strong> <code>Illuminate\Database\Connectors\ConnectionFactory</code> بر اساس driver (mysql، pgsql، sqlite، sqlsrv) connector و connection مناسب را می‌سازد و هر connection، grammar و post-processor سازگار با همان دیتابیس را دارد؛ یعنی یک خانوادهٔ سازگار از objectها.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Simple Factory</th><th>Factory Method</th><th>Abstract Factory</th></tr></thead>
+      <tbody>
+        <tr><td>مکانیزم</td><td>یک متد با شرط (<code>match</code>)</td><td>ارث‌بری؛ زیرکلاس متد ساخت را override می‌کند</td><td>ترکیب؛ یک object factory با چند متد ساخت</td></tr>
+        <tr><td>چه می‌سازد</td><td>یک محصول از بین چند نوع</td><td>یک محصول</td><td>خانواده‌ای از محصولات مرتبط</td></tr>
+        <tr><td>افزودن نوع جدید</td><td>ویرایش factory</td><td>زیرکلاس جدید</td><td>factory concrete جدید</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>«Model Factory» در Laravel (<code>User::factory()-&gt;count(3)-&gt;create()</code>) نامش factory است اما در واقع ترکیبی از <strong>Builder</strong> (پیکربندی fluent با <code>state()</code>، <code>has()</code>، <code>count()</code>) و factory برای تولید دادهٔ تست است؛ در پاسخ تشریحی بین این دو مفهوم تمایز قائل شوید.</p></div>
+  </section>
+
+  <section class="lesson" id="builder-prototype" data-title="Builder و Prototype">
+    <h2>Builder و Prototype</h2>
+    <h3>Builder</h3>
+    <p><strong>هدف:</strong> جدا کردن <strong>ساخت گام‌به‌گام</strong> یک object پیچیده از نمایش نهایی آن، تا با یک فرایند ساخت بتوان نمایش‌های مختلف ساخت.</p>
+    <p><strong>مسئله:</strong> constructor با تعداد زیادی پارامتر اختیاری («telescoping constructor»)، یا objectی که ساختش چند مرحله و اعتبارسنجی دارد.</p>
+    <pre><code class="language-php">&lt;?php
+final class HttpRequestBuilder
+{
+    private string $method = 'GET';
+    private array $headers = [];
+    private ?string $body = null;
+    private int $timeout = 30;
+
+    public function __construct(private string $url) {}
+
+    public function post(array $data): static
+    {
+        $this-&gt;method = 'POST';
+        $this-&gt;body = json_encode($data, JSON_THROW_ON_ERROR);
+        return $this-&gt;withHeader('Content-Type', 'application/json');
+    }
+
+    public function withHeader(string $k, string $v): static { $this-&gt;headers[$k] = $v; return $this; }
+    public function timeout(int $s): static { $this-&gt;timeout = $s; return $this; }
+
+    public function build(): HttpRequest           // محصول نهایی، معتبر و immutable
+    {
+        if ($this-&gt;method === 'POST' &amp;&amp; $this-&gt;body === null) {
+            throw new LogicException('POST requires body');
+        }
+        return new HttpRequest($this-&gt;method, $this-&gt;url, $this-&gt;headers, $this-&gt;body, $this-&gt;timeout);
+    }
+}
+
+$request = (new HttpRequestBuilder('https://api.example.com/orders'))
+    -&gt;post(['id' =&gt; 1])-&gt;withHeader('X-Trace', 'abc')-&gt;timeout(5)-&gt;build();</code></pre>
+    <p><strong>در Laravel:</strong></p>
+    <ul>
+      <li><strong>Query Builder</strong>: <code>DB::table('users')-&gt;where('active', 1)-&gt;orderBy('name')-&gt;limit(10)-&gt;get()</code>؛ هر متد بخشی از state کوئری را تنظیم می‌کند و <code>get()</code>/<code>first()</code> نقش <code>build()</code> + اجرا را دارد. خود SQL را <strong>Grammar</strong> مخصوص هر دیتابیس می‌سازد (همان فرایند، نمایش‌های مختلف).</li>
+      <li>کلاینت HTTP: <code>Http::withToken($t)-&gt;timeout(5)-&gt;retry(3, 100)-&gt;post(...)</code> (کلاس <code>PendingRequest</code>).</li>
+      <li>Schema Builder (<code>Blueprint</code> در migrationها)، <code>MailMessage</code> در notificationها، Model Factoryها.</li>
+    </ul>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul><li>خوانایی بالا (fluent)، پارامترهای اختیاری بدون constructor بزرگ.</li><li>اعتبارسنجی متمرکز قبل از ساخت.</li><li>محصول نهایی می‌تواند immutable باشد.</li></ul></div>
+      <div class="card"><h4>معایب</h4><ul><li>کلاس اضافه و تکرار propertyها.</li><li>برای objectهای ساده over-engineering است (named arguments در PHP 8 خیلی از نیازها را برطرف می‌کند).</li></ul></div>
+    </div>
+
+    <h3>Prototype</h3>
+    <p><strong>هدف:</strong> ساخت object جدید با <strong>کپی کردن یک نمونهٔ موجود (prototype)</strong> به‌جای ساختن از صفر؛ وقتی ساخت پرهزینه است یا می‌خواهیم کپی‌هایی با تغییرات کوچک داشته باشیم. در PHP پیاده‌سازی بومی آن <code>clone</code> و <code>__clone()</code> است.</p>
+    <pre><code class="language-php">&lt;?php
+final class ReportTemplate
+{
+    public function __construct(
+        public string $title,
+        public array $columns,
+        public Style $style,              // object تودرتو
+    ) {}
+
+    public function __clone(): void
+    {
+        $this-&gt;style = clone $this-&gt;style;   // deep copy؛ وگرنه همهٔ کپی‌ها یک Style مشترک دارند
+    }
+}
+
+$base = new ReportTemplate('Sales', ['date', 'total'], new Style('blue'));
+$monthly = clone $base;
+$monthly-&gt;title = 'Monthly Sales';</code></pre>
+    <p><strong>در Laravel:</strong> <code>$model-&gt;replicate()</code> (کپی مدل بدون کلید اصلی و timestamps، برای ساخت رکورد مشابه)، <code>$query-&gt;clone()</code> برای استفاده از یک کوئری پایه در چند شاخه، و <code>$date-&gt;copy()</code> در Carbon.</p>
+    <pre><code class="language-php">&lt;?php
+$base = Order::where('tenant_id', $tenantId);
+$paidCount    = $base-&gt;clone()-&gt;where('status', 'paid')-&gt;count();
+$pendingCount = $base-&gt;clone()-&gt;where('status', 'pending')-&gt;count();
+// بدون clone، شرط دوم به کوئری اول اضافه می‌شد (Builder قابل تغییر است)</code></pre>
+  </section>
+
+  <section class="lesson" id="adapter-bridge-composite" data-title="Adapter، Bridge و Composite">
+    <h2>Adapter، Bridge و Composite</h2>
+    <h3>Adapter</h3>
+    <p><strong>هدف:</strong> تبدیل interface یک کلاس به interface دیگری که کلاینت انتظار دارد؛ تا کلاس‌هایی که interface ناسازگار دارند با هم کار کنند. مثل مبدل برق.</p>
+    <p><strong>مسئله:</strong> یک SDK شخص ثالث (مثلاً درگاه پیامک) API خودش را دارد و نمی‌خواهیم کل کد ما به آن وابسته شود.</p>
+    <pre><code class="language-php">&lt;?php
+interface SmsSender                         // Target: interface مورد انتظار دامنهٔ ما
+{
+    public function send(PhoneNumber $to, string $text): void;
+}
+
+final class KavenegarSmsAdapter implements SmsSender      // Adapter
+{
+    public function __construct(private KavenegarApi $api, private string $sender) {}  // Adaptee
+
+    public function send(PhoneNumber $to, string $text): void
+    {
+        try {
+            $this-&gt;api-&gt;Send($this-&gt;sender, $to-&gt;e164(), $text);   // ترجمهٔ فراخوانی
+        } catch (\Kavenegar\Exceptions\ApiException $e) {
+            throw new SmsFailed($e-&gt;getMessage(), previous: $e); // ترجمهٔ exception هم بخشی از adapter است
+        }
+    }
+}
+
+$this-&gt;app-&gt;bind(SmsSender::class, KavenegarSmsAdapter::class);  // تعویض provider = یک خط</code></pre>
+    <p><strong>در Laravel:</strong> لایهٔ <strong>Filesystem</strong>: <code>Storage::disk('s3')</code> و <code>Storage::disk('local')</code> هر دو یک API (<code>put</code>، <code>get</code>، <code>url</code>) دارند و Laravel روی adapterهای <strong>Flysystem</strong> (Local، S3، FTP) سوار است. <strong>Cache stores</strong> (<code>RedisStore</code>، <code>FileStore</code>، <code>DatabaseStore</code>، <code>MemcachedStore</code>) همگی contract <code>Store</code> را پیاده می‌کنند و API متفاوت Redis/Memcached را به یک interface ترجمه می‌کنند. Queue connectorها و Mail transportها هم همین‌طور.</p>
+    <div class="callout tip"><p>Adapter در <strong>Hexagonal Architecture</strong> (Ports and Adapters) نقش کلیدی دارد: interface دامنه «port» است و پیاده‌سازی مخصوص هر سرویس خارجی «adapter». این باعث می‌شود تست دامنه با یک fake adapter و بدون شبکه انجام شود.</p></div>
+
+    <h3>Bridge (به‌طور خلاصه)</h3>
+    <p><strong>هدف:</strong> جدا کردن <strong>abstraction</strong> از <strong>implementation</strong> تا هر دو مستقلاً تغییر کنند؛ با ترکیب به‌جای ارث‌بری، از «انفجار تعداد کلاس‌ها» جلوگیری می‌کند.</p>
+    <pre class="diagram">بدون Bridge (ارث‌بری):              با Bridge (ترکیب):
+  Notification                        Notification ─────has-a────► Channel
+  ├── UrgentSmsNotification           ├── UrgentNotification        ├── SmsChannel
+  ├── UrgentEmailNotification         └── ReminderNotification      └── EmailChannel
+  ├── ReminderSmsNotification
+  └── ReminderEmailNotification       2 + 2 کلاس به‌جای 2 × 2</pre>
+    <p>تفاوت با Adapter: Adapter <strong>بعد از طراحی</strong> برای سازگار کردن دو چیز موجود به کار می‌رود؛ Bridge <strong>از ابتدا</strong> برای جدا نگه داشتن دو بُعد تغییر طراحی می‌شود. در Laravel، Notificationها (چه پیامی) و Channelها (mail، database، broadcast، vonage) ایدهٔ مشابهی دارند.</p>
+
+    <h3>Composite</h3>
+    <p><strong>هدف:</strong> ترکیب objectها در <strong>ساختار درختی</strong> و رفتار یکسان با «برگ» (یک object) و «گره مرکب» (گروهی از objectها) از طریق یک interface مشترک.</p>
+    <pre><code class="language-php">&lt;?php
+interface PriceComponent { public function price(): int; }
+
+final class Product implements PriceComponent          // Leaf
+{
+    public function __construct(private int $price) {}
+    public function price(): int { return $this-&gt;price; }
+}
+
+final class Bundle implements PriceComponent           // Composite
+{
+    /** @var list&lt;PriceComponent&gt; */
+    private array $children = [];
+
+    public function __construct(private int $discountPercent = 0) {}
+
+    public function add(PriceComponent $c): static { $this-&gt;children[] = $c; return $this; }
+
+    public function price(): int
+    {
+        $sum = array_sum(array_map(fn (PriceComponent $c) =&gt; $c-&gt;price(), $this-&gt;children));
+        return intdiv($sum * (100 - $this-&gt;discountPercent), 100);
+    }
+}
+
+$giftBox = (new Bundle(10))-&gt;add(new Product(500))-&gt;add((new Bundle())-&gt;add(new Product(200)));
+echo $giftBox-&gt;price();   // کلاینت فرقی بین محصول تکی و بستهٔ تودرتو نمی‌گذارد</code></pre>
+    <p>کاربرد: منو و دسته‌بندی‌های درختی، ساختار سازمانی، permissionهای گروهی، rule engineها (قانون مرکب AND/OR). در Laravel مثال برجسته‌ای در هسته نیست، اما ایدهٔ مشابه در Blade components تودرتو و گروه‌های middleware (یک نام که به مجموعه‌ای از middlewareها باز می‌شود) دیده می‌شود.</p>
+  </section>
+
+  <section class="lesson" id="decorator-proxy" data-title="Decorator و Proxy">
+    <h2>Decorator و Proxy</h2>
+    <h3>Decorator</h3>
+    <p><strong>هدف:</strong> افزودن <strong>رفتار جدید به یک object به‌صورت پویا</strong> با پیچیدن آن در objectی دیگر که <strong>همان interface</strong> را پیاده می‌کند؛ جایگزین انعطاف‌پذیر برای ارث‌بری. decoratorها قابل <strong>زنجیر شدن</strong> هستند.</p>
+    <p><strong>مسئله:</strong> می‌خواهیم به یک repository، cache، logging یا metrics اضافه کنیم، بدون تغییر کد آن (Open/Closed) و بدون ساخت زیرکلاس برای هر ترکیب.</p>
+    <pre><code class="language-php">&lt;?php
+interface ProductRepository
+{
+    public function find(int $id): ?Product;
+    public function save(Product $p): void;
+}
+
+final class EloquentProductRepository implements ProductRepository
+{
+    public function find(int $id): ?Product { return Product::find($id); }
+    public function save(Product $p): void { $p-&gt;save(); }
+}
+
+final class CachingProductRepository implements ProductRepository       // Decorator
+{
+    public function __construct(
+        private ProductRepository $inner,                                // همان interface
+        private CacheRepository $cache,
+        private int $ttl = 600,
+    ) {}
+
+    public function find(int $id): ?Product
+    {
+        return $this-&gt;cache-&gt;remember("product:$id", $this-&gt;ttl, fn () =&gt; $this-&gt;inner-&gt;find($id));
+    }
+
+    public function save(Product $p): void
+    {
+        $this-&gt;inner-&gt;save($p);
+        $this-&gt;cache-&gt;forget("product:{$p-&gt;id}");                         // invalidation
+    }
+}
+
+final class LoggingProductRepository implements ProductRepository { /* لاگ زمان اجرا، سپس delegate */ }
+
+// ترکیب در Service Provider
+$this-&gt;app-&gt;bind(ProductRepository::class, EloquentProductRepository::class);
+$this-&gt;app-&gt;extend(ProductRepository::class, fn (ProductRepository $repo, $app) =&gt;
+    new CachingProductRepository($repo, $app-&gt;make(CacheRepository::class))
+);</code></pre>
+    <p>متد <code>extend()</code> در container لاراول دقیقاً برای decorate کردن یک سرویس resolve‌شده طراحی شده است.</p>
+    <p><strong>در Laravel:</strong> <strong>Middleware</strong> از نظر مفهومی مثل decoratorهای تودرتو دور handler درخواست عمل می‌کند (هر لایه قبل و بعد از لایهٔ درونی کاری انجام می‌دهد)، هرچند پیاده‌سازی آن با Pipeline (Chain of Responsibility) است. <code>Illuminate\Cache\Repository</code> هم یک Store را می‌پیچد و رفتارهایی مثل <code>remember</code>، رویدادها و tagها را به آن اضافه می‌کند.</p>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul><li>Open/Closed و Single Responsibility (هر decorator یک دغدغه).</li><li>ترکیب پویا در زمان اجرا؛ ترتیب قابل تنظیم.</li><li>جلوگیری از انفجار زیرکلاس‌ها.</li></ul></div>
+      <div class="card"><h4>معایب</h4><ul><li>تعداد زیادی object کوچک؛ دیباگ stack عمیق.</li><li>باید همهٔ متدهای interface را delegate کرد (interface بزرگ = کد boilerplate).</li><li>ترتیب decoratorها مهم است و ممکن است باگ بسازد.</li></ul></div>
+    </div>
+
+    <h3>Proxy</h3>
+    <p><strong>هدف:</strong> فراهم کردن یک <strong>جانشین (placeholder)</strong> برای object دیگر تا <strong>دسترسی به آن را کنترل</strong> کند. proxy همان interface را دارد ولی هدفش «کنترل» است نه «افزودن رفتار».</p>
+    <ul>
+      <li><strong>Virtual Proxy (Lazy loading)</strong>: ساخت object پرهزینه تا اولین استفاده عقب می‌افتد.</li>
+      <li><strong>Protection Proxy</strong>: بررسی مجوز قبل از delegate.</li>
+      <li><strong>Remote Proxy</strong>: نمایندهٔ محلی یک سرویس راه‌دور (مثل کلاینت gRPC).</li>
+      <li><strong>Caching/Smart Proxy</strong>: شمارش ارجاع، کش، لاگ.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+interface ReportGenerator { public function generate(): string; }
+
+final class LazyReportProxy implements ReportGenerator
+{
+    private ?ReportGenerator $real = null;
+
+    public function __construct(private Closure $factory) {}
+
+    public function generate(): string
+    {
+        $this-&gt;real ??= ($this-&gt;factory)();     // ساخت فقط هنگام اولین نیاز
+        return $this-&gt;real-&gt;generate();
+    }
+}
+
+// PHP 8.4: lazy object بومی
+$reflector = new ReflectionClass(HeavyService::class);
+$service = $reflector-&gt;newLazyProxy(fn () =&gt; new HeavyService(/* ... */));</code></pre>
+    <p><strong>در Laravel:</strong> <strong>Deferred Service Providers</strong> (پیاده‌سازی <code>DeferrableProvider</code>) سرویس را فقط هنگام نیاز register می‌کنند؛ <strong>lazy loading رابطه‌ها</strong> در Eloquent (<code>$post-&gt;comments</code> فقط هنگام اولین دسترسی کوئری می‌زند)؛ و کلاس‌هایی با نام Proxy مثل <code>HigherOrderCollectionProxy</code> (برای <code>$users-&gt;each-&gt;notify()</code>). Facade هم از نظر رفتاری یک proxy استاتیک به سرویس داخل container است.</p>
+    <div class="callout exam"><p><strong>Decorator در برابر Proxy در برابر Adapter</strong> — هر سه یک object را «می‌پیچند»: <strong>Adapter</strong> interface را <strong>تغییر</strong> می‌دهد؛ <strong>Decorator</strong> همان interface را نگه می‌دارد و <strong>رفتار اضافه</strong> می‌کند (معمولاً قابل زنجیر، object درونی از بیرون تزریق می‌شود)؛ <strong>Proxy</strong> همان interface را نگه می‌دارد و <strong>دسترسی را کنترل</strong> می‌کند (اغلب خودش چرخهٔ عمر object واقعی را مدیریت می‌کند).</p></div>
+  </section>
+
+  <section class="lesson" id="facade" data-title="Facade: GoF در برابر Laravel">
+    <h2>Facade: الگوی GoF در برابر Facadeهای Laravel</h2>
+    <h3>Facade در GoF</h3>
+    <p><strong>هدف:</strong> فراهم کردن یک <strong>interface ساده و یکپارچه</strong> برای یک <strong>زیرسیستم پیچیده</strong> با چندین کلاس. کلاینت به‌جای هماهنگ کردن ده کلاس، با یک object ساده کار می‌کند.</p>
+    <pre><code class="language-php">&lt;?php
+final class CheckoutFacade
+{
+    public function __construct(
+        private Inventory $inventory,
+        private PaymentGateway $payments,
+        private ShippingService $shipping,
+        private InvoiceService $invoices,
+        private Mailer $mailer,
+    ) {}
+
+    public function placeOrder(Cart $cart, Customer $c): Order     // یک متد ساده برای کل زیرسیستم
+    {
+        $this-&gt;inventory-&gt;reserve($cart);
+        $payment = $this-&gt;payments-&gt;charge($c, $cart-&gt;total());
+        $order = Order::fromCart($cart, $payment);
+        $this-&gt;shipping-&gt;schedule($order);
+        $this-&gt;mailer-&gt;send(new OrderConfirmation($this-&gt;invoices-&gt;issue($order)));
+        return $order;
+    }
+}</code></pre>
+
+    <h3>Facade در Laravel</h3>
+    <p>Facadeهای لاراول (<code>Cache</code>، <code>DB</code>، <code>Log</code>، <code>Route</code>) یک <strong>«static proxy» به سرویس‌های داخل Service Container</strong> هستند. هدف اصلی‌شان <strong>سینتکس کوتاه و خوانا</strong> است، نه ساده‌سازی یک زیرسیستم.</p>
+    <pre><code class="language-php">&lt;?php
+namespace Illuminate\Support\Facades;
+
+class Cache extends Facade
+{
+    protected static function getFacadeAccessor(): string
+    {
+        return 'cache';                     // کلید binding در container
+    }
+}
+
+// Cache::get('key') چه می‌کند؟
+// 1) متد static get وجود ندارد → Facade::__callStatic('get', ['key'])
+// 2) static::getFacadeRoot() → instance را از container ($app['cache']) resolve می‌کند (و cache می‌کند)
+// 3) $instance-&gt;get('key') روی CacheManager واقعی صدا زده می‌شود</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>جنبه</th><th>GoF Facade</th><th>Laravel Facade</th></tr></thead>
+      <tbody>
+        <tr><td>هدف</td><td>ساده‌سازی یک زیرسیستم پیچیده</td><td>دسترسی static-مانند و کوتاه به یک سرویس container</td></tr>
+        <tr><td>پشت آن</td><td>چند کلاس هماهنگ‌شده</td><td>معمولاً <strong>یک</strong> object (همان API را بدون تغییر expose می‌کند)</td></tr>
+        <tr><td>API</td><td>API جدید و ساده‌تر</td><td>همان متدهای سرویس اصلی</td></tr>
+        <tr><td>مکانیزم</td><td>object معمولی با DI</td><td><code>__callStatic</code> + Service Locator (container)</td></tr>
+        <tr><td>از نظر GoF شبیه</td><td>—</td><td>Proxy / Service Locator</td></tr>
+      </tbody>
+    </table></div>
+    <h3>مزایا و معایب Facadeهای Laravel</h3>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul>
+        <li>کد کوتاه و خوانا، بدون نیاز به تزریق در هر کلاس.</li>
+        <li>برخلاف متد static واقعی، <strong>قابل تست</strong>: <code>Cache::shouldReceive('get')-&gt;andReturn(1)</code>، <code>Mail::fake()</code>، <code>Queue::fake()</code>، <code>Event::fake()</code>، چون Facade فقط instance پشت خود را عوض می‌کند (<code>swap</code>).</li>
+      </ul></div>
+      <div class="card"><h4>معایب</h4><ul>
+        <li><strong>وابستگی پنهان</strong>: در constructor دیده نمی‌شود؛ کلاسی که ده Facade استفاده می‌کند، ظاهراً بی‌وابستگی است (scope creep).</li>
+        <li>coupling به فریم‌ورک در لایهٔ دامنه.</li>
+        <li>IDE و static analysis بدون ide-helper/Larastan متدها را نمی‌شناسند.</li>
+      </ul></div>
+    </div>
+    <p><strong>جایگزین‌ها:</strong> تزریق contract (<code>Illuminate\Contracts\Cache\Repository</code>) در constructor، یا <strong>Real-time Facade</strong> (<code>use Facades\App\Services\Geo;</code>) که هر کلاسی را به‌صورت facade قابل استفاده و قابل mock می‌کند.</p>
+    <div class="callout exam"><p>سوال کلاسیک: «آیا Facade در لاراول همان Facade GoF است؟» پاسخ: <strong>خیر</strong>. نام مشترک است اما Laravel Facade در واقع یک <strong>static proxy / service locator</strong> است که فراخوانی static را به instance داخل container هدایت می‌کند؛ زیرسیستم را ساده نمی‌کند. با این حال، چون instance از container می‌آید، بر خلاف متد static واقعی قابل swap و mock است.</p></div>
+  </section>
+
+  <section class="lesson" id="strategy-manager" data-title="Strategy و Manager">
+    <h2>Strategy و الگوی Manager (Driver)</h2>
+    <h3>Strategy</h3>
+    <p><strong>هدف:</strong> تعریف <strong>خانواده‌ای از الگوریتم‌ها</strong>، کپسوله کردن هر کدام و <strong>قابل تعویض</strong> کردن آن‌ها؛ الگوریتم مستقل از کلاینتی که از آن استفاده می‌کند تغییر می‌کند.</p>
+    <p><strong>مسئله:</strong> <code>if/switch</code> بزرگ روی نوع (درگاه پرداخت، روش محاسبهٔ هزینهٔ ارسال، نوع تخفیف) که با هر نوع جدید باید ویرایش شود.</p>
+    <pre><code class="language-php">&lt;?php
+interface PaymentGateway                                    // Strategy
+{
+    public function charge(Money $amount, string $callbackUrl): PaymentResult;
+    public function verify(array $payload): VerifiedPayment;
+}
+
+final class ZarinpalGateway implements PaymentGateway { /* ... */ }    // Concrete strategies
+final class IdPayGateway implements PaymentGateway { /* ... */ }
+final class FakeGateway implements PaymentGateway { /* برای تست و local */ }
+
+final class CheckoutService                                 // Context
+{
+    public function __construct(private PaymentGateway $gateway) {}
+
+    public function pay(Order $order): PaymentResult
+    {
+        return $this-&gt;gateway-&gt;charge($order-&gt;total(), route('payment.callback', $order));
+    }
+}
+
+// انتخاب strategy در composition root (بر اساس config)
+$this-&gt;app-&gt;bind(PaymentGateway::class, fn ($app) =&gt; match (config('payment.default')) {
+    'zarinpal' =&gt; $app-&gt;make(ZarinpalGateway::class),
+    'idpay'    =&gt; $app-&gt;make(IdPayGateway::class),
+    default    =&gt; $app-&gt;make(FakeGateway::class),
+});</code></pre>
+    <p>در PHP، strategyهای ساده را می‌توان با <strong>closure</strong> هم پیاده کرد (مثلاً callback مقایسه در <code>usort</code> یا <code>sortBy(fn)</code> در Collection).</p>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul><li>Open/Closed: strategy جدید بدون تغییر context.</li><li>حذف شرط‌های بزرگ؛ هر الگوریتم جدا و تست‌پذیر.</li><li>تعویض در زمان اجرا.</li></ul></div>
+      <div class="card"><h4>معایب</h4><ul><li>کلاینت (یا factory) باید بداند کدام strategy را انتخاب کند.</li><li>برای دو حالت ثابت و ساده، کلاس اضافه است.</li></ul></div>
+    </div>
+    <p><strong>تفاوت Strategy با State:</strong> ساختار تقریباً یکسان است. در Strategy، <strong>کلاینت</strong> الگوریتم را انتخاب می‌کند و strategyها معمولاً از هم خبر ندارند؛ در State، خود <strong>stateها</strong> تعیین می‌کنند state بعدی چیست و رفتار object با تغییر وضعیت درونی‌اش عوض می‌شود.</p>
+
+    <h3>Manager Pattern در Laravel</h3>
+    <p>Laravel برای زیرسیستم‌هایی که چند «driver» دارند از ترکیب <strong>Factory + Strategy + Registry</strong> استفاده می‌کند که به آن Manager می‌گویند: <code>CacheManager</code>، <code>QueueManager</code>، <code>FilesystemManager</code>، <code>MailManager</code>، <code>AuthManager</code>، <code>SessionManager</code>، <code>LogManager</code>. برخی از آن‌ها (مثل <code>SessionManager</code>) از کلاس پایهٔ <code>Illuminate\Support\Manager</code> ارث می‌برند.</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Manager;
+
+final class SmsManager extends Manager
+{
+    public function getDefaultDriver(): string
+    {
+        return $this-&gt;config-&gt;get('sms.default', 'kavenegar');
+    }
+
+    // Manager برای driver «kavenegar» به‌دنبال متد createKavenegarDriver می‌گردد
+    protected function createKavenegarDriver(): SmsSender
+    {
+        return new KavenegarSmsAdapter(new KavenegarApi($this-&gt;config-&gt;get('sms.kavenegar.key')), '1000');
+    }
+
+    protected function createLogDriver(): SmsSender
+    {
+        return new LogSmsSender($this-&gt;container-&gt;make('log'));
+    }
+}
+
+// استفاده: driver پیش‌فرض یا انتخابی؛ instance هر driver یک بار ساخته و نگه داشته می‌شود
+app(SmsManager::class)-&gt;driver()-&gt;send($to, 'کد: 1234');
+app(SmsManager::class)-&gt;driver('log')-&gt;send($to, 'test');
+
+// افزودن driver سفارشی بدون تغییر کلاس (Open/Closed)
+app(SmsManager::class)-&gt;extend('twilio', fn ($app) =&gt; new TwilioSmsAdapter(/* ... */));</code></pre>
+    <ul>
+      <li>Manager متدهای ناشناخته را با <code>__call</code> به driver پیش‌فرض forward می‌کند؛ برای همین <code>Cache::get()</code> مستقیماً روی store پیش‌فرض اجرا می‌شود و <code>Cache::store('redis')-&gt;get()</code> روی store مشخص.</li>
+      <li>یعنی: <strong>Factory</strong> (ساخت driver)، <strong>Strategy</strong> (driverها قابل تعویض با interface مشترک)، <strong>Adapter</strong> (هر driver یک سرویس خارجی را adapt می‌کند)، <strong>caching instanceها</strong> (هر driver یک بار ساخته می‌شود).</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="observer" data-title="Observer و Event">
+    <h2>Observer (Events/Listeners و Model Observers)</h2>
+    <p><strong>هدف:</strong> تعریف یک وابستگی <strong>یک‌به‌چند</strong> بین objectها، طوری که وقتی یک object (subject) تغییر وضعیت می‌دهد، همهٔ وابستگان (observers) <strong>خودکار مطلع</strong> شوند؛ بدون اینکه subject آن‌ها را بشناسد (loose coupling).</p>
+    <pre><code class="language-php">&lt;?php
+// پیاده‌سازی کلاسیک با SPL
+final class Order implements SplSubject
+{
+    private SplObjectStorage $observers;
+    public function __construct() { $this-&gt;observers = new SplObjectStorage(); }
+
+    public function attach(SplObserver $o): void { $this-&gt;observers-&gt;attach($o); }
+    public function detach(SplObserver $o): void { $this-&gt;observers-&gt;detach($o); }
+    public function notify(): void { foreach ($this-&gt;observers as $o) { $o-&gt;update($this); } }
+
+    public function markPaid(): void { /* ... */ $this-&gt;notify(); }
+}</code></pre>
+
+    <h3>در Laravel: Event / Listener</h3>
+    <p>Laravel نسخهٔ قوی‌تری دارد: یک <strong>Event Dispatcher</strong> مرکزی (که نقش Mediator هم دارد) بین رویداد و شنونده قرار می‌گیرد؛ پس حتی رویداد از وجود subject هم بی‌خبر است.</p>
+    <pre><code class="language-php">&lt;?php
+final class OrderPaid                                 // Event: یک DTO ساده
+{
+    use Dispatchable, SerializesModels;
+    public function __construct(public readonly Order $order) {}
+}
+
+final class SendInvoiceEmail implements ShouldQueue   // Listener صف‌دار: اجرای async
+{
+    public function handle(OrderPaid $event): void
+    {
+        Mail::to($event-&gt;order-&gt;customer)-&gt;send(new InvoiceMail($event-&gt;order));
+    }
+}
+
+final class AwardLoyaltyPoints { public function handle(OrderPaid $event): void { /* ... */ } }
+
+// در سرویس:
+$order-&gt;markAsPaid();
+OrderPaid::dispatch($order);       // یا event(new OrderPaid($order))
+// listenerها با event discovery (type-hint در handle) یا Event::listen ثبت می‌شوند</code></pre>
+
+    <h3>Model Observers و Model Events</h3>
+    <pre><code class="language-php">&lt;?php
+final class UserObserver
+{
+    public function creating(User $user): void { $user-&gt;uuid ??= (string) Str::uuid(); }  // قبل از insert
+    public function updated(User $user): void
+    {
+        if ($user-&gt;wasChanged('email')) { /* ارسال ایمیل تأیید */ }
+    }
+    public function deleted(User $user): void { /* پاک‌سازی */ }
+}
+
+// ثبت: در یک Service Provider
+User::observe(UserObserver::class);
+// یا در نسخه‌های جدید با attribute روی مدل: #[ObservedBy([UserObserver::class])]</code></pre>
+    <p>رویدادهای مدل: <code>retrieved</code>، <code>creating/created</code>، <code>updating/updated</code>، <code>saving/saved</code>، <code>deleting/deleted</code>، <code>restoring/restored</code> و … . اگر متد <code>creating</code>/<code>updating</code>/<code>saving</code>/<code>deleting</code> مقدار <code>false</code> برگرداند، عملیات لغو می‌شود.</p>
+    <div class="callout warn"><p>دام‌های Observer: (1) <strong>Mass update/delete</strong> مثل <code>User::where(...)-&gt;update([...])</code> مستقیم SQL می‌زند و <strong>رویداد مدل را fire نمی‌کند</strong>. (2) منطق پنهان: کسی که <code>$user-&gt;save()</code> را می‌خواند نمی‌داند پنج کار دیگر اتفاق می‌افتد؛ منطق اصلی کسب‌وکار را در observer مخفی نکنید. (3) ارسال ایمیل یا dispatch job داخل تراکنش: اگر تراکنش rollback شود، ایمیل رفته است؛ از <code>ShouldDispatchAfterCommit</code>/<code>afterCommit</code> استفاده کنید. (4) ترتیب اجرای listenerها نباید مبنای منطق باشد.</p></div>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul><li>decoupling: افزودن واکنش جدید (SMS، آمار) بدون تغییر کد پرداخت.</li><li>امکان async با queue.</li><li>Open/Closed.</li></ul></div>
+      <div class="card"><h4>معایب</h4><ul><li>جریان کنترل غیرصریح؛ دیباگ و ردیابی سخت‌تر.</li><li>خطر زنجیرهٔ رویدادهای آبشاری و حلقه.</li><li>مدیریت خطا و ترتیب در listenerهای متعدد.</li></ul></div>
+    </div>
+  </section>
+
+  <section class="lesson" id="command" data-title="Command">
+    <h2>Command</h2>
+    <p><strong>هدف:</strong> کپسوله کردن یک <strong>درخواست/عملیات به‌صورت object</strong>؛ در نتیجه می‌توان آن را پارامتری کرد، در <strong>صف</strong> گذاشت، <strong>لاگ</strong> کرد، با تأخیر اجرا کرد، دوباره اجرا (retry) کرد یا <strong>undo</strong> کرد.</p>
+    <p>اجزا: <strong>Command</strong> (داده‌های لازم + متد <code>execute</code>/<code>handle</code>)، <strong>Invoker</strong> (کسی که اجرا را راه می‌اندازد، بدون دانستن جزئیات)، <strong>Receiver</strong> (کسی که کار واقعی را انجام می‌دهد).</p>
+    <pre><code class="language-php">&lt;?php
+interface Command { public function execute(): void; public function undo(): void; }
+
+final class ChangePriceCommand implements Command
+{
+    private ?int $previous = null;
+    public function __construct(private Product $product, private int $newPrice) {}
+
+    public function execute(): void
+    {
+        $this-&gt;previous = $this-&gt;product-&gt;price;
+        $this-&gt;product-&gt;update(['price' =&gt; $this-&gt;newPrice]);
+    }
+
+    public function undo(): void
+    {
+        $this-&gt;product-&gt;update(['price' =&gt; $this-&gt;previous]);
+    }
+}
+
+final class CommandHistory           // Invoker با قابلیت undo
+{
+    private array $stack = [];
+    public function run(Command $c): void { $c-&gt;execute(); $this-&gt;stack[] = $c; }
+    public function undoLast(): void { array_pop($this-&gt;stack)?-&gt;undo(); }
+}</code></pre>
+
+    <h3>در Laravel</h3>
+    <ul>
+      <li><strong>Queued Jobs</strong>: یک job دقیقاً یک command object است: داده‌ها در constructor، منطق در <code>handle()</code>؛ serialize شده و در صف (Redis، SQS، database) ذخیره و بعداً توسط worker (invoker) اجرا می‌شود. قابلیت‌های retry (<code>$tries</code>، <code>backoff</code>)، تأخیر، chain (<code>Bus::chain</code>) و batch (<code>Bus::batch</code>) مستقیماً از object بودن درخواست می‌آیند.</li>
+      <li><strong>Command Bus</strong>: <code>Bus::dispatch()</code>، <code>dispatch_sync()</code>؛ جدا کردن «درخواست انجام کار» از «انجام‌دهنده».</li>
+      <li><strong>Artisan Commands</strong>: هر دستور CLI یک کلاس با signature و <code>handle()</code> است و Kernel (invoker) آن را بر اساس نام اجرا می‌کند؛ قابل زمان‌بندی در Scheduler.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+final class GenerateMonthlyReport implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $tries = 3;
+    public function __construct(public readonly int $tenantId, public readonly string $month) {}
+
+    public function handle(ReportService $reports): void     // Receiver از container تزریق می‌شود
+    {
+        $reports-&gt;generate($this-&gt;tenantId, $this-&gt;month);
+    }
+}
+
+GenerateMonthlyReport::dispatch($tenant-&gt;id, '2026-10')-&gt;onQueue('reports')-&gt;delay(now()-&gt;addMinutes(5));</code></pre>
+    <div class="callout tip"><p>Command را با <strong>CQRS</strong> اشتباه نگیرید: CQRS جدا کردن مدل نوشتن (command) از مدل خواندن (query) در سطح معماری است؛ اما Command pattern در CQRS برای نمایش درخواست‌های نوشتن به کار می‌رود. همچنین jobها باید ترجیحاً <strong>idempotent</strong> باشند، چون ممکن است بیش از یک بار اجرا شوند.</p></div>
+  </section>
+
+  <section class="lesson" id="pipeline" data-title="Chain of Responsibility و Pipeline">
+    <h2>Chain of Responsibility و Pipeline</h2>
+    <p><strong>هدف (CoR):</strong> جلوگیری از coupling بین فرستندهٔ درخواست و گیرنده، با دادن فرصت به <strong>زنجیره‌ای از handlerها</strong>. هر handler تصمیم می‌گیرد درخواست را خودش پردازش کند و/یا به <strong>handler بعدی</strong> پاس دهد، یا زنجیره را <strong>قطع</strong> کند.</p>
+    <pre><code class="language-php">&lt;?php
+abstract class Handler
+{
+    private ?Handler $next = null;
+    public function setNext(Handler $h): Handler { $this-&gt;next = $h; return $h; }
+
+    public function handle(Ticket $t): ?string
+    {
+        return $this-&gt;next?-&gt;handle($t);     // پیش‌فرض: پاس به بعدی
+    }
+}
+
+final class BotHandler extends Handler
+{
+    public function handle(Ticket $t): ?string
+    {
+        return $t-&gt;isFaq() ? 'answered by bot' : parent::handle($t);
+    }
+}
+final class AgentHandler extends Handler { /* ... */ }
+final class ManagerHandler extends Handler { /* ... */ }
+
+$chain = new BotHandler();
+$chain-&gt;setNext(new AgentHandler())-&gt;setNext(new ManagerHandler());
+$chain-&gt;handle($ticket);</code></pre>
+
+    <h3>Pipeline در Laravel</h3>
+    <p>Laravel نسخهٔ functional این الگو را با کلاس <code>Illuminate\Pipeline\Pipeline</code> پیاده کرده است: یک «passable» از میان مجموعه‌ای از «pipe»ها عبور می‌کند؛ هر pipe <code>$next</code> را دریافت می‌کند و می‌تواند <strong>قبل و بعد</strong> از آن کار کند یا اصلاً آن را صدا نزند (short-circuit). پیاده‌سازی داخلی با <code>array_reduce</code> روی pipeهای معکوس، closureهای تودرتو (پیاز) می‌سازد.</p>
+    <pre class="diagram">Request ──► [TrimStrings ──► [Authenticate ──► [VerifyCsrf ──► Controller]]]
+                                                                     │
+Response ◄── TrimStrings ◄──── Authenticate ◄──── VerifyCsrf ◄───────┘
+(هر middleware می‌تواند قبل از $next درخواست و بعد از آن پاسخ را تغییر دهد،
+ یا بدون صدا زدن $next مستقیماً پاسخ برگرداند: مثلاً 401)</pre>
+    <pre><code class="language-php">&lt;?php
+// Middleware = یک pipe
+final class EnsureUserIsSubscribed
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        if (! $request-&gt;user()?-&gt;subscribed()) {
+            return redirect()-&gt;route('billing');      // قطع زنجیره
+        }
+        $response = $next($request);                  // ادامهٔ زنجیره
+        $response-&gt;headers-&gt;set('X-Plan', $request-&gt;user()-&gt;plan);   // after-middleware
+        return $response;
+    }
+}
+
+// استفادهٔ مستقیم از Pipeline برای منطق دامنه: اعمال فیلترهای جست‌وجو
+$products = app(Pipeline::class)
+    -&gt;send(Product::query())
+    -&gt;through([
+        Filters\ByCategory::class,
+        Filters\ByPriceRange::class,
+        Filters\InStock::class,
+    ])
+    -&gt;thenReturn()        // یا -&gt;then(fn ($query) =&gt; $query-&gt;paginate())
+    -&gt;paginate(20);
+
+final class ByPriceRange
+{
+    public function __construct(private Request $request) {}
+
+    public function handle(Builder $query, Closure $next): mixed
+    {
+        if ($this-&gt;request-&gt;filled('min')) {
+            $query-&gt;where('price', '&gt;=', $this-&gt;request-&gt;integer('min'));
+        }
+        return $next($query);
+    }
+}</code></pre>
+    <ul>
+      <li>به‌طور پیش‌فرض متد <code>handle</code> هر pipe صدا زده می‌شود؛ با <code>-&gt;via('apply')</code> قابل تغییر است. pipe می‌تواند closure هم باشد.</li>
+      <li>در هستهٔ Laravel: HTTP Kernel درخواست را از middlewareهای global، گروه و route عبور می‌دهد؛ job middleware و pipelineهای Fortify (مراحل login) هم از همین کلاس استفاده می‌کنند.</li>
+    </ul>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul><li>هر مرحله یک مسئولیت (SRP) و قابل استفادهٔ مجدد.</li><li>افزودن/حذف/جابه‌جایی مرحله بدون تغییر بقیه.</li><li>امکان short-circuit و کار قبل/بعد.</li></ul></div>
+      <div class="card"><h4>معایب</h4><ul><li>ترتیب مهم است و خطای ترتیب باگ امنیتی می‌سازد (auth قبل از کار حساس).</li><li>ممکن است درخواست بدون پردازش از انتهای زنجیره خارج شود.</li><li>دیباگ closureهای تودرتو سخت‌تر است.</li></ul></div>
+    </div>
+  </section>
+
+  <section class="lesson" id="behavioral-others" data-title="Template Method، State و سایر الگوها">
+    <h2>Template Method، State، Iterator، Mediator، Null Object و Specification</h2>
+    <h3>Template Method</h3>
+    <p><strong>هدف:</strong> تعریف <strong>اسکلت یک الگوریتم</strong> در کلاس پایه و واگذاری برخی مراحل به زیرکلاس‌ها، بدون اینکه ساختار کلی الگوریتم تغییر کند. مبتنی بر <strong>ارث‌بری</strong> است (برخلاف Strategy که مبتنی بر ترکیب است). اصل «Hollywood»: <em>Don't call us, we'll call you</em>.</p>
+    <pre><code class="language-php">&lt;?php
+abstract class DataImporter
+{
+    final public function import(string $path): int          // template method (final)
+    {
+        $rows = $this-&gt;read($path);
+        $count = 0;
+        foreach ($rows as $row) {
+            if (! $this-&gt;validate($row)) { continue; }
+            $this-&gt;persist($this-&gt;transform($row));
+            $count++;
+        }
+        $this-&gt;afterImport($count);                          // hook اختیاری
+        return $count;
+    }
+
+    abstract protected function read(string $path): iterable;   // مراحل متغیر
+    abstract protected function transform(array $row): array;
+    abstract protected function persist(array $data): void;
+    protected function validate(array $row): bool { return true; }   // پیش‌فرض قابل override
+    protected function afterImport(int $count): void {}               // hook
+}
+
+final class CsvProductImporter extends DataImporter { /* read، transform، persist */ }</code></pre>
+    <p><strong>در Laravel:</strong> <code>FormRequest</code> (فریم‌ورک جریان اعتبارسنجی را اجرا می‌کند و شما <code>authorize()</code>، <code>rules()</code>، <code>messages()</code>، <code>prepareForValidation()</code> را پر می‌کنید)، <code>Illuminate\Console\Command</code> (شما <code>handle()</code> را می‌نویسید)، hookهای <code>boot()</code>/<code>booted()</code> مدل، و <code>register()</code>/<code>boot()</code> در Service Provider.</p>
+
+    <h3>State</h3>
+    <p><strong>هدف:</strong> اجازه دادن به object که با <strong>تغییر وضعیت درونی، رفتارش را تغییر دهد</strong>؛ گویی کلاسش عوض شده است. جایگزین <code>if ($this-&gt;status === ...)</code>های پراکنده در همهٔ متدها.</p>
+    <pre><code class="language-php">&lt;?php
+interface OrderState
+{
+    public function pay(Order $o): void;
+    public function ship(Order $o): void;
+    public function cancel(Order $o): void;
+}
+
+abstract class BaseState implements OrderState            // رفتار پیش‌فرض: غیرمجاز
+{
+    public function pay(Order $o): void { throw new InvalidTransition(static::class . ' → pay'); }
+    public function ship(Order $o): void { throw new InvalidTransition(static::class . ' → ship'); }
+    public function cancel(Order $o): void { throw new InvalidTransition(static::class . ' → cancel'); }
+}
+
+final class PendingState extends BaseState
+{
+    public function pay(Order $o): void { $o-&gt;transitionTo(new PaidState()); }
+    public function cancel(Order $o): void { $o-&gt;transitionTo(new CancelledState()); }
+}
+
+final class PaidState extends BaseState
+{
+    public function ship(Order $o): void { $o-&gt;transitionTo(new ShippedState()); }
+    public function cancel(Order $o): void { /* refund */ $o-&gt;transitionTo(new CancelledState()); }
+}
+
+final class ShippedState extends BaseState {}
+final class CancelledState extends BaseState {}
+
+final class Order
+{
+    private OrderState $state;
+    public function __construct() { $this-&gt;state = new PendingState(); }
+    public function transitionTo(OrderState $s): void { $this-&gt;state = $s; }
+    public function pay(): void { $this-&gt;state-&gt;pay($this); }        // delegate به state فعلی
+    public function ship(): void { $this-&gt;state-&gt;ship($this); }
+}</code></pre>
+    <p>برای state machineهای ساده، یک <strong>enum با متد <code>canTransitionTo()</code></strong> کافی و سبک‌تر است؛ State pattern کامل وقتی ارزش دارد که رفتار هر وضعیت پیچیده باشد. پکیج <code>spatie/laravel-model-states</code> این الگو را برای مدل‌های Eloquent پیاده می‌کند.</p>
+
+    <h3>Iterator</h3>
+    <p><strong>هدف:</strong> پیمایش عناصر یک مجموعه بدون افشای ساختار درونی آن. در PHP به‌صورت بومی با <code>Iterator</code>، <code>IteratorAggregate</code> و <strong>generator</strong> پشتیبانی می‌شود. در Laravel: <code>Collection</code> (پیاده‌کنندهٔ <code>IteratorAggregate</code>)، <code>LazyCollection</code> (مبتنی بر generator)، <code>cursor()</code> و paginatorها.</p>
+
+    <h3>Mediator (به‌طور خلاصه)</h3>
+    <p><strong>هدف:</strong> کاهش وابستگی‌های چندبه‌چند بین objectها با واداشتن آن‌ها به ارتباط <strong>فقط از طریق یک واسط مرکزی</strong>. به‌جای اینکه هر component همهٔ componentهای دیگر را بشناسد، فقط mediator را می‌شناسد. در Laravel، <strong>Event Dispatcher</strong> و <strong>Command Bus</strong> نقش mediator دارند: فرستنده و گیرنده یکدیگر را نمی‌شناسند. خطر: mediator ممکن است به یک God Object تبدیل شود.</p>
+
+    <h3>Null Object</h3>
+    <p><strong>هدف:</strong> به‌جای برگرداندن <code>null</code> (و پخش شدن <code>if ($x !== null)</code> در همه‌جا)، یک object با <strong>رفتار خنثی</strong> برگردانیم که همان interface را دارد.</p>
+    <pre><code class="language-php">&lt;?php
+final class NullLogger implements LoggerInterface { use LoggerTrait; public function log($level, $message, array $context = []): void {} }
+
+// Laravel: relation با withDefault — به‌جای null، یک مدل خالی/پیش‌فرض
+public function author(): BelongsTo
+{
+    return $this-&gt;belongsTo(User::class)-&gt;withDefault(['name' =&gt; 'کاربر حذف‌شده']);
+}
+// حالا $post-&gt;author-&gt;name هرگز خطای «property on null» نمی‌دهد</code></pre>
+    <p>نمونه‌های دیگر در Laravel: cache driver <code>null</code> (<code>NullStore</code>)، کانال لاگ <code>null</code>، و درایور broadcast <code>null</code>. مراقب باشید Null Object خطاهای واقعی را پنهان نکند (مثلاً نبودن کاربری که باید حتماً وجود داشته باشد).</p>
+
+    <h3>Specification (به‌طور خلاصه)</h3>
+    <p><strong>هدف:</strong> کپسوله کردن یک <strong>قاعدهٔ کسب‌وکار</strong> به‌صورت object با متد <code>isSatisfiedBy($candidate)</code> که قابل ترکیب با <code>and</code>/<code>or</code>/<code>not</code> است.</p>
+    <pre><code class="language-php">&lt;?php
+interface Specification { public function isSatisfiedBy(Customer $c): bool; }
+
+final class IsVip implements Specification { public function isSatisfiedBy(Customer $c): bool { return $c-&gt;totalSpent &gt; 10_000_000; } }
+final class AndSpec implements Specification
+{
+    public function __construct(private Specification $a, private Specification $b) {}
+    public function isSatisfiedBy(Customer $c): bool { return $this-&gt;a-&gt;isSatisfiedBy($c) &amp;&amp; $this-&gt;b-&gt;isSatisfiedBy($c); }
+}
+// معادل سمت دیتابیس در Laravel: local scopeها — Customer::vip()-&gt;active()-&gt;get()</code></pre>
+  </section>
+
+  <section class="lesson" id="mvc-layers" data-title="MVC، Service Layer، Action و DTO">
+    <h2>MVC، Service Layer، Action Classes، DTO و Value Object</h2>
+    <h3>MVC</h3>
+    <p><strong>Model-View-Controller</strong> یک الگوی معماری برای جدا کردن دغدغه‌ها در اپلیکیشن‌های دارای رابط کاربری است:</p>
+    <ul>
+      <li><strong>Model</strong>: داده و منطق کسب‌وکار (در Laravel: Eloquent model + لایه‌های دامنه).</li>
+      <li><strong>View</strong>: نمایش (Blade، یا JSON از طریق API Resource).</li>
+      <li><strong>Controller</strong>: دریافت ورودی، هماهنگ کردن model و انتخاب view/پاسخ.</li>
+    </ul>
+    <pre class="diagram">HTTP Request ──► Router ──► Middleware ──► Controller ──► Service / Model ──► DB
+                                              │
+                                              └──► View (Blade) / API Resource ──► HTTP Response</pre>
+    <div class="callout warn"><p>MVC به‌تنهایی نمی‌گوید منطق کسب‌وکار کجا برود و در اپ‌های بزرگ به <strong>Fat Controller</strong> یا <strong>Fat Model</strong> منجر می‌شود. برای همین لایه‌های Service، Action و Repository اضافه می‌شوند. قاعدهٔ رایج: <strong>Thin Controller</strong>؛ کنترلر فقط HTTP را به دامنه ترجمه کند.</p></div>
+
+    <h3>Service Layer</h3>
+    <p>لایه‌ای که <strong>use caseهای اپلیکیشن</strong> را هماهنگ می‌کند (تراکنش، فراخوانی چند model/repository، ارسال event). مستقل از HTTP است و از کنترلر، Artisan command و job قابل استفاده است.</p>
+    <pre><code class="language-php">&lt;?php
+final class OrderService
+{
+    public function __construct(
+        private PaymentGateway $gateway,
+        private InventoryService $inventory,
+    ) {}
+
+    public function place(PlaceOrderData $data, User $user): Order
+    {
+        return DB::transaction(function () use ($data, $user) {
+            $this-&gt;inventory-&gt;reserve($data-&gt;items);
+            $order = $user-&gt;orders()-&gt;create(['total' =&gt; $data-&gt;total()]);
+            $order-&gt;items()-&gt;createMany($data-&gt;itemsArray());
+            OrderPlaced::dispatch($order);     // listenerها بهتر است afterCommit باشند
+            return $order;
+        });
+    }
+}</code></pre>
+    <p>خطر: «Service»ی که به مجموعهٔ بی‌ربطی از متدها تبدیل شود (<code>UserService</code> با 40 متد) — نقض SRP.</p>
+
+    <h3>Action Classes</h3>
+    <p>یک کلاس = <strong>یک عملیات</strong> (یک use case) با یک متد عمومی (<code>handle</code>، <code>execute</code> یا <code>__invoke</code>). ریزدانه‌تر از Service، نام‌گذاری گویا (<code>CreateInvoice</code>، <code>CancelSubscription</code>)، تست ساده.</p>
+    <pre><code class="language-php">&lt;?php
+final class CancelSubscription
+{
+    public function __construct(private BillingGateway $billing) {}
+
+    public function __invoke(Subscription $sub, string $reason): void
+    {
+        $this-&gt;billing-&gt;cancel($sub-&gt;external_id);
+        $sub-&gt;update(['status' =&gt; SubscriptionStatus::Cancelled, 'cancel_reason' =&gt; $reason]);
+        SubscriptionCancelled::dispatch($sub);
+    }
+}
+
+// Controller
+public function destroy(Subscription $sub, CancelRequest $r, CancelSubscription $cancel)
+{
+    $cancel($sub, $r-&gt;validated('reason'));
+    return to_route('billing');
+}</code></pre>
+    <p>نمونهٔ رسمی: <strong>Laravel Fortify/Jetstream</strong> که در <code>app/Actions/Fortify</code> کلاس‌هایی مثل <code>CreateNewUser</code> و <code>UpdateUserPassword</code> دارند.</p>
+
+    <h3>DTO و Value Object</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>DTO (Data Transfer Object)</th><th>Value Object</th><th>Entity</th></tr></thead>
+      <tbody>
+        <tr><td>هدف</td><td>انتقال داده بین لایه‌ها/مرزها</td><td>مفهوم دامنه‌ای که با <strong>مقدارش</strong> شناخته می‌شود</td><td>مفهومی با <strong>هویت (ID)</strong> و چرخهٔ عمر</td></tr>
+        <tr><td>رفتار</td><td>بدون منطق (فقط داده)</td><td>دارای رفتار و اعتبارسنجی (invariant)</td><td>دارای رفتار و state قابل تغییر</td></tr>
+        <tr><td>برابری</td><td>معمولاً مهم نیست</td><td>بر اساس مقدار (<code>equals</code>)</td><td>بر اساس ID</td></tr>
+        <tr><td>تغییرپذیری</td><td>ترجیحاً immutable</td><td>همیشه immutable</td><td>mutable</td></tr>
+        <tr><td>مثال</td><td><code>PlaceOrderData</code>، پاسخ یک API خارجی</td><td><code>Money</code>، <code>Email</code>، <code>DateRange</code></td><td><code>User</code>، <code>Order</code></td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+final readonly class PlaceOrderData                       // DTO
+{
+    /** @param list&lt;OrderItemData&gt; $items */
+    public function __construct(
+        public int $addressId,
+        public array $items,
+        public ?string $couponCode = null,
+    ) {}
+
+    public static function fromRequest(PlaceOrderRequest $r): self
+    {
+        return new self(
+            addressId: $r-&gt;integer('address_id'),
+            items: array_map(OrderItemData::fromArray(...), $r-&gt;validated('items')),
+            couponCode: $r-&gt;validated('coupon'),
+        );
+    }
+}</code></pre>
+    <p><strong>چرا DTO به‌جای آرایه؟</strong> type safety، autocomplete، مستندسازی شکل داده، جدا کردن لایهٔ دامنه از <code>Request</code> (سرویس از HTTP بی‌خبر می‌ماند و از CLI/job هم قابل صدا زدن است). پکیج <code>spatie/laravel-data</code> این الگو را با validation و casting ترکیب می‌کند. در Laravel، Value Objectها را می‌توان با <strong>custom cast</strong> (<code>CastsAttributes</code>) به ستون‌های مدل نگاشت کرد.</p>
+  </section>
+
+  <section class="lesson" id="di-locator" data-title="Dependency Injection و Service Locator">
+    <h2>Dependency Injection، IoC Container و Service Locator</h2>
+    <p><strong>Dependency Injection</strong>: object وابستگی‌هایش را <strong>خودش نمی‌سازد و دنبالشان نمی‌گردد</strong>؛ از بیرون دریافت می‌کند. این یکی از شکل‌های <strong>Inversion of Control (IoC)</strong> است و ابزار عملی اصل <strong>Dependency Inversion</strong> (وابستگی به abstraction) است.</p>
+    <ul>
+      <li><strong>Constructor injection</strong>: وابستگی‌های اجباری؛ رایج‌ترین و بهترین.</li>
+      <li><strong>Method injection</strong>: وابستگی فقط برای یک متد (در Laravel، type-hint در متد کنترلر یا <code>handle()</code> job).</li>
+      <li><strong>Setter/property injection</strong>: وابستگی اختیاری؛ خطر object نیمه‌کامل.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+// ❌ بدون DI: coupling محکم، غیرقابل تست
+final class InvoiceMailer
+{
+    public function send(Invoice $i): void
+    {
+        $mailer = new SmtpMailer('smtp.example.com', 587);   // ساخت درون کلاس
+        $pdf = new DompdfRenderer();
+        $mailer-&gt;send($i-&gt;customer-&gt;email, $pdf-&gt;render($i));
+    }
+}
+
+// ✅ با DI: وابستگی‌ها صریح و قابل جایگزینی
+final class InvoiceMailer
+{
+    public function __construct(private Mailer $mailer, private PdfRenderer $pdf) {}
+
+    public function send(Invoice $i): void
+    {
+        $this-&gt;mailer-&gt;send($i-&gt;customer-&gt;email, $this-&gt;pdf-&gt;render($i));
+    }
+}
+
+// Composition root: Service Provider
+$this-&gt;app-&gt;bind(PdfRenderer::class, DompdfRenderer::class);
+// Contextual binding: برای یک مصرف‌کنندهٔ خاص پیاده‌سازی متفاوت
+$this-&gt;app-&gt;when(ReportExporter::class)-&gt;needs(PdfRenderer::class)-&gt;give(WkhtmlRenderer::class);</code></pre>
+    <p><strong>Service Container</strong> لاراول با <strong>auto-wiring</strong> (با Reflection، type-hintهای constructor را می‌خواند و بازگشتی resolve می‌کند) نیاز به پیکربندی را برای کلاس‌های concrete حذف می‌کند؛ فقط interfaceها و موارد خاص (پارامتر اسکالر، singleton) نیاز به binding دارند.</p>
+
+    <h3>Service Locator</h3>
+    <p>در Service Locator، کلاس وابستگی‌هایش را <strong>خودش از یک رجیستری مرکزی درخواست می‌کند</strong>:</p>
+    <pre><code class="language-php">&lt;?php
+final class InvoiceMailer
+{
+    public function send(Invoice $i): void
+    {
+        $mailer = app(Mailer::class);          // یا resolve()، App::make()، $this-&gt;container-&gt;get()
+        $pdf = app(PdfRenderer::class);
+        // ...
+    }
+}</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4>Dependency Injection</h4><ul>
+        <li>وابستگی‌ها در امضای constructor <strong>صریح</strong>اند.</li>
+        <li>کلاس از container بی‌خبر است (قابل استفاده بیرون از فریم‌ورک).</li>
+        <li>تست: <code>new InvoiceMailer($fakeMailer, $fakePdf)</code>.</li>
+        <li>constructor بزرگ = نشانهٔ هشدار نقض SRP (بازخورد طراحی).</li>
+      </ul></div>
+      <div class="card"><h4>Service Locator</h4><ul>
+        <li>وابستگی‌ها <strong>پنهان</strong>اند؛ باید بدنهٔ کد را خواند.</li>
+        <li>کلاس به container (یک global) وابسته است.</li>
+        <li>خطای «binding موجود نیست» در زمان اجرا، نه هنگام ساخت.</li>
+        <li>تست نیازمند پیکربندی container است.</li>
+      </ul></div>
+    </div>
+    <div class="callout exam"><p>چرا Service Locator را <strong>anti-pattern</strong> می‌دانند؟ چون وابستگی‌ها را پنهان می‌کند، قرارداد کلاس را مبهم می‌کند و کلاس را به یک global registry گره می‌زند. اما در Laravel استفاده از <code>app()</code> در <strong>مرزهای فریم‌ورک</strong> (Service Provider، factoryها، helperها، جایی که DI ممکن نیست مثل برخی closureها) قابل قبول است. Facadeها هم در واقع Service Locator با ظاهر static هستند. قاعده: در کد دامنه و سرویس‌ها از constructor injection استفاده کنید؛ locator را به composition root محدود کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="repository-ar-dm" data-title="Repository، Active Record و Data Mapper">
+    <h2>Repository، Active Record و Data Mapper</h2>
+    <h3>Active Record در برابر Data Mapper</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Active Record (Eloquent)</h4><ul>
+        <li>هر object <strong>یک سطر جدول</strong> را نمایش می‌دهد و <strong>خودش</strong> می‌داند چطور ذخیره/بارگذاری شود: <code>$user-&gt;save()</code>، <code>User::find(1)</code>.</li>
+        <li>داده + رفتار دامنه + منطق persistence در یک کلاس.</li>
+        <li>propertyها مستقیماً ستون‌های جدول‌اند (از طریق <code>__get</code>/<code>__set</code>).</li>
+        <li>توسعهٔ سریع، کد کم، ایده‌آل برای CRUD و دامنه‌های نزدیک به schema.</li>
+      </ul></div>
+      <div class="card"><h4>Data Mapper (Doctrine ORM)</h4><ul>
+        <li>Entityها <strong>POPO</strong> (کلاس ساده PHP) هستند و <strong>از دیتابیس بی‌خبر</strong>اند.</li>
+        <li>یک لایهٔ جدا (<strong>EntityManager / Mapper</strong>) نگاشت object ↔ جدول را انجام می‌دهد: <code>$em-&gt;persist($user); $em-&gt;flush();</code></li>
+        <li>معمولاً همراه <strong>Unit of Work</strong> (ردیابی تغییرات و نوشتن یکجا) و <strong>Identity Map</strong>.</li>
+        <li>مناسب دامنه‌های پیچیده (DDD) که مدل دامنه با schema فاصله دارد.</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+// Active Record
+$user = User::find(1);
+$user-&gt;email = 'a@b.com';
+$user-&gt;save();                       // خود object SQL می‌زند
+
+// Data Mapper (Doctrine)
+$user = $entityManager-&gt;find(User::class, 1);
+$user-&gt;changeEmail(new Email('a@b.com'));   // entity خالص، بدون دانش از DB
+$entityManager-&gt;flush();             // Unit of Work تغییرات را تشخیص می‌دهد و UPDATE می‌زند</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Active Record</th><th>Data Mapper</th></tr></thead>
+      <tbody>
+        <tr><td>سادگی و سرعت توسعه</td><td>بالا</td><td>پایین‌تر (mapping، کلاس‌های بیشتر)</td></tr>
+        <tr><td>جداسازی دامنه از persistence</td><td>ضعیف (نقض SRP)</td><td>قوی</td></tr>
+        <tr><td>تست واحد بدون DB</td><td>دشوار</td><td>آسان (entity خالص)</td></tr>
+        <tr><td>تطابق با schema</td><td>مدل ≈ جدول</td><td>مدل دامنه می‌تواند کاملاً متفاوت باشد</td></tr>
+        <tr><td>مثال PHP</td><td>Eloquent، Yii AR</td><td>Doctrine ORM، Cycle ORM</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Repository</h3>
+    <p><strong>هدف</strong> (Fowler/DDD): واسطی بین دامنه و لایهٔ داده که مانند یک <strong>مجموعهٔ درون‌حافظه‌ای از objectهای دامنه</strong> رفتار می‌کند؛ دامنه نمی‌داند داده از کجا می‌آید (SQL، API، cache).</p>
+    <pre><code class="language-php">&lt;?php
+interface OrderRepository
+{
+    public function findById(OrderId $id): ?Order;
+    /** @return list&lt;Order&gt; */
+    public function findUnpaidOlderThan(DateTimeImmutable $date): array;   // متدهای معنادار دامنه
+    public function save(Order $order): void;
+}
+
+final class EloquentOrderRepository implements OrderRepository
+{
+    public function findById(OrderId $id): ?Order { return Order::find($id-&gt;value); }
+
+    public function findUnpaidOlderThan(DateTimeImmutable $date): array
+    {
+        return Order::where('status', OrderStatus::Pending)
+            -&gt;where('created_at', '&lt;', $date)
+            -&gt;get()-&gt;all();
+    }
+
+    public function save(Order $order): void { $order-&gt;save(); }
+}</code></pre>
+
+    <h3>بحث Repository در Laravel</h3>
+    <div class="grid-2">
+      <div class="card"><h4>موافقان</h4><ul>
+        <li>متمرکز کردن کوئری‌های پیچیده و تکراری در یک جا با نام معنادار.</li>
+        <li>امکان decorator (cache) و جایگزینی منبع داده.</li>
+        <li>تست سرویس‌ها با fake repository بدون دیتابیس.</li>
+        <li>در معماری‌های DDD/Hexagonal، port رسمی لایهٔ persistence.</li>
+      </ul></div>
+      <div class="card"><h4>مخالفان</h4><ul>
+        <li>Eloquent خودش Active Record است؛ repository روی آن یک <strong>abstraction نشتی (leaky)</strong> است: معمولاً مدل‌های Eloquent (با lazy loading و <code>save()</code>) برگردانده می‌شوند، پس دامنه واقعاً از persistence جدا نشده.</li>
+        <li>«Generic repository» با متدهای <code>all()</code>، <code>find()</code>، <code>create()</code> فقط Eloquent را تکرار می‌کند و قدرت Query Builder (eager loading، scopes، pagination) را می‌گیرد.</li>
+        <li>تعویض دیتابیس/ORM در عمل تقریباً هیچ‌وقت رخ نمی‌دهد (YAGNI).</li>
+        <li>Laravel ابزارهای تست با دیتابیس واقعی (<code>RefreshDatabase</code>، SQLite in-memory، factories) را راحت کرده است.</li>
+      </ul></div>
+    </div>
+    <div class="callout exam"><p>پاسخ متعادل در آزمون: «Repository در Laravel <strong>اجباری نیست</strong>. برای CRUD ساده، Eloquent مستقیم در Action/Service کافی است و <strong>local scope</strong> و <strong>custom query builder</strong> کوئری‌ها را reusable می‌کنند. Repository وقتی ارزش دارد که: کوئری‌های پیچیدهٔ دامنه‌ای داریم، منبع داده متنوع است (API خارجی + DB)، به cache decorator نیاز داریم، یا معماری DDD با دامنهٔ مستقل از فریم‌ورک داریم. در این حالت repository باید متدهای <strong>دامنه‌ای</strong> (<code>findUnpaidOlderThan</code>) داشته باشد نه یک wrapper عمومی روی Eloquent.»</p></div>
+  </section>
+
+  <section class="lesson" id="pattern-map" data-title="جدول خلاصهٔ الگوها در Laravel">
+    <h2>جدول خلاصه: الگو ← مسئله ← نمونه در Laravel</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>الگو</th><th>دسته</th><th>مسئله‌ای که حل می‌کند</th><th>نمونه در Laravel</th></tr></thead>
+      <tbody>
+        <tr><td>Singleton</td><td>Creational</td><td>یک instance مشترک</td><td><code>$app-&gt;singleton()</code>، <code>scoped()</code>؛ CacheManager، DatabaseManager</td></tr>
+        <tr><td>Simple/Static Factory</td><td>Creational</td><td>متمرکز کردن منطق ساخت، نام گویا</td><td><code>Carbon::parse()</code>، <code>Collection::make()</code>، <code>Validator::make()</code></td></tr>
+        <tr><td>Factory Method</td><td>Creational</td><td>زیرکلاس نوع محصول را تعیین کند</td><td><code>Model::newCollection()</code>، <code>newEloquentBuilder()</code></td></tr>
+        <tr><td>Abstract Factory</td><td>Creational</td><td>خانوادهٔ objectهای سازگار</td><td><code>ConnectionFactory</code> (connector + connection + grammar هر DB)</td></tr>
+        <tr><td>Builder</td><td>Creational</td><td>ساخت گام‌به‌گام object پیچیده</td><td>Query Builder، <code>PendingRequest</code> (Http)، Blueprint، Model Factory</td></tr>
+        <tr><td>Prototype</td><td>Creational</td><td>ساخت با کپی نمونهٔ موجود</td><td><code>replicate()</code>، <code>$query-&gt;clone()</code>، <code>Carbon::copy()</code></td></tr>
+        <tr><td>Adapter</td><td>Structural</td><td>سازگار کردن interfaceهای ناسازگار</td><td>Flysystem adapters، Cache Stores، Queue connectors، Mail transports</td></tr>
+        <tr><td>Bridge</td><td>Structural</td><td>جدا کردن دو بُعد تغییر</td><td>Notification ↔ Channels (ایدهٔ مشابه)</td></tr>
+        <tr><td>Composite</td><td>Structural</td><td>رفتار یکسان با برگ و گروه در درخت</td><td>گروه‌های middleware، Blade components تودرتو (ایده)</td></tr>
+        <tr><td>Decorator</td><td>Structural</td><td>افزودن رفتار بدون تغییر کلاس</td><td><code>$app-&gt;extend()</code>، Cache Repository دور Store، caching repository</td></tr>
+        <tr><td>Facade (GoF)</td><td>Structural</td><td>API ساده برای زیرسیستم پیچیده</td><td>Service Layer / Checkout service شما</td></tr>
+        <tr><td>Laravel Facade</td><td>(Proxy/Locator)</td><td>دسترسی static-مانند و قابل تست به سرویس container</td><td><code>Cache</code>، <code>DB</code>، <code>Log</code>، Real-time facades</td></tr>
+        <tr><td>Proxy</td><td>Structural</td><td>کنترل دسترسی / lazy loading</td><td>Deferred providers، lazy loading رابطه‌ها، <code>HigherOrderCollectionProxy</code></td></tr>
+        <tr><td>Strategy</td><td>Behavioral</td><td>الگوریتم‌های قابل تعویض</td><td>Cache/Queue/Mail drivers، Hash drivers، درگاه پرداخت</td></tr>
+        <tr><td>Manager</td><td>(Factory + Strategy)</td><td>انتخاب و ساخت driver بر اساس config</td><td>CacheManager، QueueManager، AuthManager، <code>Manager::extend()</code></td></tr>
+        <tr><td>Observer</td><td>Behavioral</td><td>اطلاع‌رسانی یک‌به‌چند با coupling کم</td><td>Events/Listeners، Model Observers، Model Events</td></tr>
+        <tr><td>Command</td><td>Behavioral</td><td>درخواست به‌صورت object (صف، retry، undo)</td><td>Queued Jobs، Bus، Artisan commands</td></tr>
+        <tr><td>Chain of Responsibility</td><td>Behavioral</td><td>عبور درخواست از زنجیرهٔ handlerها</td><td>Middleware، <code>Pipeline</code>، job middleware</td></tr>
+        <tr><td>Template Method</td><td>Behavioral</td><td>اسکلت ثابت با مراحل قابل override</td><td><code>FormRequest</code>، <code>Command::handle</code>، <code>boot/booted</code></td></tr>
+        <tr><td>State</td><td>Behavioral</td><td>رفتار وابسته به وضعیت</td><td>enum + transition؛ spatie/laravel-model-states</td></tr>
+        <tr><td>Iterator</td><td>Behavioral</td><td>پیمایش بدون افشای ساختار</td><td>Collection، LazyCollection، <code>cursor()</code></td></tr>
+        <tr><td>Mediator</td><td>Behavioral</td><td>ارتباط از طریق واسط مرکزی</td><td>Event Dispatcher، Command Bus</td></tr>
+        <tr><td>Null Object</td><td>Behavioral</td><td>حذف بررسی null</td><td><code>withDefault()</code>، cache/log driver <code>null</code></td></tr>
+        <tr><td>Specification</td><td>Behavioral/DDD</td><td>قاعدهٔ کسب‌وکار قابل ترکیب</td><td>local scopes (معادل سمت DB)</td></tr>
+        <tr><td>MVC</td><td>Architectural</td><td>جدا کردن نمایش، کنترل و داده</td><td>Controller + Blade/Resource + Model</td></tr>
+        <tr><td>Service Layer / Action</td><td>Architectural</td><td>هماهنگی use caseها، thin controller</td><td>Fortify Actions، کلاس‌های Service</td></tr>
+        <tr><td>Repository</td><td>Enterprise</td><td>انتزاع دسترسی به داده</td><td>اختیاری؛ در هسته استفاده نمی‌شود</td></tr>
+        <tr><td>Active Record</td><td>Enterprise</td><td>object = سطر + persistence</td><td>Eloquent</td></tr>
+        <tr><td>DTO / Value Object</td><td>Enterprise/DDD</td><td>انتقال داده تایپ‌شده / مفهوم مقداری immutable</td><td>Event classها، <code>$request-&gt;safe()</code>، custom casts</td></tr>
+        <tr><td>DI / IoC</td><td>Architectural</td><td>وابستگی صریح و قابل جایگزینی</td><td>Service Container، auto-wiring، contextual binding</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-design-patterns-1">
+      <summary>الگوی طراحی را تعریف کنید و سه دستهٔ الگوهای GoF را با مثال توضیح دهید. چه زمانی استفاده از الگو به over-engineering تبدیل می‌شود؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> الگوی طراحی یک <strong>راه‌حل عمومی و اثبات‌شده</strong> برای یک <strong>مسئلهٔ تکرارشونده</strong> در طراحی نرم‌افزار است؛ کد آماده نیست، بلکه قالبی است که با زمینهٔ مسئله تطبیق داده می‌شود. هر الگو نام، مسئله، راه‌حل و پیامد (trade-off) دارد و مهم‌ترین فایده‌اش ایجاد <strong>واژگان مشترک</strong> در تیم است.</p>
+        <ul>
+          <li><strong>Creational</strong> — نحوهٔ ساخت objectها و جدا کردن کلاینت از کلاس concrete: Singleton، Factory Method، Abstract Factory، Builder (Query Builder)، Prototype (<code>replicate()</code>).</li>
+          <li><strong>Structural</strong> — ترکیب کلاس‌ها و objectها: Adapter (Flysystem)، Decorator (caching repository)، Facade، Proxy، Composite، Bridge.</li>
+          <li><strong>Behavioral</strong> — تقسیم مسئولیت و ارتباط objectها: Strategy (driverها)، Observer (events)، Command (jobs)، Chain of Responsibility (middleware)، Template Method، State، Iterator.</li>
+        </ul>
+        <p><strong>Over-engineering</strong> وقتی رخ می‌دهد که الگو برای مسئله‌ای فرضی یا آینده‌ای نامعلوم به کار رود (نقض <strong>YAGNI</strong>): interface برای کلاسی که هرگز پیاده‌سازی دوم ندارد، repositoryی که فقط متدهای Eloquent را تکرار می‌کند، factory برای ساخت یک object ساده، یا لایه‌هایی که فقط فراخوانی را پاس می‌دهند. هزینهٔ هر الگو، کلاس‌های بیشتر، indirection و سخت‌تر شدن فهم کد است.</p>
+        <p><strong>معیار تصمیم:</strong> آیا نقطهٔ تغییر واقعی وجود دارد؟ آیا الگو تست‌پذیری یا خوانایی را بهتر می‌کند؟ ساده‌ترین راه‌حلی که کار می‌کند را بنویسید و وقتی تکرار یا درد واقعی ظاهر شد، refactor به سمت الگو کنید (<em>refactoring to patterns</em>).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-2">
+      <summary>الگوی Singleton را پیاده‌سازی کنید. چرا آن را anti-pattern می‌دانند؟ تفاوت آن با <code>$app-&gt;singleton()</code> و <code>$app-&gt;scoped()</code> در Laravel چیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Singleton تضمین می‌کند کلاس فقط یک instance داشته باشد و یک نقطهٔ دسترسی سراسری به آن بدهد.</p>
+        <pre><code class="language-php">&lt;?php
+final class Logger
+{
+    private static ?self $instance = null;
+    private function __construct() {}
+    private function __clone() {}
+    public function __wakeup(): never { throw new LogicException(); }
+    public static function instance(): self { return self::$instance ??= new self(); }
+}</code></pre>
+        <p><strong>چرا anti-pattern:</strong></p>
+        <ul>
+          <li><strong>Global state</strong> و وابستگی پنهان (<code>Logger::instance()</code> در هر جای کد).</li>
+          <li><strong>تست‌پذیری ضعیف</strong>: جایگزینی با fake سخت است و state بین تست‌ها نشت می‌کند.</li>
+          <li><strong>نقض SRP</strong>: کلاس هم کار خودش را می‌کند هم چرخهٔ عمرش را مدیریت می‌کند.</li>
+          <li>coupling به کلاس concrete (نقض Dependency Inversion).</li>
+          <li>در Octane/worker طولانی، state بین درخواست‌ها می‌ماند.</li>
+        </ul>
+        <p><strong>در Laravel:</strong> یکتایی به <strong>container</strong> سپرده می‌شود و کلاس یک کلاس عادی با constructor عمومی است:</p>
+        <pre><code class="language-php">&lt;?php
+$this-&gt;app-&gt;singleton(ExchangeRateClient::class, fn () =&gt; new ExchangeRateClient(config('rates.key')));
+$this-&gt;app-&gt;scoped(CurrentTenant::class);     // یکتا در هر request/job
+$this-&gt;app-&gt;bind(ReportBuilder::class);       // هر بار جدید</code></pre>
+        <ul>
+          <li><code>singleton</code>: یک instance در طول عمر container (در FPM = یک درخواست؛ در Octane/queue worker = طول عمر پروسس).</li>
+          <li><code>scoped</code>: مثل singleton ولی در شروع هر درخواست Octane یا هر job در queue worker reset می‌شود؛ برای stateهای وابسته به درخواست (tenant جاری، user context) مناسب است.</li>
+        </ul>
+        <p>وابستگی از طریق constructor injection صریح است و در تست با <code>$this-&gt;app-&gt;instance()</code> یا <code>$this-&gt;mock()</code> جایگزین می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-3">
+      <summary>Facade در GoF و Facade در Laravel را مقایسه کنید. وقتی <code>Cache::get('key')</code> صدا زده می‌شود، دقیقاً چه اتفاقی می‌افتد؟ چرا Facadeهای لاراول برخلاف متدهای static قابل تست‌اند؟</summary>
+      <div class="answer">
+        <p><strong>GoF Facade:</strong> یک interface ساده و سطح بالا برای یک <strong>زیرسیستم پیچیده</strong> متشکل از چند کلاس؛ مثلاً <code>CheckoutFacade::placeOrder()</code> که inventory، payment، shipping و mail را هماهنگ می‌کند. API جدید و ساده‌تری می‌سازد.</p>
+        <p><strong>Laravel Facade:</strong> یک <strong>static proxy</strong> به یک سرویس در Service Container. زیرسیستمی را ساده نمی‌کند؛ همان API سرویس اصلی را با سینتکس static در اختیار می‌گذارد. از نظر الگو به <strong>Proxy + Service Locator</strong> نزدیک‌تر است.</p>
+        <p><strong>جریان <code>Cache::get('key')</code>:</strong></p>
+        <ol>
+          <li>کلاس <code>Cache</code> متد static <code>get</code> ندارد، پس <code>Facade::__callStatic('get', ['key'])</code> اجرا می‌شود.</li>
+          <li><code>getFacadeRoot()</code> با کلید <code>getFacadeAccessor()</code> (اینجا <code>'cache'</code>) instance را از container resolve می‌کند و در <code>$resolvedInstance</code> نگه می‌دارد.</li>
+          <li><code>$instance-&gt;get('key')</code> روی <code>CacheManager</code> اجرا می‌شود که آن هم با <code>__call</code> به store پیش‌فرض (Repository) forward می‌کند.</li>
+        </ol>
+        <pre><code class="language-php">&lt;?php
+public static function __callStatic($method, $args)
+{
+    $instance = static::getFacadeRoot();
+    if (! $instance) { throw new RuntimeException('A facade root has not been set.'); }
+    return $instance-&gt;$method(...$args);
+}</code></pre>
+        <p><strong>تست‌پذیری:</strong> چون فراخوانی در نهایت روی یک <strong>instance</strong> انجام می‌شود، می‌توان آن instance را عوض کرد: <code>Cache::shouldReceive('get')-&gt;once()-&gt;andReturn('v')</code> (یک Mockery mock را <code>swap</code> می‌کند)، یا <code>Mail::fake()</code>، <code>Queue::fake()</code>، <code>Event::fake()</code>. متد static واقعی به کلاس گره خورده و قابل جایگزینی نیست.</p>
+        <p><strong>معایب:</strong> وابستگی پنهان (در constructor دیده نمی‌شود)، coupling به فریم‌ورک، نیاز به ide-helper برای IDE. در کد دامنه، تزریق contract (<code>Illuminate\Contracts\Cache\Repository</code>) صریح‌تر است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-4">
+      <summary>یک فروشگاه سه درگاه پرداخت دارد و کاربر هنگام پرداخت درگاه را انتخاب می‌کند. با الگوی Strategy این سناریو را پیاده‌سازی کنید طوری که افزودن درگاه چهارم نیاز به تغییر کد موجود نداشته باشد.</summary>
+      <div class="answer">
+        <p><strong>ایده:</strong> هر درگاه یک <strong>strategy</strong> با interface مشترک است؛ یک <strong>resolver/registry</strong> بر اساس انتخاب کاربر strategy مناسب را از container می‌گیرد و سرویس checkout (context) فقط با interface کار می‌کند.</p>
+        <pre><code class="language-php">&lt;?php
+interface PaymentGateway
+{
+    public function key(): string;
+    public function start(Order $order): RedirectUrl;
+    public function verify(Order $order, array $callback): PaymentResult;
+}
+
+final class ZarinpalGateway implements PaymentGateway { public function key(): string { return 'zarinpal'; } /* ... */ }
+final class IdPayGateway implements PaymentGateway { public function key(): string { return 'idpay'; } /* ... */ }
+final class WalletGateway implements PaymentGateway { public function key(): string { return 'wallet'; } /* ... */ }
+
+final class GatewayResolver
+{
+    /** @var array&lt;string, PaymentGateway&gt; */
+    private array $gateways = [];
+
+    /** @param iterable&lt;PaymentGateway&gt; $gateways */
+    public function __construct(iterable $gateways)
+    {
+        foreach ($gateways as $g) { $this-&gt;gateways[$g-&gt;key()] = $g; }
+    }
+
+    public function resolve(string $key): PaymentGateway
+    {
+        return $this-&gt;gateways[$key] ?? throw new UnsupportedGateway($key);
+    }
+
+    /** @return list&lt;string&gt; */
+    public function available(): array { return array_keys($this-&gt;gateways); }
+}
+
+// ServiceProvider: درگاه جدید = فقط یک کلاس + یک tag
+$this-&gt;app-&gt;tag([ZarinpalGateway::class, IdPayGateway::class, WalletGateway::class], 'payment.gateways');
+$this-&gt;app-&gt;singleton(GatewayResolver::class, fn ($app) =&gt; new GatewayResolver($app-&gt;tagged('payment.gateways')));
+
+final class StartPayment
+{
+    public function __construct(private GatewayResolver $resolver) {}
+
+    public function __invoke(Order $order, string $gatewayKey): RedirectUrl
+    {
+        return $this-&gt;resolver-&gt;resolve($gatewayKey)-&gt;start($order);   // بدون if/switch
+    }
+}
+// validation: 'gateway' =&gt; ['required', Rule::in($resolver-&gt;available())]</code></pre>
+        <p><strong>چرا خوب است:</strong> Open/Closed (درگاه چهارم = یک کلاس جدید و افزودن به tag)، حذف شرط‌های پراکنده، تست هر درگاه به‌صورت مستقل، و امکان <code>FakeGateway</code> در محیط local و تست.</p>
+        <p><strong>Trade-off:</strong> کلاس‌های بیشتر و یک لایهٔ indirection؛ اگر فقط یک درگاه دارید، این ساختار زودهنگام است. می‌توان به‌جای tag از Manager لاراول (<code>extend('newGateway', ...)</code>) هم استفاده کرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-5">
+      <summary>Simple Factory، Factory Method و Abstract Factory را تعریف و مقایسه کنید. برای هر کدام یک مثال در PHP یا Laravel بزنید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Simple Factory</strong> (idiom، نه GoF): یک کلاس/متد که بر اساس پارامتر، یکی از چند کلاس را می‌سازد. ساده است ولی برای نوع جدید باید ویرایش شود.</li>
+          <li><strong>Factory Method</strong> (GoF، مبتنی بر <strong>ارث‌بری</strong>): کلاس پایه الگوریتم را دارد و ساخت محصول را به یک متد (abstract یا قابل override) می‌سپارد؛ <strong>زیرکلاس</strong> تعیین می‌کند چه کلاسی ساخته شود.</li>
+          <li><strong>Abstract Factory</strong> (GoF، مبتنی بر <strong>ترکیب</strong>): یک object factory با چند متد برای ساخت <strong>خانواده‌ای از محصولات مرتبط</strong> که باید با هم سازگار باشند.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+// Simple Factory
+final class ExporterFactory {
+    public function make(string $type): Exporter {
+        return match ($type) { 'csv' =&gt; new CsvExporter(), 'xlsx' =&gt; new XlsxExporter(),
+            default =&gt; throw new InvalidArgumentException($type) };
+    }
+}
+
+// Factory Method — مثال واقعی Laravel
+class Order extends Model {
+    public function newCollection(array $models = []): OrderCollection   // override
+    { return new OrderCollection($models); }
+}
+
+// Abstract Factory
+interface UiKitFactory { public function button(): Button; public function modal(): Modal; }
+final class BootstrapKit implements UiKitFactory { /* BootstrapButton + BootstrapModal */ }
+final class TailwindKit implements UiKitFactory { /* TailwindButton + TailwindModal */ }</code></pre>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Simple</th><th>Factory Method</th><th>Abstract Factory</th></tr></thead>
+          <tbody>
+            <tr><td>مکانیزم</td><td>شرط</td><td>ارث‌بری/override</td><td>ترکیب/تزریق factory</td></tr>
+            <tr><td>خروجی</td><td>یک محصول</td><td>یک محصول</td><td>خانوادهٔ محصولات</td></tr>
+            <tr><td>Laravel</td><td><code>Validator::make()</code>، <code>Carbon::parse()</code></td><td><code>newCollection()</code>، <code>newEloquentBuilder()</code></td><td><code>ConnectionFactory</code> (connection + grammar + processor)</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>نکته:</strong> هدف هر سه، جدا کردن کلاینت از <code>new ConcreteClass</code> است تا وابستگی به abstraction باشد. در Laravel، container خودش یک «factory عمومی» است؛ پس factory دستی فقط وقتی لازم است که انتخاب نوع به دادهٔ زمان اجرا وابسته باشد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-6">
+      <summary>یک Decorator برای افزودن cache به یک repository پیاده‌سازی کنید و آن را در container لاراول ثبت کنید. تفاوت Decorator، Proxy و Adapter چیست؟</summary>
+      <div class="answer">
+        <p><strong>Decorator</strong> objectی را می‌پیچد که <strong>همان interface</strong> را دارد و قبل/بعد از delegate کردن، رفتار اضافه می‌کند؛ بدون تغییر کلاس اصلی (Open/Closed).</p>
+        <pre><code class="language-php">&lt;?php
+interface CategoryRepository
+{
+    /** @return Collection&lt;int, Category&gt; */
+    public function tree(): Collection;
+    public function update(Category $c, array $data): void;
+}
+
+final class CachedCategoryRepository implements CategoryRepository
+{
+    public function __construct(
+        private CategoryRepository $inner,
+        private \Illuminate\Contracts\Cache\Repository $cache,
+    ) {}
+
+    public function tree(): Collection
+    {
+        return $this-&gt;cache-&gt;remember('categories:tree', now()-&gt;addHour(), fn () =&gt; $this-&gt;inner-&gt;tree());
+    }
+
+    public function update(Category $c, array $data): void
+    {
+        $this-&gt;inner-&gt;update($c, $data);
+        $this-&gt;cache-&gt;forget('categories:tree');      // invalidation بعد از نوشتن
+    }
+}
+
+// AppServiceProvider::register
+$this-&gt;app-&gt;bind(CategoryRepository::class, EloquentCategoryRepository::class);
+$this-&gt;app-&gt;extend(CategoryRepository::class,
+    fn (CategoryRepository $repo, $app) =&gt; new CachedCategoryRepository($repo, $app['cache.store']));</code></pre>
+        <p>مصرف‌کننده فقط <code>CategoryRepository</code> را type-hint می‌کند و نمی‌داند cache وجود دارد. با decorator دیگری (مثلاً logging یا metrics) می‌توان لایه‌ها را زنجیر کرد.</p>
+        <p><strong>مقایسه:</strong></p>
+        <ul>
+          <li><strong>Adapter</strong>: interface را <strong>تغییر</strong> می‌دهد تا کلاس ناسازگار (SDK خارجی) با interface مورد انتظار کار کند.</li>
+          <li><strong>Decorator</strong>: interface را <strong>حفظ</strong> و <strong>رفتار اضافه</strong> می‌کند؛ object درونی از بیرون داده می‌شود و decoratorها قابل انباشته شدن‌اند.</li>
+          <li><strong>Proxy</strong>: interface را حفظ و <strong>دسترسی را کنترل</strong> می‌کند (lazy loading، مجوز، remote)؛ اغلب خودش object واقعی را می‌سازد یا مدیریت می‌کند.</li>
+        </ul>
+        <p><strong>هزینه‌ها:</strong> باید همهٔ متدهای interface را delegate کرد، invalidation cache خودش منبع باگ است (دادهٔ کهنه)، و ترتیب decoratorها اهمیت دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-7">
+      <summary>شرکت قصد دارد ارائه‌دهندهٔ پیامک را عوض کند و کد فعلی در ده‌ها جا مستقیماً SDK قدیمی را صدا می‌زند. با الگوی Adapter راه‌حلی ارائه دهید که این مشکل دیگر تکرار نشود.</summary>
+      <div class="answer">
+        <p><strong>مشکل:</strong> وابستگی مستقیم کد دامنه به API یک vendor (coupling محکم). تعویض vendor یعنی تغییر همهٔ نقاط فراخوانی و ریسک بالا.</p>
+        <p><strong>راه‌حل:</strong> یک interface متعلق به <strong>دامنهٔ ما</strong> (Target/Port) تعریف می‌کنیم و برای هر vendor یک <strong>Adapter</strong> می‌نویسیم که فراخوانی‌ها، ساختار داده و exceptionها را ترجمه می‌کند. کد فقط به interface وابسته است.</p>
+        <pre><code class="language-php">&lt;?php
+interface SmsSender
+{
+    /** @throws SmsDeliveryFailed */
+    public function send(string $mobile, string $message): string;   // برمی‌گرداند: message id
+}
+
+final class OldVendorAdapter implements SmsSender
+{
+    public function __construct(private \OldVendor\Client $client) {}
+
+    public function send(string $mobile, string $message): string
+    {
+        $res = $this-&gt;client-&gt;sendMessage(['to' =&gt; $mobile, 'body' =&gt; $message]);
+        if ($res['status'] !== 200) { throw new SmsDeliveryFailed($res['error']); }
+        return (string) $res['id'];
+    }
+}
+
+final class NewVendorAdapter implements SmsSender
+{
+    public function __construct(private \NewVendor\Api $api, private string $line) {}
+
+    public function send(string $mobile, string $message): string
+    {
+        try {
+            return $this-&gt;api-&gt;messages()-&gt;create($this-&gt;line, '+98' . ltrim($mobile, '0'), $message)-&gt;id;
+        } catch (\NewVendor\ApiException $e) {
+            throw new SmsDeliveryFailed($e-&gt;getMessage(), previous: $e);
+        }
+    }
+}
+
+// تعویض vendor = یک خط در provider (یا بر اساس config)
+$this-&gt;app-&gt;bind(SmsSender::class, NewVendorAdapter::class);</code></pre>
+        <p><strong>مهاجرت:</strong> ابتدا OldVendorAdapter را بنویسید و همهٔ فراخوانی‌ها را به <code>SmsSender</code> تغییر دهید (refactor بدون تغییر رفتار)، سپس adapter جدید را اضافه و binding را عوض کنید. می‌توان با یک Decorator «failover» هر دو را ترکیب کرد.</p>
+        <p><strong>مزایا:</strong> جدا شدن دامنه از vendor (Hexagonal: Port &amp; Adapter)، تست با <code>FakeSmsSender</code>، ترجمهٔ exceptionها به exception دامنه. <strong>Laravel</strong> همین را برای Filesystem (Flysystem adapters)، Cache stores و Mail transports انجام داده است. می‌توان این قابلیت را به‌صورت یک notification channel سفارشی هم پیاده کرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-8">
+      <summary>الگوی Observer را تعریف کنید. Events/Listeners و Model Observers در Laravel چه تفاوتی دارند؟ دام‌های رایج استفاده از آن‌ها چیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Observer یک وابستگی یک‌به‌چند ایجاد می‌کند تا با تغییر وضعیت subject، همهٔ observerها خودکار مطلع شوند؛ subject فقط می‌داند «کسانی گوش می‌دهند»، نه اینکه چه کسانی (loose coupling، Open/Closed).</p>
+        <div class="grid-2">
+          <div class="card"><h4>Events / Listeners</h4><ul>
+            <li>رویدادهای <strong>دامنه‌ای صریح</strong>: <code>OrderPaid</code>، <code>UserRegistered</code>.</li>
+            <li>Dispatcher مرکزی (Mediator) بین آن‌هاست.</li>
+            <li>listener می‌تواند <code>ShouldQueue</code> باشد (async).</li>
+            <li>سطح معنایی بالا: «چه اتفاقی در کسب‌وکار افتاد».</li>
+          </ul></div>
+          <div class="card"><h4>Model Observers</h4><ul>
+            <li>واکنش به <strong>چرخهٔ عمر persistence</strong> مدل: <code>creating</code>، <code>updated</code>، <code>deleted</code>.</li>
+            <li>یک کلاس که همهٔ hookهای یک مدل را گروه می‌کند.</li>
+            <li>مناسب دغدغه‌های فنی: تولید slug/uuid، پاک کردن cache، audit log.</li>
+          </ul></div>
+        </div>
+        <pre><code class="language-php">&lt;?php
+final class OrderObserver
+{
+    public function updated(Order $order): void
+    {
+        if ($order-&gt;wasChanged('status') &amp;&amp; $order-&gt;status === OrderStatus::Paid) {
+            OrderPaid::dispatch($order);        // تبدیل رویداد فنی به رویداد دامنه
+        }
+    }
+}
+
+final class OrderPaid implements ShouldDispatchAfterCommit   // فقط پس از commit تراکنش
+{
+    use Dispatchable, SerializesModels;
+    public function __construct(public readonly Order $order) {}
+}</code></pre>
+        <p><strong>دام‌ها:</strong></p>
+        <ul>
+          <li><strong>Mass update/delete</strong> (<code>Order::where(...)-&gt;update()</code>) مستقیم SQL است و رویداد مدل fire نمی‌شود.</li>
+          <li><strong>تراکنش:</strong> listener یا job داخل تراکنشی که بعداً rollback می‌شود؛ با <code>afterCommit</code> یا <code>ShouldDispatchAfterCommit</code> حل می‌شود.</li>
+          <li><strong>منطق پنهان:</strong> قوانین اصلی کسب‌وکار در observer دیده نمی‌شوند؛ دیباگ دشوار است.</li>
+          <li><strong>حلقه:</strong> <code>save()</code> داخل <code>saved</code> رویداد را دوباره fire می‌کند (<code>saveQuietly()</code>).</li>
+          <li>listener همگام کند (ارسال ایمیل) زمان پاسخ را بالا می‌برد؛ از queue استفاده کنید.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-9">
+      <summary>Jobهای صف در Laravel چگونه الگوی Command را پیاده می‌کنند؟ یک job برای ارسال فاکتور بنویسید که در برابر اجرای تکراری امن باشد.</summary>
+      <div class="answer">
+        <p><strong>Command pattern:</strong> یک درخواست به‌صورت <strong>object</strong> کپسوله می‌شود (داده + عملیات)، در نتیجه می‌توان آن را ذخیره، صف، زمان‌بندی، retry یا لاگ کرد. اجزا: Command (job)، Invoker (queue worker / Bus) و Receiver (سرویسی که کار واقعی را انجام می‌دهد).</p>
+        <p>در Laravel، job داده‌هایش را در constructor می‌گیرد، <strong>serialize</strong> و در صف ذخیره می‌شود؛ worker بعداً آن را unserialize و <code>handle()</code> را با تزریق وابستگی‌ها اجرا می‌کند. چون job ممکن است به‌دلیل timeout یا خطا <strong>بیش از یک بار</strong> اجرا شود (تحویل at-least-once)، باید <strong>idempotent</strong> باشد.</p>
+        <pre><code class="language-php">&lt;?php
+final class SendInvoice implements ShouldQueue, ShouldBeUnique
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $tries = 5;
+    public array $backoff = [10, 60, 300];         // تأخیر بین تلاش‌ها
+
+    public function __construct(public readonly Invoice $invoice) {}   // فقط id مدل serialize می‌شود
+
+    public function uniqueId(): string { return (string) $this-&gt;invoice-&gt;id; }
+
+    public function handle(InvoiceMailer $mailer): void        // Receiver
+    {
+        $invoice = $this-&gt;invoice-&gt;fresh();
+        if ($invoice-&gt;sent_at !== null) {
+            return;                                 // idempotency: قبلاً ارسال شده
+        }
+        $mailer-&gt;send($invoice);
+        $invoice-&gt;update(['sent_at' =&gt; now()]);
+    }
+
+    public function failed(Throwable $e): void
+    {
+        Log::error('Invoice sending failed', ['id' =&gt; $this-&gt;invoice-&gt;id, 'error' =&gt; $e-&gt;getMessage()]);
+    }
+}
+
+SendInvoice::dispatch($invoice)-&gt;onQueue('mail')-&gt;afterCommit();</code></pre>
+        <p><strong>مزایای Command:</strong> جدا شدن «درخواست کار» از «اجرای آن» (async، مقیاس‌پذیری با افزودن worker)، retry و backoff، chain و batch (<code>Bus::chain</code>، <code>Bus::batch</code>)، و قابلیت تست با <code>Queue::fake()</code>. Artisan commandها نیز همین الگو هستند.</p>
+        <p><strong>نکات:</strong> دادهٔ حجیم را در job نگذارید (فقط شناسه)؛ <code>ShouldBeUnique</code> از صف شدن تکراری جلوگیری می‌کند اما جای idempotency در <code>handle</code> را نمی‌گیرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-10">
+      <summary>الگوی Chain of Responsibility را توضیح دهید. کلاس Pipeline در Laravel چگونه کار می‌کند؟ با آن مجموعه‌ای از قوانین تخفیف را روی یک سبد خرید اعمال کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> درخواست از زنجیره‌ای از handlerها عبور می‌کند؛ هر handler می‌تواند آن را پردازش کند، به بعدی بدهد، یا زنجیره را قطع کند. فرستنده نمی‌داند کدام handler کار را انجام می‌دهد.</p>
+        <p><strong>Pipeline لاراول:</strong> <code>send($passable)-&gt;through($pipes)-&gt;then($destination)</code>. در داخل، با <code>array_reduce</code> روی <strong>آرایهٔ معکوس pipeها</strong> یک closure تودرتو (پیاز) ساخته می‌شود که هر لایه <code>$next</code> را صدا می‌زند؛ بنابراین هر pipe می‌تواند قبل و بعد از <code>$next</code> کار کند. Middlewareهای HTTP دقیقاً همین‌طور اجرا می‌شوند.</p>
+        <pre><code class="language-php">&lt;?php
+final class CartContext
+{
+    public function __construct(public Cart $cart, public int $discount = 0, public array $applied = []) {}
+}
+
+final class VipDiscount
+{
+    public function handle(CartContext $ctx, Closure $next): CartContext
+    {
+        if ($ctx-&gt;cart-&gt;customer-&gt;isVip()) {
+            $ctx-&gt;discount += intdiv($ctx-&gt;cart-&gt;subtotal() * 10, 100);
+            $ctx-&gt;applied[] = 'vip';
+        }
+        return $next($ctx);
+    }
+}
+
+final class CouponDiscount
+{
+    public function handle(CartContext $ctx, Closure $next): CartContext
+    {
+        if ($coupon = $ctx-&gt;cart-&gt;coupon) {
+            if ($coupon-&gt;isExclusive()) {
+                $ctx-&gt;discount = $coupon-&gt;amount;
+                $ctx-&gt;applied = ['coupon'];
+                return $ctx;                        // قطع زنجیره: قوانین بعدی اعمال نشوند
+            }
+            $ctx-&gt;discount += $coupon-&gt;amount;
+        }
+        return $next($ctx);
+    }
+}
+
+final class MaxDiscountCap
+{
+    public function handle(CartContext $ctx, Closure $next): CartContext
+    {
+        $ctx-&gt;discount = min($ctx-&gt;discount, intdiv($ctx-&gt;cart-&gt;subtotal(), 2));   // سقف 50٪
+        return $next($ctx);
+    }
+}
+
+$result = app(Pipeline::class)
+    -&gt;send(new CartContext($cart))
+    -&gt;through([VipDiscount::class, CouponDiscount::class, MaxDiscountCap::class])
+    -&gt;thenReturn();</code></pre>
+        <p><strong>مزایا:</strong> هر قانون یک کلاس کوچک و تست‌پذیر (SRP)؛ افزودن قانون یعنی افزودن یک کلاس به لیست (حتی از config)؛ امکان short-circuit. <strong>معایب:</strong> وابستگی به ترتیب (سقف تخفیف باید آخر باشد)، و جریان کنترل غیرخطی که دیباگ را سخت‌تر می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-11">
+      <summary>چرا Query Builder لاراول نمونه‌ای از الگوی Builder است؟ Builder را با telescoping constructor و named arguments در PHP 8 مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>Builder:</strong> ساخت <strong>گام‌به‌گام</strong> یک object پیچیده را از نمایش نهایی آن جدا می‌کند؛ کلاینت با فراخوانی‌های fluent پیکربندی می‌کند و در پایان محصول ساخته می‌شود.</p>
+        <p><strong>Query Builder:</strong> متدهای <code>where</code>، <code>join</code>، <code>orderBy</code>، <code>limit</code> فقط state داخلی (آرایه‌های wheres، joins، orders، bindings) را پر می‌کنند؛ SQL تا لحظهٔ <code>get()</code>/<code>toSql()</code> ساخته نمی‌شود. ساخت رشتهٔ SQL به <strong>Grammar</strong> مخصوص هر دیتابیس سپرده شده (MySqlGrammar، PostgresGrammar)؛ یعنی <em>همان فرایند ساخت، نمایش‌های مختلف</em> — تعریف کلاسیک Builder.</p>
+        <pre><code class="language-php">&lt;?php
+$q = DB::table('orders')
+    -&gt;select('id', 'total')
+    -&gt;where('status', 'paid')
+    -&gt;when($request-&gt;filled('from'), fn ($q) =&gt; $q-&gt;where('created_at', '&gt;=', $request-&gt;date('from')))
+    -&gt;orderByDesc('created_at');
+
+$q-&gt;toSql();      // select `id`, `total` from `orders` where `status` = ? ...  (MySQL)
+$q-&gt;paginate(20); // ساخت نهایی و اجرا</code></pre>
+        <p><strong>مقایسه با جایگزین‌ها:</strong></p>
+        <ul>
+          <li><strong>Telescoping constructor</strong> (<code>new Query('orders', null, null, 'paid', 20, ...)</code>): ناخوانا، مستعد خطا در ترتیب پارامترها.</li>
+          <li><strong>Named arguments</strong> (PHP 8): برای objectهایی با پارامترهای اختیاری زیاد اما <strong>ساخت یک‌مرحله‌ای</strong> عالی است و نیاز به Builder را در DTOها و Value Objectها از بین می‌برد: <code>new HttpOptions(timeout: 5, retries: 3)</code>.</li>
+          <li><strong>Builder</strong> وقتی برتری دارد که ساخت <strong>چندمرحله‌ای یا شرطی</strong> است (<code>when()</code>)، بخش‌ها قابل تکرارند (چند <code>where</code>)، اعتبارسنجی قبل از ساخت لازم است، یا یک فرایند باید نمایش‌های مختلف تولید کند.</li>
+        </ul>
+        <p><strong>نکته:</strong> Builder لاراول <strong>mutable</strong> است؛ برای استفادهٔ دوباره از یک کوئری پایه باید <code>clone()</code> کرد (Prototype)، وگرنه شرط‌ها روی هم انباشته می‌شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-12">
+      <summary>Template Method و Strategy را مقایسه کنید. یک مسئله را با هر دو روش حل کنید و بگویید کدام را ترجیح می‌دهید.</summary>
+      <div class="answer">
+        <p>هر دو برای <strong>متغیر کردن بخشی از یک الگوریتم</strong> هستند؛ تفاوت در مکانیزم است:</p>
+        <ul>
+          <li><strong>Template Method</strong>: مبتنی بر <strong>ارث‌بری</strong>؛ کلاس پایه اسکلت الگوریتم را (اغلب <code>final</code>) تعریف می‌کند و زیرکلاس‌ها مراحل abstract/hook را پیاده می‌کنند. انتخاب در <strong>زمان compile</strong> (با انتخاب زیرکلاس).</li>
+          <li><strong>Strategy</strong>: مبتنی بر <strong>ترکیب</strong>؛ کل الگوریتم (یا بخش متغیر) یک object جدا با interface است که به context تزریق می‌شود. قابل تعویض در <strong>زمان اجرا</strong>.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+// Template Method
+abstract class ReportExporter
+{
+    final public function export(Report $r): string
+    {
+        return $this-&gt;header($r) . implode('', array_map($this-&gt;row(...), $r-&gt;rows)) . $this-&gt;footer();
+    }
+    abstract protected function header(Report $r): string;
+    abstract protected function row(array $row): string;
+    protected function footer(): string { return ''; }     // hook
+}
+final class CsvReportExporter extends ReportExporter { /* header/row */ }
+
+// Strategy
+interface RowFormatter { public function header(array $cols): string; public function row(array $row): string; }
+
+final class ReportExporter2
+{
+    public function __construct(private RowFormatter $formatter) {}
+    public function export(Report $r): string
+    {
+        return $this-&gt;formatter-&gt;header($r-&gt;columns)
+            . implode('', array_map($this-&gt;formatter-&gt;row(...), $r-&gt;rows));
+    }
+}
+new ReportExporter2(new CsvFormatter());   // یا JsonFormatter در زمان اجرا</code></pre>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Template Method</th><th>Strategy</th></tr></thead>
+          <tbody>
+            <tr><td>مکانیزم</td><td>ارث‌بری</td><td>ترکیب</td></tr>
+            <tr><td>تعویض در runtime</td><td>خیر</td><td>بله</td></tr>
+            <tr><td>coupling</td><td>زیرکلاس به جزئیات پایه وابسته (fragile base class)</td><td>فقط از طریق interface</td></tr>
+            <tr><td>کد مشترک</td><td>آسان در کلاس پایه</td><td>در context یا کلاس کمکی</td></tr>
+            <tr><td>Laravel</td><td><code>FormRequest</code>، <code>Command</code></td><td>Cache/Queue drivers، Hash</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>ترجیح:</strong> معمولاً Strategy، طبق اصل «composition over inheritance»: تست جداگانهٔ هر strategy، تعویض پویا و عدم محدودیت single inheritance. Template Method وقتی مناسب است که اسکلت ثابت و کنترل‌شده‌ای در فریم‌ورک داریم و می‌خواهیم کاربر فقط چند hook را پر کند و ترتیب را نتواند بشکند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-13">
+      <summary>منطق وضعیت سفارش (Pending → Paid → Shipped و لغو) با <code>if</code>های پراکنده نوشته شده است. با الگوی State بازنویسی کنید و آن را با رویکرد enum مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>مشکل:</strong> هر متد (<code>pay</code>، <code>ship</code>، <code>cancel</code>) یک <code>if/switch</code> روی <code>$this-&gt;status</code> دارد؛ افزودن وضعیت جدید یعنی تغییر همهٔ متدها و احتمال جاافتادن یک حالت.</p>
+        <p><strong>State pattern:</strong> رفتار هر وضعیت در یک کلاس جدا قرار می‌گیرد و object اصلی فراخوانی را به state فعلی delegate می‌کند؛ stateها خودشان انتقال بعدی را تعیین می‌کنند.</p>
+        <pre><code class="language-php">&lt;?php
+abstract class OrderState
+{
+    public function __construct(protected Order $order) {}
+    public function pay(): void    { throw InvalidTransition::from($this, 'pay'); }
+    public function ship(): void   { throw InvalidTransition::from($this, 'ship'); }
+    public function cancel(): void { throw InvalidTransition::from($this, 'cancel'); }
+    abstract public function name(): string;
+}
+
+final class Pending extends OrderState
+{
+    public function name(): string { return 'pending'; }
+    public function pay(): void    { $this-&gt;order-&gt;setState(new Paid($this-&gt;order)); }
+    public function cancel(): void { $this-&gt;order-&gt;setState(new Cancelled($this-&gt;order)); }
+}
+
+final class Paid extends OrderState
+{
+    public function name(): string { return 'paid'; }
+    public function ship(): void   { $this-&gt;order-&gt;setState(new Shipped($this-&gt;order)); }
+    public function cancel(): void { RefundPayment::dispatch($this-&gt;order); $this-&gt;order-&gt;setState(new Cancelled($this-&gt;order)); }
+}
+final class Shipped extends OrderState { public function name(): string { return 'shipped'; } }
+final class Cancelled extends OrderState { public function name(): string { return 'cancelled'; } }
+
+// در مدل: state از ستون status ساخته و با setState ذخیره می‌شود
+// $order-&gt;state()-&gt;pay();</code></pre>
+        <p><strong>رویکرد enum:</strong></p>
+        <pre><code class="language-php">&lt;?php
+enum OrderStatus: string {
+    case Pending = 'pending'; case Paid = 'paid'; case Shipped = 'shipped'; case Cancelled = 'cancelled';
+    public function canTransitionTo(self $to): bool {
+        return in_array($to, match ($this) {
+            self::Pending =&gt; [self::Paid, self::Cancelled],
+            self::Paid    =&gt; [self::Shipped, self::Cancelled],
+            default       =&gt; [],
+        }, true);
+    }
+}</code></pre>
+        <p><strong>مقایسه:</strong> enum سبک، مستقیماً قابل cast در Eloquent و برای <strong>قوانین انتقال</strong> کافی است؛ اما رفتار خاص هر وضعیت (مثل refund هنگام لغو سفارش پرداخت‌شده) دوباره به <code>match</code>های پراکنده برمی‌گردد. State pattern وقتی ارزش دارد که هر وضعیت <strong>رفتار متفاوت و قابل توجهی</strong> داشته باشد؛ هزینه‌اش تعداد کلاس بیشتر است. ترکیب رایج: enum برای ذخیره و تعیین انتقال‌ها، و کلاس‌های State یا Actionها برای رفتار.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-14">
+      <summary>آیا استفاده از Repository Pattern در Laravel ضروری است؟ موافقان و مخالفان چه می‌گویند و شما در چه شرایطی از آن استفاده می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Repository یک واسط شبه‌collection بین دامنه و لایهٔ داده است که جزئیات ذخیره‌سازی را پنهان می‌کند و متدهایی با زبان دامنه ارائه می‌دهد (<code>findOverdueInvoices()</code>).</p>
+        <p><strong>موافقان:</strong></p>
+        <ul>
+          <li>متمرکز شدن کوئری‌های پیچیده و جلوگیری از تکرارشان در کنترلرها.</li>
+          <li>تست سرویس‌ها با fake repository، بدون دیتابیس.</li>
+          <li>امکان decorator (cache، log) و تعویض منبع داده (DB ↔ API).</li>
+          <li>جدا کردن دامنه از فریم‌ورک در معماری DDD/Hexagonal.</li>
+        </ul>
+        <p><strong>مخالفان:</strong></p>
+        <ul>
+          <li>Eloquent <strong>Active Record</strong> است؛ مدل‌ها خودشان persistence را می‌دانند و repository روی آن‌ها abstraction نشتی است (مدل برگشتی همچنان <code>save()</code> و lazy loading دارد).</li>
+          <li><strong>Generic repository</strong> (<code>all/find/create/update/delete</code>) فقط API Eloquent را تکرار می‌کند و انعطاف (eager loading، scope، pagination، chunk) را از بین می‌برد.</li>
+          <li>استدلال «شاید روزی ORM را عوض کنیم» تقریباً هرگز محقق نمی‌شود (YAGNI).</li>
+          <li>تست با دیتابیس واقعی در Laravel ساده است.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+// جایگزین سبک: custom query builder/scopes
+final class InvoiceQuery extends Builder
+{
+    public function overdue(): static { return $this-&gt;whereNull('paid_at')-&gt;where('due_at', '&lt;', now()); }
+}
+class Invoice extends Model
+{
+    public function newEloquentBuilder($query): InvoiceQuery { return new InvoiceQuery($query); }
+}
+Invoice::query()-&gt;overdue()-&gt;with('customer')-&gt;paginate();</code></pre>
+        <p><strong>موضع من:</strong> برای اپ‌های CRUD-محور، Eloquent مستقیم در Action/Service همراه با scopeها و custom builderها. از Repository استفاده می‌کنم وقتی: (1) کوئری‌های دامنه‌ای پیچیده و پرتکرار دارم، (2) داده از چند منبع می‌آید، (3) به cache decorator شفاف نیاز است، یا (4) معماری لایه‌ای با دامنهٔ مستقل از فریم‌ورک طراحی شده است. در این حالت repository باید متدهای <strong>معنادار دامنه‌ای</strong> داشته باشد، نه wrapper عمومی.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-15">
+      <summary>Active Record و Data Mapper را تعریف و مقایسه کنید. Eloquent و Doctrine هر کدام از کدام الگو پیروی می‌کنند و پیامدهای آن چیست؟</summary>
+      <div class="answer">
+        <p><strong>Active Record</strong> (Fowler): objectی که یک سطر جدول را می‌پوشاند، دسترسی به دیتابیس را کپسوله می‌کند و منطق دامنه را هم دارد. object «خودش را ذخیره می‌کند». <strong>Eloquent</strong> نمونهٔ آن است: <code>$user-&gt;save()</code>، <code>User::where()</code>، attributeها مستقیماً ستون‌ها.</p>
+        <p><strong>Data Mapper</strong>: لایه‌ای از mapperها که داده را بین objectها و دیتابیس جابه‌جا می‌کند و هر دو را از هم <strong>مستقل</strong> نگه می‌دارد؛ entityها کلاس‌های خالص PHP هستند. <strong>Doctrine ORM</strong> نمونهٔ آن است و با <strong>Unit of Work</strong> (ردیابی تغییرات، <code>flush()</code> یکجا در یک تراکنش) و <strong>Identity Map</strong> (یک object برای هر سطر در هر درخواست) کار می‌کند.</p>
+        <pre><code class="language-php">&lt;?php
+// Eloquent (AR)
+$order = Order::find($id);
+$order-&gt;status = 'paid';
+$order-&gt;save();
+
+// Doctrine (DM)
+#[ORM\Entity]
+class Order {
+    #[ORM\Id, ORM\Column] private int $id;
+    #[ORM\Column] private string $status = 'pending';
+    public function markPaid(): void { $this-&gt;status = 'paid'; }   // بدون دانش از DB
+}
+$order = $em-&gt;find(Order::class, $id);
+$order-&gt;markPaid();
+$em-&gt;flush();</code></pre>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Active Record</th><th>Data Mapper</th></tr></thead>
+          <tbody>
+            <tr><td>سرعت توسعه</td><td>بالا، کد کم</td><td>کندتر، mapping و کلاس بیشتر</td></tr>
+            <tr><td>SRP / جداسازی</td><td>ضعیف؛ دامنه و persistence درهم</td><td>قوی</td></tr>
+            <tr><td>تست واحد دامنه</td><td>نیازمند DB یا mock سخت</td><td>entity خالص، بدون DB</td></tr>
+            <tr><td>تطابق مدل و schema</td><td>نزدیک به هم</td><td>می‌تواند کاملاً متفاوت باشد</td></tr>
+            <tr><td>مناسب</td><td>CRUD، MVP، دامنهٔ ساده تا متوسط</td><td>دامنهٔ پیچیده، DDD</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>پیامدها در Laravel:</strong> با Eloquent سریع پیش می‌رویم اما باید مراقب «Fat Model» و نشت منطق persistence به همه‌جا (N+1، <code>save()</code> در هر لایه) باشیم. راهکار: منطق دامنه در Action/Service، کوئری‌ها در scope/custom builder، و Value Objectها با custom cast.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-16">
+      <summary>Dependency Injection و Service Locator را مقایسه کنید. کد زیر چه مشکلی دارد؟ آن را بازنویسی کنید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+class ReportService
+{
+    public function monthly(int $month): string
+    {
+        $orders = app(OrderRepository::class)-&gt;forMonth($month);
+        $pdf = resolve(PdfRenderer::class);
+        Cache::put("report:$month", $orders-&gt;count());
+        return $pdf-&gt;render(view('reports.monthly', compact('orders')));
+    }
+}</code></pre>
+        <p><strong>مشکل:</strong> کلاس از <strong>Service Locator</strong> (<code>app()</code>، <code>resolve()</code>، Facade) استفاده می‌کند: (1) وابستگی‌ها <strong>پنهان</strong>اند و از امضای کلاس معلوم نیست به چه چیزی نیاز دارد؛ (2) کلاس به container سراسری و فریم‌ورک گره خورده است؛ (3) خطای binding فقط در زمان اجرای همان مسیر ظاهر می‌شود؛ (4) تست نیازمند پیکربندی container است نه یک <code>new</code> ساده.</p>
+        <pre><code class="language-php">&lt;?php
+final class ReportService
+{
+    public function __construct(
+        private OrderRepository $orders,
+        private PdfRenderer $pdf,
+        private \Illuminate\Contracts\Cache\Repository $cache,
+        private \Illuminate\Contracts\View\Factory $views,
+    ) {}
+
+    public function monthly(int $month): string
+    {
+        $orders = $this-&gt;orders-&gt;forMonth($month);
+        $this-&gt;cache-&gt;put("report:$month", $orders-&gt;count());
+        return $this-&gt;pdf-&gt;render($this-&gt;views-&gt;make('reports.monthly', compact('orders')));
+    }
+}
+
+// تست
+$service = new ReportService(new InMemoryOrderRepository([...]), new FakePdf(), new Repository(new ArrayStore()), $viewFactory);</code></pre>
+        <div class="grid-2">
+          <div class="card"><h4>DI</h4><ul><li>وابستگی صریح در constructor.</li><li>کلاس از container بی‌خبر.</li><li>تست ساده با <code>new</code>.</li><li>constructor شلوغ = هشدار نقض SRP.</li></ul></div>
+          <div class="card"><h4>Service Locator</h4><ul><li>وابستگی پنهان در بدنه.</li><li>وابسته به registry سراسری.</li><li>خطاها در runtime.</li><li>قابل قبول فقط در composition root.</li></ul></div>
+        </div>
+        <p><strong>جمع‌بندی:</strong> container لاراول با auto-wiring هزینهٔ DI را تقریباً صفر کرده است؛ پس در سرویس‌ها و دامنه از constructor injection استفاده کنید. <code>app()</code> و Facade در service providerها، routeها، viewها و کدهای چسب فریم‌ورک قابل قبول‌اند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-17">
+      <summary>الگوی Manager در Laravel چیست و از ترکیب کدام الگوهای GoF ساخته شده است؟ یک cache driver سفارشی ثبت کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Manager کلاسی است که چند <strong>driver</strong> با interface مشترک را بر اساس config می‌سازد، نگه می‌دارد و در اختیار می‌گذارد؛ مثل <code>CacheManager</code>، <code>QueueManager</code>، <code>MailManager</code>، <code>FilesystemManager</code>، <code>AuthManager</code>، <code>SessionManager</code>. کلاس پایهٔ <code>Illuminate\Support\Manager</code> برای driver «x» متد <code>createXDriver()</code> را صدا می‌زند، instance را cache می‌کند و با <code>__call</code> فراخوانی‌ها را به driver پیش‌فرض forward می‌کند.</p>
+        <p><strong>الگوهای تشکیل‌دهنده:</strong></p>
+        <ul>
+          <li><strong>Factory</strong>: ساخت driver بر اساس نام (<code>createRedisDriver</code>).</li>
+          <li><strong>Strategy</strong>: driverها پیاده‌سازی‌های قابل تعویض یک contract هستند (<code>Store</code>).</li>
+          <li><strong>Registry + caching</strong>: هر driver یک بار ساخته و نگهداری می‌شود؛ <code>extend()</code> برای ثبت driver جدید (Open/Closed).</li>
+          <li><strong>Adapter</strong>: هر driver یک فناوری (Redis، Memcached، فایل) را به contract ترجمه می‌کند.</li>
+          <li>و Facade (<code>Cache::</code>) دسترسی static به Manager می‌دهد.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+final class MongoStore implements \Illuminate\Contracts\Cache\Store
+{
+    public function __construct(private \MongoDB\Collection $collection) {}
+    public function get($key) { /* ... */ }
+    public function put($key, $value, $seconds) { /* ... */ }
+    // many()، putMany()، increment()، decrement()، forever()، forget()، flush()، getPrefix()
+}
+
+// در یک Service Provider
+public function boot(): void
+{
+    Cache::extend('mongo', function (Application $app) {
+        return Cache::repository(new MongoStore($app-&gt;make(MongoClientFactory::class)-&gt;cacheCollection()));
+    });
+}
+
+// config/cache.php
+'stores' =&gt; ['mongo' =&gt; ['driver' =&gt; 'mongo']],
+
+// استفاده
+Cache::store('mongo')-&gt;put('k', 'v', 60);</code></pre>
+        <p><strong>نکته:</strong> <code>Cache::repository()</code> store را در <code>Illuminate\Cache\Repository</code> می‌پیچد (Decorator) تا متدهای سطح بالا مثل <code>remember</code>، رویدادهای cache و … خودکار در دسترس باشند و driver فقط عملیات پایه را پیاده کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-18">
+      <summary>DTO، Value Object و Entity را تعریف و مقایسه کنید. یک Value Object برای Money با PHP 8 پیاده‌سازی کنید و آن را به یک مدل Eloquent متصل کنید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>DTO</strong>: حامل دادهٔ تایپ‌شده بین لایه‌ها یا مرزها (request → service، پاسخ API خارجی)؛ بدون منطق دامنه؛ ترجیحاً immutable.</li>
+          <li><strong>Value Object</strong>: مفهوم دامنه‌ای بدون هویت که با <strong>مقدارش</strong> شناخته می‌شود (Money، Email، DateRange)؛ <strong>immutable</strong>، invariantهایش را در constructor تضمین می‌کند، برابری بر اساس مقدار، و رفتار دارد.</li>
+          <li><strong>Entity</strong>: دارای <strong>هویت پایدار (ID)</strong> و چرخهٔ عمر؛ state آن تغییر می‌کند ولی همان entity می‌ماند (User، Order). برابری بر اساس ID.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+final readonly class Money
+{
+    private function __construct(public int $amount, public Currency $currency)   // amount به کوچک‌ترین واحد
+    {
+        if ($amount &lt; 0) { throw new InvalidArgumentException('Negative money'); }
+    }
+
+    public static function of(int $amount, Currency $c): self { return new self($amount, $c); }
+
+    public function add(self $o): self
+    {
+        $this-&gt;assertSameCurrency($o);
+        return new self($this-&gt;amount + $o-&gt;amount, $this-&gt;currency);   // object جدید
+    }
+
+    public function percentage(int $p): self { return new self(intdiv($this-&gt;amount * $p, 100), $this-&gt;currency); }
+    public function equals(self $o): bool { return $this-&gt;amount === $o-&gt;amount &amp;&amp; $this-&gt;currency === $o-&gt;currency; }
+
+    private function assertSameCurrency(self $o): void
+    {
+        if ($o-&gt;currency !== $this-&gt;currency) { throw new CurrencyMismatch(); }
+    }
+}
+
+enum Currency: string { case IRR = 'IRR'; case USD = 'USD'; }
+
+final class MoneyCast implements CastsAttributes
+{
+    public function get(Model $model, string $key, mixed $value, array $attributes): Money
+    {
+        return Money::of((int) $attributes['total_amount'], Currency::from($attributes['total_currency']));
+    }
+
+    public function set(Model $model, string $key, mixed $value, array $attributes): array
+    {
+        return ['total_amount' =&gt; $value-&gt;amount, 'total_currency' =&gt; $value-&gt;currency-&gt;value];
+    }
+}
+
+class Order extends Model { protected $casts = ['total' =&gt; MoneyCast::class]; }
+$order-&gt;total = $order-&gt;total-&gt;add(Money::of(5000, Currency::IRR));</code></pre>
+        <p><strong>مزایا:</strong> قوانین (عدم منفی بودن، یکسان بودن ارز) در یک جا؛ حذف «primitive obsession» (پاس دادن <code>int $amount, string $currency</code> در همه‌جا)؛ استفاده از int به‌جای float برای جلوگیری از خطای گرد کردن. <strong>هزینه:</strong> کلاس و cast اضافه؛ برای مقادیر بدون قاعده لازم نیست.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-design-patterns-19">
+      <summary>کد زیر چه مشکلی از نظر طراحی دارد؟ با الگوهای مناسب آن را refactor کنید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+class ShippingController extends Controller
+{
+    public function cost(Request $request)
+    {
+        $order = Order::find($request-&gt;order_id);
+        if ($request-&gt;method == 'post') {
+            $cost = 20000 + $order-&gt;weight * 1000;
+        } elseif ($request-&gt;method == 'tipax') {
+            $cost = $order-&gt;city == 'tehran' ? 50000 : 80000;
+        } elseif ($request-&gt;method == 'snapp') {
+            $cost = Http::get('https://snapp.example/api/price', [...])-&gt;json('price');
+        }
+        return $cost;
+    }
+}</code></pre>
+        <p><strong>مشکلات:</strong> نقض <strong>Open/Closed</strong> (هر روش جدید = ویرایش این متد)، نقض <strong>SRP</strong> (کنترلر منطق محاسبه، فراخوانی HTTP و انتخاب روش را با هم دارد)، coupling به API خارجی، غیرقابل تست بدون شبکه، مقایسهٔ loose و متغیر <code>$cost</code> تعریف‌نشده برای روش ناشناخته، <code>find</code> بدون مدیریت null و نبود validation.</p>
+        <p><strong>Refactor:</strong> <strong>Strategy</strong> برای هر روش ارسال + <strong>Adapter</strong> برای API اسنپ + یک <strong>registry/factory</strong> + کنترلر لاغر.</p>
+        <pre><code class="language-php">&lt;?php
+interface ShippingMethod
+{
+    public function key(): string;
+    public function cost(Order $order): Money;
+}
+
+final class PostShipping implements ShippingMethod
+{
+    public function key(): string { return 'post'; }
+    public function cost(Order $o): Money { return Money::of(20000 + $o-&gt;weight * 1000, Currency::IRR); }
+}
+
+final class SnappShipping implements ShippingMethod
+{
+    public function __construct(private SnappClient $client) {}        // Adapter روی API خارجی
+    public function key(): string { return 'snapp'; }
+    public function cost(Order $o): Money { return $this-&gt;client-&gt;quote($o-&gt;address); }
+}
+
+final class ShippingCalculator
+{
+    /** @var array&lt;string, ShippingMethod&gt; */
+    private array $methods;
+
+    /** @param iterable&lt;ShippingMethod&gt; $methods */
+    public function __construct(iterable $methods)
+    {
+        foreach ($methods as $m) { $this-&gt;methods[$m-&gt;key()] = $m; }
+    }
+
+    public function for(string $key): ShippingMethod
+    {
+        return $this-&gt;methods[$key] ?? throw new UnknownShippingMethod($key);
+    }
+}
+
+// Provider
+$this-&gt;app-&gt;tag([PostShipping::class, TipaxShipping::class, SnappShipping::class], 'shipping');
+$this-&gt;app-&gt;bind(ShippingCalculator::class, fn ($app) =&gt; new ShippingCalculator($app-&gt;tagged('shipping')));
+
+// Controller
+public function cost(ShippingCostRequest $request, ShippingCalculator $calc): JsonResponse
+{
+    $order = Order::findOrFail($request-&gt;validated('order_id'));
+    $cost = $calc-&gt;for($request-&gt;validated('method'))-&gt;cost($order);
+    return response()-&gt;json(['amount' =&gt; $cost-&gt;amount]);
+}</code></pre>
+        <p><strong>نتیجه:</strong> روش جدید = یک کلاس + tag؛ هر strategy جدا تست می‌شود (SnappClient با <code>Http::fake()</code>)؛ کنترلر فقط HTTP را ترجمه می‌کند. اگر cache قیمت اسنپ لازم شد، یک Decorator روی <code>SnappShipping</code> اضافه می‌شود.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>پایه</h3>
+      <ul>
+        <li>الگو = راه‌حل اثبات‌شده برای مسئلهٔ تکرارشونده؛ نام + مسئله + راه‌حل + پیامد.</li>
+        <li>GoF: <strong>Creational</strong> (ساخت)، <strong>Structural</strong> (ترکیب)، <strong>Behavioral</strong> (تعامل). Fowler/PoEAA: Repository، AR، DM، Service Layer، DTO.</li>
+        <li>اصول: program to interface، composition over inheritance، encapsulate what varies، SOLID.</li>
+        <li>Over-engineering: interface تک‌پیاده‌سازی، wrapper بی‌ارزش، YAGNI.</li>
+      </ul>
+      <h3>Creational</h3>
+      <ul>
+        <li><strong>Singleton</strong>: یک instance؛ anti-pattern (global state، تست سخت). Laravel: <code>singleton()</code>، <code>scoped()</code> (reset در هر request/job در Octane/queue)، <code>bind()</code>.</li>
+        <li><strong>Simple Factory</strong>: <code>match</code> روی نوع. <strong>Static factory</strong>: <code>Money::fromString()</code>، <code>Carbon::parse()</code>.</li>
+        <li><strong>Factory Method</strong>: زیرکلاس محصول را تعیین می‌کند (ارث‌بری) — <code>newCollection()</code>.</li>
+        <li><strong>Abstract Factory</strong>: خانوادهٔ محصولات سازگار (ترکیب) — <code>ConnectionFactory</code>.</li>
+        <li><strong>Builder</strong>: ساخت گام‌به‌گام — Query Builder (+ Grammar)، <code>Http::</code>، Blueprint.</li>
+        <li><strong>Prototype</strong>: <code>clone</code> + <code>__clone</code> برای deep copy — <code>replicate()</code>، <code>$query-&gt;clone()</code>.</li>
+      </ul>
+      <h3>Structural</h3>
+      <ul>
+        <li><strong>Adapter</strong>: interface را <em>تغییر</em> می‌دهد — Flysystem، Cache Stores، SDK wrapperها.</li>
+        <li><strong>Decorator</strong>: همان interface + رفتار اضافه، قابل زنجیر — <code>$app-&gt;extend()</code>، caching repo.</li>
+        <li><strong>Proxy</strong>: همان interface + کنترل دسترسی/lazy — deferred providers، lazy relations، lazy objects در 8.4.</li>
+        <li><strong>GoF Facade</strong>: API ساده برای زیرسیستم پیچیده. <strong>Laravel Facade</strong>: static proxy به container (<code>__callStatic</code> → <code>getFacadeAccessor</code> → resolve) — قابل mock با <code>shouldReceive</code>/<code>fake</code>؛ وابستگی پنهان.</li>
+        <li><strong>Composite</strong>: درخت؛ برگ و گروه با یک interface. <strong>Bridge</strong>: جدا کردن دو بُعد (abstraction ↔ implementation).</li>
+      </ul>
+      <h3>Behavioral</h3>
+      <ul>
+        <li><strong>Strategy</strong>: الگوریتم قابل تعویض با ترکیب؛ کلاینت انتخاب می‌کند — drivers، درگاه پرداخت.</li>
+        <li><strong>State</strong>: ساختار مشابه Strategy، اما stateها انتقال را تعیین می‌کنند؛ جایگزین سبک: enum + <code>canTransitionTo</code>.</li>
+        <li><strong>Template Method</strong>: اسکلت final در پایه + hook در زیرکلاس (ارث‌بری) — FormRequest، Command.</li>
+        <li><strong>Observer</strong>: یک‌به‌چند — Events/Listeners (دامنه‌ای، قابل queue)، Model Observers (چرخهٔ عمر). دام: mass update بدون event، تراکنش → <code>afterCommit</code>.</li>
+        <li><strong>Command</strong>: درخواست = object (صف، retry، undo) — Jobs، Bus، Artisan. Job باید idempotent باشد.</li>
+        <li><strong>Chain of Responsibility</strong>: زنجیرهٔ handler با امکان قطع — Middleware، <code>Pipeline::send()-&gt;through()-&gt;then()</code> (array_reduce معکوس → پیاز).</li>
+        <li><strong>Iterator</strong>: Collection، LazyCollection، generator. <strong>Mediator</strong>: Event Dispatcher، Bus.</li>
+        <li><strong>Null Object</strong>: <code>withDefault()</code>، NullStore، NullLogger. <strong>Specification</strong>: قاعدهٔ قابل ترکیب ≈ scopeها.</li>
+      </ul>
+      <h3>معماری</h3>
+      <ul>
+        <li><strong>MVC</strong> + thin controller؛ منطق در <strong>Service</strong> (هماهنگی use case) یا <strong>Action</strong> (یک کلاس = یک عملیات، Fortify).</li>
+        <li><strong>DTO</strong> (انتقال داده) / <strong>VO</strong> (مقداری، immutable، invariant، equals) / <strong>Entity</strong> (ID). VO در Eloquent: custom cast.</li>
+        <li><strong>DI</strong>: وابستگی صریح، constructor injection، auto-wiring، contextual binding (<code>when()-&gt;needs()-&gt;give()</code>). <strong>Service Locator</strong> (<code>app()</code>، Facade): وابستگی پنهان؛ فقط در composition root.</li>
+        <li><strong>Active Record</strong> (Eloquent): object ذخیره‌کنندهٔ خود؛ سریع ولی درهم. <strong>Data Mapper</strong> (Doctrine): entity خالص + EntityManager + Unit of Work + Identity Map.</li>
+        <li><strong>Repository</strong>: اختیاری در Laravel؛ فقط با متدهای دامنه‌ای؛ generic repository = anti-pattern؛ جایگزین: scope و custom builder.</li>
+        <li><strong>Manager</strong> = Factory + Strategy + Registry (+ Adapter)؛ <code>createXDriver()</code>، <code>extend()</code>، <code>driver()</code>/<code>store()</code>.</li>
+      </ul>
+      <h3>تمایزهای پرتکرار</h3>
+      <ul>
+        <li>Adapter (تغییر interface) ↔ Decorator (افزودن رفتار) ↔ Proxy (کنترل دسترسی).</li>
+        <li>Strategy (ترکیب، runtime) ↔ Template Method (ارث‌بری، compile-time).</li>
+        <li>Strategy (کلاینت انتخاب می‌کند) ↔ State (state خودش انتقال می‌دهد).</li>
+        <li>Factory Method (یک محصول، ارث‌بری) ↔ Abstract Factory (خانواده، ترکیب).</li>
+        <li>GoF Facade (ساده‌سازی زیرسیستم) ↔ Laravel Facade (static proxy / locator).</li>
+        <li>Singleton GoF (کلاس خودش) ↔ container singleton (پیکربندی بیرونی، قابل تست).</li>
+      </ul>
+    </div>
+  </section>
+
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1471 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>System Design (Microservices) — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="system-design">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>System Design (Microservices)</h1>
+    <p class="lead">روش ساختاریافته برای پاسخ به سوال‌های طراحی سیستم، مقایسه‌ی صادقانه‌ی Monolith و Microservices، ارتباط همزمان و ناهمزمان، Saga و Outbox، CQRS، الگوهای Resilience، Observability و امنیت بین سرویس‌ها؛ همراه با چهار طراحی نمونه با دیاگرام.</p>
+  </header>
+
+  <section class="lesson" id="approach" data-title="روش حل سوال طراحی">
+    <h2>روش حل سوال طراحی</h2>
+    <p>سوال System Design جواب «درست» واحد ندارد؛ ارزیاب دنبال <strong>روش فکر کردن</strong> است: اینکه نیازمندی‌ها را روشن کنید، با عدد تصمیم بگیرید، trade-offها را نام ببرید و گلوگاه‌ها را خودتان پیدا کنید. در پاسخ کتبی هم دقیقاً همین ترتیب را رعایت کنید تا جواب ساختار داشته باشد.</p>
+
+    <pre class="diagram">۱. Requirements ──► ۲. Estimation ──► ۳. API ──► ۴. Data Model
+                                                        │
+۷. Bottlenecks / Trade-offs ◄── ۶. Deep Dives ◄── ۵. High-Level Design</pre>
+
+    <ol>
+      <li><strong>شفاف‌سازی نیازمندی‌ها:</strong> سیستم دقیقاً چه کاری می‌کند و چه کاری <em>نمی‌کند</em> (scope). فرض‌هایتان را صریح بنویسید.</li>
+      <li><strong>تخمین ظرفیت (back-of-the-envelope):</strong> کاربر فعال روزانه (DAU)، QPS خواندن و نوشتن، نسبت read/write، حجم ذخیره‌سازی و پهنای باند.</li>
+      <li><strong>طراحی API:</strong> endpointهای اصلی، ورودی/خروجی، status code، صفحه‌بندی، idempotency.</li>
+      <li><strong>مدل داده:</strong> موجودیت‌ها، کلیدها، الگوی دسترسی (access pattern) و انتخاب پایگاه داده بر اساس همان الگو.</li>
+      <li><strong>طراحی سطح بالا:</strong> جعبه‌ها و فلش‌ها: کلاینت، LB، سرویس‌ها، cache، DB، صف.</li>
+      <li><strong>Deep dive:</strong> دو یا سه بخش حساس را عمیق کنید (تولید ID، cache، sharding، ترتیب پیام‌ها…).</li>
+      <li><strong>گلوگاه‌ها و trade-offها:</strong> SPOF، hot key، سازگاری داده، هزینه، و اینکه با ۱۰ برابر بار چه چیزی اول می‌شکند.</li>
+    </ol>
+
+    <h3>نیازمندی‌های Functional و Non-Functional</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>سوال کلیدی</th><th>نمونه</th></tr></thead>
+      <tbody>
+        <tr><td>Functional</td><td>سیستم چه کاری انجام می‌دهد؟</td><td>کاربر لینک کوتاه می‌سازد؛ کاربر سفارش ثبت می‌کند.</td></tr>
+        <tr><td>Scalability</td><td>چه حجمی از بار؟ رشد؟</td><td>۱۰ هزار درخواست در ثانیه در ساعت اوج</td></tr>
+        <tr><td>Availability</td><td>چقدر downtime قابل قبول است؟</td><td>99.9٪ یعنی حدود ۸.۸ ساعت در سال</td></tr>
+        <tr><td>Latency</td><td>پاسخ در چه زمانی؟</td><td>p99 زیر ۲۰۰ میلی‌ثانیه</td></tr>
+        <tr><td>Consistency</td><td>داده‌ی کهنه قابل تحمل است؟</td><td>موجودی حساب: strong؛ تعداد لایک: eventual</td></tr>
+        <tr><td>Durability</td><td>از دست رفتن داده قابل تحمل است؟</td><td>پرداخت: هرگز؛ لاگ کلیک: تا حدی</td></tr>
+        <tr><td>Security / Compliance</td><td>چه کسی به چه چیزی دسترسی دارد؟</td><td>احراز هویت، رمزنگاری، ممیزی</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>فرمول‌های تخمین</h3>
+    <pre><code class="language-plaintext">QPS متوسط   = DAU × (درخواست هر کاربر در روز) / 86,400       (یک روز ≈ 10^5 ثانیه)
+QPS اوج     ≈ 2 تا 3 × QPS متوسط
+حجم ذخیره   = رکورد جدید در روز × اندازه‌ی رکورد × 365 × سال‌های نگهداری
+پهنای باند  = QPS × اندازه‌ی پاسخ
+
+مثال: 10M DAU، هر کاربر 20 درخواست خواندن و 2 نوشتن
+  read  ≈ 10^7 × 20 / 10^5 = 2,000 QPS   (اوج ≈ 5,000)
+  write ≈ 10^7 × 2  / 10^5 =   200 QPS
+  نسبت 10:1 ⇒ سیستم read-heavy ⇒ cache و read replica اولویت دارند</code></pre>
+
+    <div class="callout exam"><p>در پاسخ تشریحی، حتی اگر سوال فقط گفته «طراحی کنید»، با یک پاراگراف <strong>فرض‌ها و نیازمندی‌ها</strong> شروع کنید و یک <strong>تخمین عددی</strong> بیاورید. نوشتن «این سیستم read-heavy است پس…» نشان می‌دهد تصمیم‌ها مبتنی بر داده است، نه سلیقه.</p></div>
+    <div class="callout tip"><p>هر انتخابی را با «چون…» همراه کنید و یک جایگزین را رد کنید: «Kafka را انتخاب کردم چون نیاز به replay داریم؛ RabbitMQ برای این مورد retention ندارد.» همین جمله‌ها نمره‌ی trade-off را می‌گیرند.</p></div>
+  </section>
+
+  <section class="lesson" id="architecture-styles" data-title="Monolith تا Microservices">
+    <h2>Monolith تا Microservices</h2>
+    <dl class="terms">
+      <dt>Monolith</dt><dd>کل برنامه یک واحد deploy است، معمولاً با یک پایگاه داده‌ی مشترک. فراخوانی بین بخش‌ها یک function call درون‌پردازه‌ای است.</dd>
+      <dt>Modular Monolith</dt><dd>همچنان یک واحد deploy، اما کد به ماژول‌هایی با <strong>مرز صریح</strong> تقسیم شده: هر ماژول API عمومی (interface/event) دارد و جدول‌ها و کلاس‌های داخلی ماژول دیگر را مستقیم لمس نمی‌کند.</dd>
+      <dt>Microservices</dt><dd>مجموعه‌ای از سرویس‌های کوچک که <strong>مستقل deploy</strong> می‌شوند، هر کدام مالک داده‌ی خودشان‌اند، حول یک قابلیت کسب‌وکار (business capability) شکل گرفته‌اند و از طریق شبکه (HTTP/gRPC/پیام) با هم حرف می‌زنند.</dd>
+      <dt>Distributed Monolith</dt><dd>ضدالگو: سرویس‌ها جدا شده‌اند اما با هم deploy می‌شوند، دیتابیس مشترک دارند یا زنجیره‌ی فراخوانی همزمان طولانی دارند؛ یعنی همه‌ی هزینه‌های توزیع‌شدگی بدون هیچ‌کدام از مزایایش.</dd>
+    </dl>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Monolith</th><th>Modular Monolith</th><th>Microservices</th></tr></thead>
+      <tbody>
+        <tr><td>Deploy</td><td>یکجا، ساده</td><td>یکجا، ساده</td><td>مستقل برای هر سرویس؛ نیاز به CI/CD بالغ</td></tr>
+        <tr><td>Scaling</td><td>کل برنامه با هم</td><td>کل برنامه با هم</td><td>هر سرویس جداگانه (مثلاً فقط Search)</td></tr>
+        <tr><td>تراکنش و سازگاری</td><td>ACID محلی، ساده</td><td>ACID محلی</td><td>Saga و eventual consistency</td></tr>
+        <tr><td>Latency داخلی</td><td>نانوثانیه (function call)</td><td>نانوثانیه</td><td>میلی‌ثانیه (شبکه) + احتمال خطا</td></tr>
+        <tr><td>استقلال تیم‌ها</td><td>کم؛ تداخل در کد</td><td>متوسط</td><td>زیاد (هر تیم مالک سرویس)</td></tr>
+        <tr><td>Fault isolation</td><td>یک memory leak همه را می‌خواباند</td><td>کم</td><td>زیاد، به شرط resilience patterns</td></tr>
+        <tr><td>تنوع تکنولوژی</td><td>یک stack</td><td>یک stack</td><td>polyglot ممکن</td></tr>
+        <tr><td>Debug و تست</td><td>ساده</td><td>ساده</td><td>سخت؛ tracing و contract test لازم</td></tr>
+        <tr><td>هزینه‌ی عملیاتی</td><td>کم</td><td>کم</td><td>زیاد (K8s، observability، on-call)</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>چه زمانی Microservices منطقی است؟</h3>
+    <div class="grid-2">
+      <div class="card"><h4>نشانه‌های مناسب بودن</h4><ul>
+        <li>چندین تیم مستقل که روی یک کدبیس به هم برخورد می‌کنند (Conway's Law).</li>
+        <li>بخش‌هایی با نیاز scaling بسیار متفاوت (مثلاً پردازش ویدیو در برابر پنل ادمین).</li>
+        <li>نیاز به deploy مستقل با چرخه‌ی انتشار متفاوت.</li>
+        <li>دامنه‌ی کسب‌وکار شناخته‌شده و مرزهای پایدار.</li>
+        <li>زیرساخت بالغ: CI/CD، container orchestration، monitoring و tracing.</li>
+      </ul></div>
+      <div class="card"><h4>نشانه‌های نامناسب بودن</h4><ul>
+        <li>تیم کوچک (مثلاً کمتر از ۱۰ نفر) یا استارتاپ در مرحله‌ی کشف محصول.</li>
+        <li>دامنه هنوز مبهم است؛ مرز اشتباه در microservices خیلی گران‌تر از monolith اصلاح می‌شود.</li>
+        <li>نیاز شدید به تراکنش‌های بین‌موجودیتی (مثلاً هسته‌ی حسابداری).</li>
+        <li>نبود مهارت DevOps و observability.</li>
+        <li>انگیزه فقط «مد روز» یا «رزومه» است.</li>
+      </ul></div>
+    </div>
+
+    <div class="callout warn"><p>Microservices مشکل <strong>سازمانی و مقیاس تیم</strong> را حل می‌کند، نه لزوماً مشکل performance. یک monolith خوب با cache، replica و horizontal scaling می‌تواند ترافیک بسیار بالایی را تحمل کند. اولین مایکروسرویس‌ها معمولاً latency را <em>بیشتر</em> می‌کنند.</p></div>
+
+    <h3>Modular Monolith در Laravel</h3>
+    <p>هر ماژول (مثلاً <code>Modules/Billing</code>) ServiceProvider، route، migration و مدل‌های خودش را دارد و فقط از طریق یک <strong>contract</strong> عمومی یا event با بقیه حرف می‌زند. این مرزها را می‌توان با تست معماری اجبار کرد تا بعداً جدا کردن یک ماژول به سرویس مستقل ساده باشد.</p>
+    <pre><code class="language-php">&lt;?php
+// Modules/Billing/Contracts/BillingService.php  — تنها راه ورود به ماژول
+namespace Modules\Billing\Contracts;
+
+interface BillingService
+{
+    public function chargeOrder(int $orderId, int $amountInRials): PaymentResult;
+}
+
+// Modules/Orders/... فقط به interface وابسته است، نه به مدل‌ها یا جدول‌های Billing
+final class PlaceOrder
+{
+    public function __construct(private BillingService $billing) {}
+}
+
+// tests/Arch/ModulesTest.php  (Pest architecture test)
+arch('orders must not touch billing internals')
+    -&gt;expect('Modules\Orders')
+    -&gt;not-&gt;toUse('Modules\Billing\Models');</code></pre>
+
+    <h3>مهاجرت تدریجی: الگوی Strangler Fig</h3>
+    <p>به‌جای بازنویسی کامل (big-bang rewrite) که پرریسک است، یک لایه‌ی <strong>routing/facade</strong> (معمولاً API Gateway یا reverse proxy) جلوی سیستم قدیمی می‌گذاریم و قابلیت‌ها را یکی‌یکی به سرویس جدید منتقل و ترافیک همان مسیر را به سرویس جدید هدایت می‌کنیم تا در نهایت سیستم قدیمی «خفه» و حذف شود.</p>
+    <pre class="diagram">مرحله ۱                    مرحله ۲                        مرحله ۳
+Client                    Client                         Client
+  │                         │                              │
+  ▼                         ▼                              ▼
+[Proxy]                  [Proxy]                        [Proxy]
+  │                      /      \                      /   |   \
+  ▼               /search      بقیه              Search  Orders  Users
+[Monolith]          ▼             ▼              (همه‌ی مسیرها جدید؛ monolith حذف)
+              [Search Svc]   [Monolith]</pre>
+    <ul>
+      <li>با قابلیتی شروع کنید که <strong>مرز روشن و وابستگی کم</strong> دارد و ارزش جدا شدنش بالاست.</li>
+      <li>از <strong>Anti-Corruption Layer</strong> استفاده کنید تا مدل قدیمی به مدل سرویس جدید نشت نکند.</li>
+      <li>داده را با event یا CDC همگام نگه دارید تا زمانی که مالکیت داده کامل منتقل شود.</li>
+      <li>امکان برگشت سریع (rollback در لایه‌ی proxy یا feature flag) را حفظ کنید.</li>
+    </ul>
+    <div class="callout exam"><p>جمله‌ی کلیدی: «Monolith-first؛ ابتدا modular monolith با مرزهای تمیز بسازید و فقط وقتی دلیل مشخص (scaling مستقل، استقلال تیم) وجود دارد، ماژول را با الگوی Strangler Fig به سرویس جدا منتقل کنید.»</p></div>
+  </section>
+
+  <section class="lesson" id="service-boundaries" data-title="مرزبندی سرویس‌ها و DDD">
+    <h2>مرزبندی سرویس‌ها و DDD</h2>
+    <p>سخت‌ترین تصمیم در معماری میکروسرویس، <strong>محل مرزها</strong> است. مرز اشتباه یعنی سرویس‌هایی که برای هر کاری باید با هم حرف بزنند (chatty) و با هم تغییر کنند. ابزار اصلی برای پیدا کردن مرز درست، <strong>Domain-Driven Design</strong> است.</p>
+    <dl class="terms">
+      <dt>Bounded Context</dt><dd>محدوده‌ای که در آن یک مدل دامنه و یک زبان مشترک معنای یکتا دارند. معمولاً بهترین کاندیدا برای یک سرویس (یا یک ماژول).</dd>
+      <dt>Ubiquitous Language</dt><dd>واژگان مشترک بین متخصص کسب‌وکار و توسعه‌دهنده درون یک context.</dd>
+      <dt>Aggregate</dt><dd>خوشه‌ای از موجودیت‌ها با یک ریشه (aggregate root) که <strong>مرز سازگاری تراکنشی</strong> است؛ تغییرات درون یک aggregate اتمیک‌اند، بین aggregateها eventual.</dd>
+      <dt>Context Map</dt><dd>نقشه‌ی رابطه‌ی contextها: Customer/Supplier، Conformist، Anti-Corruption Layer، Shared Kernel، Published Language.</dd>
+      <dt>Domain Event</dt><dd>رخدادی معنادار برای کسب‌وکار که در گذشته اتفاق افتاده؛ با فعل گذشته نام‌گذاری می‌شود: <code>OrderPlaced</code>، <code>PaymentFailed</code>.</dd>
+    </dl>
+
+    <h3>مثال: «محصول» در contextهای مختلف</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Context</th><th>«Product» یعنی</th><th>داده‌ی مهم</th></tr></thead>
+      <tbody>
+        <tr><td>Catalog</td><td>چیزی که نمایش داده می‌شود</td><td>عنوان، توضیحات، تصاویر، ویژگی‌ها</td></tr>
+        <tr><td>Inventory</td><td>کالای فیزیکی در انبار</td><td>SKU، تعداد موجود، رزرو، انبار</td></tr>
+        <tr><td>Pricing</td><td>قیمت‌گذاری</td><td>قیمت پایه، تخفیف، مالیات</td></tr>
+        <tr><td>Shipping</td><td>بسته‌ای برای ارسال</td><td>وزن، ابعاد، شکنندگی</td></tr>
+      </tbody>
+    </table></div>
+    <p>تلاش برای ساختن یک مدل <code>Product</code> «جامع» که همه استفاده کنند همان چیزی است که monolithها را درهم‌تنیده می‌کند. هر context نسخه‌ی خودش را دارد و فقط <code>product_id</code> مشترک است.</p>
+
+    <h3>معیارهای یک مرز خوب</h3>
+    <ul>
+      <li><strong>High cohesion, low coupling:</strong> چیزهایی که با هم تغییر می‌کنند کنار هم باشند.</li>
+      <li><strong>حول business capability</strong> (Ordering، Payment) نه لایه‌ی فنی (سرویس «Database» یا «Validation») و نه موجودیت تکی (entity service مثل «CustomerService» که فقط CRUD است).</li>
+      <li>یک use case رایج نباید به فراخوانی همزمان ۵ سرویس نیاز داشته باشد.</li>
+      <li>هر سرویس توسط <strong>یک تیم</strong> قابل مالکیت باشد.</li>
+    </ul>
+
+    <h3>Database per Service</h3>
+    <p>هر سرویس مالک انحصاری داده‌ی خودش است و سرویس دیگر فقط از طریق API یا event به آن دسترسی دارد. این یعنی می‌تواند schema را بدون هماهنگی تغییر دهد، نوع DB مناسب خودش را انتخاب کند (MySQL برای سفارش، Elasticsearch برای جستجو، Redis برای session) و مستقل scale شود.</p>
+    <pre class="diagram">  [Order Svc]        [Payment Svc]       [Catalog Svc]
+       │                   │                   │
+   (MySQL)            (PostgreSQL)      (Elasticsearch)
+       ✗ ─── دسترسی مستقیم به DB سرویس دیگر ممنوع ─── ✗</pre>
+    <p><strong>هزینه‌ها و راه‌حل‌ها:</strong></p>
+    <ul>
+      <li><strong>JOIN بین سرویس‌ها ممکن نیست</strong> → <em>API Composition</em> (یک لایه چند API را صدا می‌زند و نتیجه را ترکیب می‌کند) یا <em>CQRS read model</em> (سرویسی که با گوش دادن به eventها یک view denormalized می‌سازد).</li>
+      <li><strong>تراکنش بین سرویس‌ها ممکن نیست</strong> → Saga.</li>
+      <li><strong>داده‌ی تکراری</strong> (مثلاً نام مشتری در سرویس سفارش) → قابل قبول، به شرط مشخص بودن مالک اصلی و همگام‌سازی با event.</li>
+    </ul>
+    <div class="callout warn"><p><strong>Shared Database</strong> بین سرویس‌ها رایج‌ترین دلیل distributed monolith است: یک تغییر schema همه را می‌شکند و هیچ سرویسی واقعاً مستقل deploy نمی‌شود. حداقل گام: schema جدا برای هر سرویس روی یک سرور مشترک، با کاربر DB جدا.</p></div>
+  </section>
+
+  <section class="lesson" id="communication" data-title="ارتباط همزمان و ناهمزمان">
+    <h2>ارتباط همزمان و ناهمزمان</h2>
+    <div class="grid-2">
+      <div class="card"><h4>Synchronous (REST، gRPC)</h4><ul>
+        <li>فراخواننده منتظر پاسخ می‌ماند؛ مدل ساده‌ی request/response.</li>
+        <li>مناسب برای query و عملیاتی که کاربر همان لحظه نتیجه را لازم دارد.</li>
+        <li><strong>Temporal coupling:</strong> اگر سرویس مقصد down باشد، فراخواننده هم شکست می‌خورد.</li>
+        <li>latency زنجیره جمع می‌شود و availability ضرب می‌شود.</li>
+      </ul></div>
+      <div class="card"><h4>Asynchronous (Queue، Pub/Sub، Stream)</h4><ul>
+        <li>فرستنده پیام را به broker می‌دهد و ادامه می‌دهد.</li>
+        <li>decoupling زمانی؛ جذب اوج بار (buffering)؛ fan-out آسان به چند مصرف‌کننده.</li>
+        <li>پیچیدگی: eventual consistency، ترتیب پیام، پیام تکراری، debug سخت‌تر.</li>
+        <li>مناسب برای side-effectها، کارهای طولانی و یکپارچه‌سازی بین contextها.</li>
+      </ul></div>
+    </div>
+
+    <h3>چرا زنجیره‌ی همزمان خطرناک است؟</h3>
+    <pre class="diagram">Client ─► A ─► B ─► C ─► D ─► E        هر سرویس availability = 99.9٪
+Availability کل ≈ 0.999^5 ≈ 99.5٪     (۵ برابر downtime بیشتر)
+Latency کل      ≈ L(A)+L(B)+L(C)+L(D)+L(E)  +  شبکه
+p99 کل بدتر از p99 هر کدام است (tail latency amplification)</pre>
+
+    <h3>REST در برابر gRPC</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>REST/JSON</th><th>gRPC</th></tr></thead>
+      <tbody>
+        <tr><td>Transport</td><td>معمولاً HTTP/1.1 (یا HTTP/2)</td><td>HTTP/2</td></tr>
+        <tr><td>Payload</td><td>JSON متنی، خوانا</td><td>Protocol Buffers باینری، کوچک‌تر و سریع‌تر در serialize</td></tr>
+        <tr><td>Contract</td><td>اختیاری (OpenAPI)</td><td>اجباری (<code>.proto</code>) با تولید خودکار کد</td></tr>
+        <tr><td>Streaming</td><td>محدود (SSE، WebSocket جدا)</td><td>unary، server/client streaming، bidirectional</td></tr>
+        <tr><td>مرورگر</td><td>پشتیبانی کامل</td><td>نیازمند gRPC-Web و proxy</td></tr>
+        <tr><td>Cache و ابزار</td><td>HTTP cache، curl، همه‌جا</td><td>ابزار خاص (grpcurl)، HTTP cache معمولی کار نمی‌کند</td></tr>
+        <tr><td>کاربرد</td><td>API عمومی، کلاینت‌های وب و موبایل</td><td>ارتباط داخلی سرویس‌به‌سرویس با throughput بالا</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-plaintext">// inventory.proto
+syntax = "proto3";
+package inventory.v1;
+
+service InventoryService {
+  rpc Reserve (ReserveRequest) returns (ReserveReply);
+}
+
+message ReserveRequest {
+  string order_id = 1;
+  string sku      = 2;
+  int32  quantity = 3;
+}
+message ReserveReply {
+  bool   reserved       = 1;
+  string reservation_id = 2;
+}</code></pre>
+    <div class="callout note"><p>در اکوسیستم PHP، کلاینت gRPC با extension رسمی <code>grpc</code> در دسترس است؛ اما چون مدل اجرای PHP-FPM برای سرور HTTP/2 طولانی‌مدت ساخته نشده، سرور gRPC معمولاً با RoadRunner یا زبان دیگری پیاده می‌شود. بنابراین در سرویس‌های Laravel، REST داخلی یا پیام‌رسانی رایج‌تر است.</p></div>
+
+    <h3>سه سبک پیام‌رسانی ناهمزمان</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>سبک</th><th>رفتار</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td>Point-to-point Queue</td><td>هر پیام را دقیقاً یک consumer (از بین چند worker رقیب) پردازش می‌کند؛ پس از ack حذف می‌شود.</td><td>صف ارسال ایمیل؛ Laravel Queue</td></tr>
+        <tr><td>Publish/Subscribe</td><td>هر پیام به همه‌ی subscriberها می‌رسد.</td><td><code>OrderPlaced</code> برای Inventory، Email و Analytics</td></tr>
+        <tr><td>Event Streaming</td><td>لاگ append-only و ماندگار؛ هر consumer group offset خودش را دارد و می‌تواند replay کند.</td><td>Kafka، کلیک‌استریم، CDC</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Command، Event، Query</h3>
+    <ul>
+      <li><strong>Command</strong> (<code>ChargePayment</code>): درخواست انجام کار، یک گیرنده‌ی مشخص، ممکن است رد شود.</li>
+      <li><strong>Event</strong> (<code>PaymentCharged</code>): اعلام یک واقعیت گذشته، فرستنده گیرنده‌ها را نمی‌شناسد، قابل رد شدن نیست.</li>
+      <li><strong>Query</strong>: درخواست داده بدون side-effect؛ معمولاً همزمان.</li>
+    </ul>
+    <p>دو شیوه‌ی محتوای event: <strong>Event Notification</strong> (فقط ID؛ گیرنده برای جزئیات API را صدا می‌زند → coupling دوباره) و <strong>Event-Carried State Transfer</strong> (داده‌ی لازم داخل event؛ گیرنده مستقل می‌ماند اما payload بزرگ‌تر و نسخه‌بندی schema مهم‌تر می‌شود).</p>
+    <div class="callout exam"><p>قاعده‌ی عملی: <strong>Query همزمان، Command و side-effect ناهمزمان</strong>. هر جا کاربر منتظر نتیجه‌ی فوری نیست (ایمیل، گزارش، به‌روزرسانی search index) از صف استفاده کنید تا خرابی سرویس مقصد مستقیماً به کاربر نرسد.</p></div>
+  </section>
+
+  <section class="lesson" id="rabbitmq-vs-kafka" data-title="RabbitMQ در برابر Kafka">
+    <h2>RabbitMQ در برابر Kafka</h2>
+    <p>هر دو «message broker» نامیده می‌شوند اما مدل ذهنی متفاوتی دارند: RabbitMQ یک <strong>صف هوشمند</strong> است که پیام را مسیریابی و پس از تحویل حذف می‌کند؛ Kafka یک <strong>لاگ توزیع‌شده‌ی ماندگار</strong> است که پیام را برای مدت مشخصی نگه می‌دارد و مصرف‌کننده‌ها خودشان جای خواندنشان را (offset) نگه می‌دارند.</p>
+
+    <h3>مدل RabbitMQ</h3>
+    <pre class="diagram">Producer ─► Exchange ──(binding: routing key)──► Queue A ─► Consumer 1
+            (direct |                         └─► Queue B ─► Consumer 2, 3 (رقابتی)
+             topic  |
+             fanout |                          nack/expire ─► Dead Letter Exchange ─► DLQ
+             headers)</pre>
+    <ul>
+      <li>انواع exchange: <code>direct</code> (تطبیق دقیق کلید)، <code>topic</code> (الگو مثل <code>order.*</code>)، <code>fanout</code> (پخش به همه)، <code>headers</code>.</li>
+      <li>تحویل <strong>push</strong> به consumer با <code>prefetch</code> برای کنترل تعداد پیام در حال پردازش؛ ack/nack دستی؛ DLX برای پیام‌های ناموفق؛ TTL و priority queue.</li>
+    </ul>
+
+    <h3>مدل Kafka</h3>
+    <pre class="diagram">Topic: orders  (3 partitions, replication factor 3)
+  P0: [m0][m1][m2][m3][m4] ...   ◄── key=user-17 همیشه در یک partition
+  P1: [m0][m1][m2] ...
+  P2: [m0][m1][m2][m3] ...
+
+Consumer Group "billing":    C1 ◄ P0     C2 ◄ P1, P2     (هر partition = حداکثر یک consumer در گروه)
+Consumer Group "analytics":  C1 ◄ P0, P1, P2             (offset مستقل؛ می‌تواند از اول replay کند)</pre>
+    <ul>
+      <li><strong>ترتیب فقط درون partition</strong> تضمین می‌شود؛ برای حفظ ترتیب رویدادهای یک موجودیت، از ID آن به‌عنوان key استفاده کنید.</li>
+      <li>حداکثر موازی‌سازی یک consumer group برابر تعداد partitionهاست.</li>
+      <li>مدل <strong>pull</strong>؛ پیام بعد از مصرف حذف نمی‌شود و بر اساس retention (زمان/حجم) یا log compaction پاک می‌شود.</li>
+    </ul>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>RabbitMQ</th><th>Kafka</th></tr></thead>
+      <tbody>
+        <tr><td>مدل</td><td>Message queue (AMQP)، smart broker / dumb consumer</td><td>Distributed commit log، dumb broker / smart consumer</td></tr>
+        <tr><td>نگهداری پیام</td><td>تا ack؛ سپس حذف</td><td>بر اساس retention؛ قابل replay</td></tr>
+        <tr><td>Routing</td><td>بسیار انعطاف‌پذیر (exchange و binding)</td><td>ساده: topic و partition</td></tr>
+        <tr><td>ترتیب</td><td>درون یک queue با یک consumer</td><td>درون partition</td></tr>
+        <tr><td>Throughput</td><td>بالا (ده‌ها هزار پیام در ثانیه)</td><td>بسیار بالا (صدها هزار تا میلیون‌ها)، به لطف I/O ترتیبی و batching</td></tr>
+        <tr><td>Latency</td><td>بسیار کم برای پیام‌های تکی</td><td>کم، اما برای batch بهینه شده</td></tr>
+        <tr><td>Retry و DLQ</td><td>داخلی (DLX، TTL)</td><td>باید با topicهای retry/DLQ در سطح برنامه ساخته شود</td></tr>
+        <tr><td>کاربرد شاخص</td><td>task queue، RPC ناهمزمان، routing پیچیده، workflowهای کاری</td><td>event streaming، event sourcing، CDC، analytics، چند consumer مستقل روی یک جریان</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p>جمع‌بندی برای پاسخ: «اگر هر پیام یک <strong>کار</strong> است که باید یک‌بار انجام و فراموش شود و routing انعطاف‌پذیر می‌خواهیم → RabbitMQ. اگر پیام یک <strong>واقعیت</strong> در جریان رویدادهاست که چند مصرف‌کننده‌ی مستقل، replay، throughput بالا یا ترتیب به‌ازای key لازم دارد → Kafka.»</p></div>
+    <div class="callout note"><p>در Laravel، صف داخلی (<code>Queue</code>) معمولاً روی Redis یا SQS اجرا می‌شود و برای jobهای داخلی یک سرویس کافی است. برای ارتباط event بین سرویس‌ها، RabbitMQ یا Kafka از طریق پکیج‌های community به‌کار می‌روند. نکته‌ی مهم: payload یک Laravel Job، کلاس PHP سریالایزشده است و برای ارتباط بین سرویس‌های غیر Laravel مناسب نیست؛ بین سرویس‌ها پیام JSON با schema مستند (و نسخه) منتشر کنید.</p></div>
+  </section>
+
+  <section class="lesson" id="api-gateway" data-title="API Gateway، BFF و Service Discovery">
+    <h2>API Gateway، BFF و Service Discovery</h2>
+    <p><strong>API Gateway</strong> نقطه‌ی ورود واحد برای کلاینت‌های بیرونی است که درخواست را به سرویس مناسب هدایت می‌کند و دغدغه‌های مشترک (cross-cutting concerns) را یکجا انجام می‌دهد.</p>
+    <pre class="diagram">  Web      Mobile    Partner
+    \        |         /
+     ▼       ▼        ▼
+  ┌──────────────────────────────┐
+  │         API Gateway          │  TLS termination، AuthN (JWT)، rate limit،
+  │                              │  routing، request id، logging، CORS، cache
+  └──────┬─────────┬─────────┬───┘
+         ▼         ▼         ▼
+     [Users]   [Orders]  [Catalog]   ◄── شبکه‌ی داخلی</pre>
+    <h3>وظایف رایج</h3>
+    <ul>
+      <li>Routing و versioning (<code>/api/v1/orders</code> → سرویس Orders).</li>
+      <li>احراز هویت (اعتبارسنجی JWT/OAuth2) و اعمال سیاست‌های کلی دسترسی.</li>
+      <li>Rate limiting و quota به‌ازای API key یا کاربر.</li>
+      <li>TLS termination، فشرده‌سازی، CORS.</li>
+      <li>Request aggregation (ترکیب چند پاسخ) و protocol translation (REST بیرونی ↔ gRPC داخلی).</li>
+      <li>ایجاد correlation id، لاگ و متریک مرکزی.</li>
+    </ul>
+    <p>نمونه‌ها: Kong، NGINX، Envoy، Traefik، AWS API Gateway.</p>
+    <div class="callout warn"><p>Gateway را به محل <strong>منطق کسب‌وکار</strong> تبدیل نکنید (مثل ESBهای قدیمی)؛ در این صورت به گلوگاه توسعه و یک monolith جدید تبدیل می‌شود. Gateway همچنین SPOF است و باید چند instance پشت load balancer داشته باشد.</p></div>
+
+    <h3>Backend for Frontend (BFF)</h3>
+    <p>به‌جای یک gateway عمومی برای همه، برای هر نوع کلاینت یک لایه‌ی اختصاصی ساخته می‌شود که پاسخ را دقیقاً مطابق نیاز همان کلاینت شکل می‌دهد (موبایل داده‌ی کمتر و فشرده‌تر، وب داده‌ی کامل‌تر). معمولاً تیم frontend مالک BFF است.</p>
+    <pre class="diagram">[Mobile App] ─► [Mobile BFF] ─┐
+                              ├─► Users / Orders / Catalog
+[Web SPA]    ─► [Web BFF]    ─┘</pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>API Gateway</th><th>BFF</th></tr></thead>
+      <tbody>
+        <tr><td>تعداد</td><td>معمولاً یکی (یا چند instance از یکی)</td><td>یکی برای هر نوع کلاینت</td></tr>
+        <tr><td>تمرکز</td><td>دغدغه‌های زیرساختی مشترک</td><td>شکل‌دهی پاسخ و aggregation مخصوص UI</td></tr>
+        <tr><td>مالک</td><td>تیم platform</td><td>تیم frontend همان کلاینت</td></tr>
+        <tr><td>ریسک</td><td>گلوگاه و SPOF</td><td>تکرار کد بین BFFها</td></tr>
+      </tbody>
+    </table></div>
+    <p>در عمل این دو ترکیب می‌شوند: Gateway جلوی همه برای auth و rate limit، و BFFها پشت آن.</p>
+
+    <h3>Service Discovery</h3>
+    <p>در محیط پویا (autoscaling، container) آدرس IP نمونه‌ها مدام تغییر می‌کند؛ پس سرویس‌ها باید یکدیگر را با <strong>نام</strong> پیدا کنند.</p>
+    <div class="grid-2">
+      <div class="card"><h4>Client-side discovery</h4><ul>
+        <li>کلاینت از <strong>Service Registry</strong> (Consul، Eureka، etcd) لیست نمونه‌های سالم را می‌گیرد و خودش load balance می‌کند.</li>
+        <li>مزیت: یک hop کمتر، الگوریتم LB هوشمند.</li>
+        <li>عیب: منطق discovery باید در هر زبان/کلاینت پیاده شود.</li>
+      </ul></div>
+      <div class="card"><h4>Server-side discovery</h4><ul>
+        <li>کلاینت به یک آدرس ثابت (LB یا DNS) درخواست می‌دهد و LB نمونه را انتخاب می‌کند.</li>
+        <li>در Kubernetes: <code>Service</code> با نام DNS مثل <code>orders.shop.svc.cluster.local</code>.</li>
+        <li>مزیت: کلاینت ساده. عیب: یک hop و جزء زیرساختی بیشتر.</li>
+      </ul></div>
+    </div>
+    <p>ثبت نمونه‌ها یا <strong>self-registration</strong> است (سرویس خودش را ثبت و heartbeat می‌فرستد) یا <strong>third-party registration</strong> (پلتفرم، مثل Kubernetes، این کار را انجام می‌دهد). <strong>Health check</strong> تضمین می‌کند ترافیک فقط به نمونه‌ی سالم برود.</p>
+  </section>
+
+  <section class="lesson" id="saga-outbox" data-title="تراکنش توزیع‌شده، Saga و Outbox">
+    <h2>تراکنش توزیع‌شده، Saga و Outbox</h2>
+    <h3>صورت مسئله</h3>
+    <p>ثبت سفارش یعنی: ایجاد سفارش (Order DB)، کسر وجه (Payment DB) و رزرو موجودی (Inventory DB). در monolith یک <code>DB::transaction</code> کافی بود؛ اما با database-per-service، تراکنش ACID واحدی بین این سه وجود ندارد.</p>
+
+    <h3>چرا 2PC معمولاً راه‌حل نیست؟</h3>
+    <p><strong>Two-Phase Commit</strong> یک coordinator دارد: فاز Prepare (همه رأی می‌دهند و قفل‌ها را نگه می‌دارند) و فاز Commit/Abort. مشکلات:</p>
+    <ul>
+      <li><strong>Blocking:</strong> اگر coordinator بعد از prepare از کار بیفتد، شرکت‌کننده‌ها با قفل‌های باز منتظر می‌مانند.</li>
+      <li>کاهش availability: همه‌ی شرکت‌کننده‌ها باید همزمان در دسترس باشند.</li>
+      <li>latency و نگه داشتن قفل در طول رفت‌وبرگشت شبکه.</li>
+      <li>بسیاری از تکنولوژی‌ها (Kafka به‌عنوان شرکت‌کننده‌ی XA، اکثر NoSQLها، APIهای HTTP خارجی) از آن پشتیبانی نمی‌کنند.</li>
+    </ul>
+
+    <h3>Saga</h3>
+    <p><strong>Saga</strong> دنباله‌ای از <strong>تراکنش‌های محلی</strong> است؛ هر مرحله تراکنش محلی خودش را commit و یک event/پیام منتشر می‌کند تا مرحله‌ی بعد آغاز شود. اگر مرحله‌ای شکست بخورد، <strong>تراکنش‌های جبرانی (compensating transactions)</strong> مراحل قبلی را به‌صورت معنایی خنثی می‌کنند (مثلاً «بازپرداخت»، نه rollback فیزیکی).</p>
+    <ul>
+      <li><strong>Compensatable:</strong> مراحلی که جبران دارند (رزرو موجودی ↔ آزادسازی).</li>
+      <li><strong>Pivot:</strong> نقطه‌ی بی‌بازگشت؛ اگر موفق شود saga باید تا انتها برود (مثلاً capture پرداخت).</li>
+      <li><strong>Retriable:</strong> مراحل بعد از pivot که باید آن‌قدر retry شوند تا موفق شوند (ارسال ایمیل تأیید).</li>
+    </ul>
+
+    <h4>Choreography</h4>
+    <pre class="diagram">[Order] ──OrderCreated──► [Payment] ──PaymentCompleted──► [Inventory] ──StockReserved──► [Order: CONFIRMED]
+   ▲                          │                               │
+   │                    PaymentFailed                    StockFailed
+   └──── Order: CANCELLED ◄───┘        [Payment: Refund] ◄────┘ ──► Order: CANCELLED</pre>
+    <h4>Orchestration</h4>
+    <pre class="diagram">                  ┌──────────────────────────┐
+                  │   Order Saga Orchestrator │ (state machine ماندگار)
+                  └───┬──────────┬────────┬───┘
+       ChargePayment  │  Reserve │        │ ConfirmOrder / CancelOrder
+                      ▼          ▼        ▼
+                 [Payment]  [Inventory] [Order]
+                 (پاسخ‌ها به‌صورت پیام به orchestrator برمی‌گردند)</pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Choreography</th><th>Orchestration</th></tr></thead>
+      <tbody>
+        <tr><td>کنترل</td><td>غیرمتمرکز؛ هر سرویس به event واکنش می‌دهد</td><td>متمرکز؛ orchestrator به هر سرویس command می‌دهد</td></tr>
+        <tr><td>Coupling</td><td>کم در ظاهر، اما وابستگی ضمنی به eventها</td><td>سرویس‌ها مستقل؛ orchestrator به همه وابسته</td></tr>
+        <tr><td>دید کلی جریان</td><td>سخت؛ منطق پخش در چند سرویس</td><td>آسان؛ کل فرایند در یک جا</td></tr>
+        <tr><td>مناسب برای</td><td>جریان‌های ساده با ۲ تا ۴ مرحله</td><td>فرایندهای پیچیده، شاخه‌دار، با timeout و جبران</td></tr>
+        <tr><td>خطر</td><td>وابستگی چرخه‌ای و «event spaghetti»</td><td>orchestrator «خدا» که منطق دامنه را می‌بلعد</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>نبود Isolation در Saga</h3>
+    <p>Saga اتمیک است (به کمک جبران) اما <strong>Isolation ندارد</strong>: نتایج میانی برای دیگران قابل مشاهده‌اند. راهکارها:</p>
+    <ul>
+      <li><strong>Semantic lock:</strong> وضعیت <code>PENDING</code> روی سفارش تا کاربر/سرویس دیگر آن را نهایی فرض نکند.</li>
+      <li><strong>Commutative updates:</strong> عملیاتی که ترتیبشان مهم نیست (افزایش/کاهش به‌جای set).</li>
+      <li><strong>Reread value / version:</strong> قبل از به‌روزرسانی بررسی شود داده تغییر نکرده.</li>
+      <li>ترتیب مراحل: مراحلی که احتمال شکستشان بالاتر است را زودتر و قبل از pivot انجام دهید.</li>
+    </ul>
+
+    <h3>مسئله‌ی Dual Write و الگوی Transactional Outbox</h3>
+    <p>کد زیر به‌ظاهر درست است اما دو سیستم (DB و broker) را بدون تراکنش مشترک می‌نویسد:</p>
+    <pre><code class="language-php">&lt;?php
+DB::transaction(function () use ($order) {
+    $order-&gt;save();
+});
+$broker-&gt;publish('OrderCreated', $order-&gt;toArray()); // اگر اینجا crash شود؟ event گم می‌شود
+// اگر publish داخل transaction باشد و commit شکست بخورد؟ event برای سفارشی که وجود ندارد!</code></pre>
+    <p><strong>Outbox:</strong> event را در <strong>همان تراکنش محلی</strong> در جدول <code>outbox</code> درج می‌کنیم. یک فرایند جدا (relay) رکوردهای outbox را خوانده و به broker می‌فرستد و علامت ارسال می‌زند. پس «تغییر داده» و «ثبت event» با هم atomic هستند.</p>
+    <pre><code class="language-sql">CREATE TABLE outbox (
+  id             BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  message_id     CHAR(36)     NOT NULL UNIQUE,   -- UUID برای dedupe در مصرف‌کننده
+  aggregate_type VARCHAR(50)  NOT NULL,
+  aggregate_id   VARCHAR(50)  NOT NULL,          -- به‌عنوان partition key
+  type           VARCHAR(100) NOT NULL,
+  payload        JSON         NOT NULL,
+  created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  published_at   TIMESTAMP    NULL,
+  INDEX idx_unpublished (published_at, id)
+);</code></pre>
+    <pre><code class="language-php">&lt;?php
+DB::transaction(function () use ($data) {
+    $order = Order::create($data + ['status' =&gt; 'PENDING']);
+
+    DB::table('outbox')-&gt;insert([
+        'message_id'     =&gt; (string) Str::uuid(),
+        'aggregate_type' =&gt; 'order',
+        'aggregate_id'   =&gt; (string) $order-&gt;id,
+        'type'           =&gt; 'OrderCreated',
+        'payload'        =&gt; json_encode(['order_id' =&gt; $order-&gt;id, 'total' =&gt; $order-&gt;total]),
+    ]);
+});
+
+// Relay (مثلاً یک command زمان‌بندی‌شده یا worker دائمی)
+DB::table('outbox')-&gt;whereNull('published_at')-&gt;orderBy('id')-&gt;limit(100)
+    -&gt;lockForUpdate()-&gt;get()   // داخل transaction؛ یا SKIP LOCKED برای چند relay
+    -&gt;each(function ($row) use ($broker) {
+        $broker-&gt;publish($row-&gt;type, $row-&gt;payload, key: $row-&gt;aggregate_id, id: $row-&gt;message_id);
+        DB::table('outbox')-&gt;where('id', $row-&gt;id)-&gt;update(['published_at' =&gt; now()]);
+    });</code></pre>
+    <ul>
+      <li><strong>Polling publisher:</strong> ساده؛ بار polling روی DB و کمی تأخیر.</li>
+      <li><strong>Transaction log tailing (CDC):</strong> ابزاری مثل Debezium binlog در MySQL یا WAL در PostgreSQL را می‌خواند و رکوردهای outbox را به Kafka می‌فرستد؛ تأخیر کم و بدون polling، اما زیرساخت بیشتر.</li>
+      <li>اگر relay بعد از publish و قبل از update کرش کند، پیام <strong>دوباره</strong> ارسال می‌شود؛ پس Outbox یعنی <strong>at-least-once</strong> و مصرف‌کننده باید idempotent باشد (الگوی <strong>Inbox</strong>: جدول <code>processed_messages</code> با کلید یکتای <code>message_id</code>).</li>
+    </ul>
+    <div class="callout exam"><p>زوج طلایی: <strong>Saga</strong> برای سازگاری بین سرویس‌ها + <strong>Outbox</strong> برای اینکه هر مرحله‌ی saga به‌صورت اتمیک «داده را تغییر دهد و پیام را منتشر کند» + <strong>Idempotent consumer</strong> برای تحمل پیام تکراری.</p></div>
+  </section>
+
+  <section class="lesson" id="idempotency-consistency" data-title="Idempotency و Eventual Consistency">
+    <h2>Idempotency و Eventual Consistency</h2>
+    <h3>تضمین‌های تحویل پیام</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>تضمین</th><th>معنا</th><th>چطور حاصل می‌شود</th><th>ریسک</th></tr></thead>
+      <tbody>
+        <tr><td>At-most-once</td><td>صفر یا یک بار</td><td>ack قبل از پردازش؛ بدون retry</td><td>از دست رفتن پیام</td></tr>
+        <tr><td>At-least-once</td><td>یک بار یا بیشتر</td><td>ack بعد از پردازش؛ retry در خطا</td><td>پیام تکراری</td></tr>
+        <tr><td>Exactly-once</td><td>دقیقاً یک بار</td><td>در حالت کلی end-to-end ممکن نیست؛ «effectively once» = at-least-once + پردازش idempotent</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>چرا exactly-once delivery افسانه است؟</strong> consumer پیام را پردازش می‌کند (مثلاً ایمیل می‌فرستد یا DB را به‌روز می‌کند) و قبل از ack کرش می‌کند. broker راهی ندارد بفهمد پردازش انجام شده یا نه؛ پس یا دوباره می‌فرستد (تکرار) یا نمی‌فرستد (احتمال گم شدن). Kafka قابلیت exactly-once را با idempotent producer و transaction ارائه می‌دهد، اما این تضمین فقط برای جریان «خواندن از Kafka → پردازش → نوشتن در Kafka» است؛ به‌محض اینکه side-effect بیرونی (DB دیگر، API پرداخت، ایمیل) وارد شود، باز هم به idempotency در سطح برنامه نیاز داریم.</p>
+
+    <h3>Idempotent Consumer</h3>
+    <pre><code class="language-php">&lt;?php
+public function handle(array $message): void
+{
+    DB::transaction(function () use ($message) {
+        // کلید یکتا روی message_id؛ درج تکراری رد می‌شود
+        $inserted = DB::table('processed_messages')-&gt;insertOrIgnore([
+            'message_id'   =&gt; $message['id'],
+            'processed_at' =&gt; now(),
+        ]);
+
+        if ($inserted === 0) {
+            return; // قبلاً پردازش شده — بی‌صدا ack کن
+        }
+
+        Reservation::create([
+            'order_id' =&gt; $message['order_id'],
+            'sku'      =&gt; $message['sku'],
+            'qty'      =&gt; $message['qty'],
+        ]);
+    });
+}</code></pre>
+    <p>نکته‌ی کلیدی: ثبت <code>message_id</code> و اثر کسب‌وکار در <strong>یک تراکنش</strong> انجام می‌شوند؛ اگر جدا باشند دوباره همان مشکل dual write پیش می‌آید. راه‌های دیگر idempotency: <strong>unique constraint طبیعی</strong> (یک رزرو به‌ازای هر <code>order_id</code>)، عملیات ذاتاً idempotent (<code>SET status = 'PAID'</code> به‌جای <code>balance = balance - x</code>) و <strong>شرط نسخه</strong> (<code>WHERE version = ?</code>).</p>
+
+    <h3>Idempotency-Key در API</h3>
+    <p>برای درخواست‌های غیر idempotent مثل <code>POST /payments</code>، کلاینت یک کلید یکتا در header <code>Idempotency-Key</code> می‌فرستد. سرور پاسخ اولین درخواست را با آن کلید ذخیره می‌کند و برای retryهای بعدی همان پاسخ را برمی‌گرداند، بدون اجرای دوباره. باید وضعیت «در حال پردازش» را هم مدیریت کرد (قفل روی کلید) تا دو درخواست همزمان با یک کلید هر دو اجرا نشوند، و کلید را به hash بدنه‌ی درخواست گره زد تا استفاده‌ی مجدد با بدنه‌ی متفاوت رد شود.</p>
+
+    <h3>Eventual Consistency</h3>
+    <p>در سیستم توزیع‌شده با پیام‌رسانی ناهمزمان، replicaها و read modelها پس از مدتی (معمولاً میلی‌ثانیه تا چند ثانیه) به حالت سازگار می‌رسند، به شرط اینکه نوشتن جدیدی نیاید. این انتخاب آگاهانه‌ای است: availability و latency بهتر در ازای کهنگی موقت داده.</p>
+    <ul>
+      <li><strong>در UX:</strong> وضعیت میانی را نشان دهید («سفارش شما در حال پردازش است») به‌جای وانمود به قطعیت.</li>
+      <li><strong>Read-your-writes:</strong> پس از نوشتن، خواندن کاربر از منبع اصلی (primary یا سرویس مالک) انجام شود یا پاسخ نوشتن، داده‌ی جدید را برگرداند.</li>
+      <li><strong>ترتیب پیام‌ها:</strong> eventها ممکن است خارج از ترتیب برسند؛ با partition key (Kafka) ترتیب را برای یک موجودیت حفظ کنید یا با شماره‌ی نسخه/timestamp در consumer، event قدیمی‌تر را نادیده بگیرید.</li>
+      <li><strong>Reconciliation:</strong> یک job دوره‌ای که اختلاف داده‌ها بین سرویس‌ها را پیدا و اصلاح می‌کند؛ شبکه‌ی ایمنی در برابر باگ‌ها.</li>
+    </ul>
+    <div class="callout exam"><p>جمله‌ی کلیدی برای پاسخ: «در عمل هدف <strong>exactly-once processing</strong> است نه exactly-once delivery؛ یعنی تحویل at-least-once به‌همراه dedupe بر اساس message id یا idempotency key در همان تراکنشی که اثر کسب‌وکار ثبت می‌شود.»</p></div>
+  </section>
+
+  <section class="lesson" id="cqrs-event-sourcing" data-title="CQRS و Event Sourcing">
+    <h2>CQRS و Event Sourcing</h2>
+    <h3>CQRS</h3>
+    <p><strong>Command Query Responsibility Segregation</strong> یعنی مدل نوشتن (commands، با قوانین دامنه و validation) از مدل خواندن (queries، بهینه برای نمایش) جدا شود. این جداسازی می‌تواند در سطح کد باشد (کلاس‌های جدا روی همان DB) یا در سطح ذخیره‌سازی (write DB نرمال‌شده + read store دی‌نرمال مثل Elasticsearch یا جدول‌های summary).</p>
+    <pre class="diagram">            Command (PlaceOrder)                    Query (GET /my-orders)
+                   │                                        │
+                   ▼                                        ▼
+          ┌─────────────────┐                      ┌─────────────────┐
+          │  Write Model     │                      │  Read Model      │
+          │ (Domain, rules)  │                      │ (denormalized)   │
+          └────────┬────────┘                      └────────▲────────┘
+                   ▼                                        │
+              [Write DB] ──── events ──► [Projector] ───────┘
+               (MySQL)                              (Elasticsearch / Redis / views)</pre>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul>
+        <li>هر طرف مستقل scale و بهینه می‌شود (معمولاً خواندن خیلی بیشتر است).</li>
+        <li>queryهای پیچیده‌ی گزارش‌گیری روی DB تراکنشی فشار نمی‌آورند.</li>
+        <li>مدل نوشتن ساده و متمرکز بر قوانین دامنه می‌ماند.</li>
+        <li>راه‌حل طبیعی برای «JOIN بین سرویس‌ها» در microservices.</li>
+      </ul></div>
+      <div class="card"><h4>هزینه‌ها</h4><ul>
+        <li>eventual consistency بین نوشتن و خواندن (کاربر ممکن است بلافاصله تغییرش را نبیند).</li>
+        <li>زیرساخت و کد بیشتر: projector، rebuild، مانیتورینگ تأخیر.</li>
+        <li>برای CRUD ساده، پیچیدگی بی‌دلیل است.</li>
+      </ul></div>
+    </div>
+
+    <h3>Event Sourcing</h3>
+    <p>به‌جای ذخیره‌ی <strong>وضعیت فعلی</strong>، <strong>دنباله‌ی همه‌ی رویدادهایی</strong> که وضعیت را ساخته‌اند به‌صورت append-only ذخیره می‌شود؛ وضعیت فعلی با replay کردن رویدادها (fold) به دست می‌آید. مثل دفتر کل حسابداری: موجودی ذخیره نمی‌شود، تراکنش‌ها ذخیره می‌شوند.</p>
+    <pre><code class="language-plaintext">event_store (stream_id = account-42)
+ v1  AccountOpened    {owner: "Ali"}
+ v2  MoneyDeposited   {amount: 500}
+ v3  MoneyWithdrawn   {amount: 120}
+ v4  MoneyDeposited   {amount: 50}
+                         ⇒ وضعیت فعلی: balance = 430</code></pre>
+    <pre><code class="language-php">&lt;?php
+final class BankAccount
+{
+    private int $balance = 0;
+    private int $version = 0;
+    private array $pending = [];
+
+    public static function fromHistory(iterable $events): self
+    {
+        $account = new self();
+        foreach ($events as $event) {
+            $account-&gt;apply($event);
+        }
+        return $account;
+    }
+
+    public function withdraw(int $amount): void
+    {
+        if ($amount &gt; $this-&gt;balance) {
+            throw new InsufficientFunds();          // قانون دامنه روی وضعیت فعلی
+        }
+        $this-&gt;record(new MoneyWithdrawn($amount));
+    }
+
+    private function record(object $event): void
+    {
+        $this-&gt;apply($event);
+        $this-&gt;pending[] = $event;                  // ذخیره با شرط expected version
+    }
+
+    private function apply(object $event): void
+    {
+        match (true) {
+            $event instanceof MoneyDeposited =&gt; $this-&gt;balance += $event-&gt;amount,
+            $event instanceof MoneyWithdrawn =&gt; $this-&gt;balance -= $event-&gt;amount,
+            default =&gt; null,
+        };
+        $this-&gt;version++;
+    }
+}</code></pre>
+    <ul>
+      <li><strong>Optimistic concurrency:</strong> هنگام append، نسخه‌ی مورد انتظار چک می‌شود (unique روی <code>stream_id, version</code>).</li>
+      <li><strong>Snapshot:</strong> برای streamهای طولانی، هر N رویداد یک snapshot ذخیره می‌شود تا replay از آن نقطه شروع شود.</li>
+      <li><strong>Projection:</strong> read modelها از روی eventها ساخته می‌شوند و هر زمان می‌توان آن‌ها را از صفر بازسازی کرد.</li>
+    </ul>
+    <div class="grid-2">
+      <div class="card"><h4>چه زمانی ارزش دارد</h4><ul>
+        <li>نیاز ذاتی به <strong>audit trail</strong> کامل و غیرقابل تغییر (مالی، ledger، حقوقی).</li>
+        <li>queryهای زمانی: «وضعیت در تاریخ X چه بود؟»</li>
+        <li>دامنه‌ی پیچیده که خود رویدادها برای کسب‌وکار معنادارند.</li>
+        <li>نیاز به ساخت read modelهای جدید از تاریخچه‌ی گذشته.</li>
+      </ul></div>
+      <div class="card"><h4>چرا اغلب ارزش ندارد</h4><ul>
+        <li><strong>Schema evolution</strong> سخت: eventهای قدیمی برای همیشه می‌مانند؛ نیاز به versioning و upcasting.</li>
+        <li>query روی وضعیت فعلی بدون projection ممکن نیست.</li>
+        <li>حذف داده‌ی شخصی (GDPR) در لاگ تغییرناپذیر؛ راهکار crypto-shredding.</li>
+        <li>منحنی یادگیری تیم و ابزار کمتر.</li>
+      </ul></div>
+    </div>
+    <div class="callout warn"><p>CQRS و Event Sourcing مستقل از هم‌اند. Event Sourcing تقریباً همیشه به CQRS نیاز دارد (برای query)، ولی CQRS بدون Event Sourcing بسیار رایج و کم‌هزینه‌تر است. هیچ‌کدام را برای کل سیستم اعمال نکنید؛ فقط برای bounded contextی که واقعاً لازم دارد.</p></div>
+  </section>
+
+  <section class="lesson" id="resilience" data-title="الگوهای Resilience">
+    <h2>الگوهای Resilience</h2>
+    <p>در سیستم توزیع‌شده، خرابی استثنا نیست، <strong>قاعده</strong> است: شبکه قطع می‌شود، سرویس کند می‌شود، GC مکث می‌کند. خطرناک‌ترین حالت سرویس <strong>کند</strong> است نه سرویس <strong>مرده</strong>: درخواست‌ها منتظر می‌مانند، worker و connectionها پر می‌شوند و خرابی آبشاروار (cascading failure) به سرویس‌های بالادست سرایت می‌کند.</p>
+    <pre class="diagram">Payment کند (۳۰ ثانیه) ─► Order: همه‌ی PHP-FPM workerها منتظر ─► Gateway: صف و timeout
+                                            ─► حتی endpointهایی که به Payment ربطی ندارند down می‌شوند</pre>
+
+    <h3>۱. Timeout</h3>
+    <ul>
+      <li>هر فراخوانی شبکه <strong>باید</strong> timeout داشته باشد؛ پیش‌فرض بسیاری از کلاینت‌ها بی‌نهایت یا خیلی طولانی است.</li>
+      <li>دو نوع: <strong>connect timeout</strong> (کوتاه، مثلاً ۱ ثانیه) و <strong>read/request timeout</strong> (بر اساس p99 سرویس مقصد).</li>
+      <li><strong>Deadline propagation:</strong> اگر کل درخواست کاربر ۲ ثانیه بودجه دارد، فراخوانی‌های پایین‌دستی باید از بودجه‌ی <em>باقی‌مانده</em> استفاده کنند.</li>
+    </ul>
+
+    <h3>۲. Retry با Exponential Backoff و Jitter</h3>
+    <ul>
+      <li>فقط خطاهای <strong>گذرا</strong> (timeout، 503، 429، قطع اتصال) retry شوند؛ 400 و 422 هرگز.</li>
+      <li>فقط عملیات <strong>idempotent</strong> یا عملیات دارای idempotency key.</li>
+      <li>فاصله‌ها نمایی رشد کنند و <strong>jitter</strong> (تصادفی) داشته باشند تا همه‌ی کلاینت‌ها همزمان برنگردند (thundering herd).</li>
+      <li>retry فقط در <strong>یک لایه</strong>: اگر هر ۳ لایه ۳ بار retry کنند، سرویس انتهایی ۲۷ برابر بار می‌گیرد (retry storm). از <strong>retry budget</strong> (مثلاً حداکثر ۱۰٪ درخواست‌ها) استفاده کنید.</li>
+    </ul>
+    <pre><code class="language-plaintext">Full jitter:   sleep = random(0, min(cap, base × 2^attempt))
+base = 100ms, cap = 5s  ⇒  attempt 1: 0–200ms، attempt 2: 0–400ms، attempt 3: 0–800ms …</code></pre>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Http;
+
+$response = Http::baseUrl(config('services.inventory.url'))
+    -&gt;connectTimeout(1)          // ثانیه
+    -&gt;timeout(2)
+    -&gt;withHeaders(['Idempotency-Key' =&gt; $order-&gt;uuid])
+    -&gt;retry(
+        3,
+        fn (int $attempt) =&gt; random_int(0, min(2000, 100 * (2 ** $attempt))), // ms با jitter
+        fn (Throwable $e) =&gt; $e instanceof ConnectionException
+            || ($e instanceof RequestException &amp;&amp; in_array($e-&gt;response-&gt;status(), [429, 502, 503, 504])),
+        throw: false,
+    )
+    -&gt;post('/reservations', $payload);</code></pre>
+
+    <h3>۳. Circuit Breaker</h3>
+    <p>مثل فیوز برق: وقتی نرخ خطای یک وابستگی از آستانه گذشت، مدار <strong>باز</strong> می‌شود و فراخوانی‌ها بلافاصله با خطا یا fallback برمی‌گردند، بدون اینکه منتظر timeout بمانند؛ هم فراخواننده از هدر رفتن منابع نجات پیدا می‌کند و هم سرویس بیمار فرصت بهبود دارد.</p>
+    <pre class="diagram">         خطاها از آستانه گذشت
+ ┌────────┐ ──────────────────► ┌────────┐
+ │ CLOSED │                     │  OPEN  │  همه‌ی درخواست‌ها فوراً رد/fallback
+ └────────┘ ◄──┐                └───┬────┘
+      ▲        │ موفق                │ پس از cooldown (مثلاً ۳۰ ثانیه)
+      │        │                    ▼
+      │     ┌──┴────────┐ شکست  ┌───────────┐
+      └─────│ موفقیت‌ها  │◄──────│ HALF-OPEN │  تعداد محدودی درخواست آزمایشی
+            └───────────┘ ─────►└───────────┘ ──شکست──► OPEN</pre>
+    <pre><code class="language-php">&lt;?php
+final class CircuitBreaker
+{
+    public function __construct(
+        private string $service,
+        private int $threshold = 5,
+        private int $cooldown = 30,
+    ) {}
+
+    public function call(callable $action, callable $fallback): mixed
+    {
+        if (Cache::has("cb:{$this-&gt;service}:open")) {
+            return $fallback();                       // OPEN: سریع شکست بخور
+        }
+
+        try {
+            $result = $action();
+            Cache::forget("cb:{$this-&gt;service}:failures");
+            return $result;
+        } catch (Throwable $e) {
+            $failures = Cache::increment("cb:{$this-&gt;service}:failures");
+            if ($failures &gt;= $this-&gt;threshold) {
+                // پس از انقضای کلید، درخواست بعدی نقش آزمایش half-open را دارد
+                Cache::put("cb:{$this-&gt;service}:open", true, $this-&gt;cooldown);
+                Cache::forget("cb:{$this-&gt;service}:failures");
+            }
+            return $fallback();
+        }
+    }
+}</code></pre>
+    <p>برای jobهای صف، Laravel middleware <code>ThrottlesExceptions</code> را دارد که پس از تعداد مشخصی exception، اجرای job را برای مدتی به تعویق می‌اندازد؛ رفتاری شبیه circuit breaker در سطح job.</p>
+
+    <h3>۴. Bulkhead</h3>
+    <p>مثل دیواره‌های ضدآب کشتی: منابع (thread pool، connection pool، worker، صف) برای هر وابستگی یا نوع کار <strong>جدا</strong> شوند تا خرابی یکی همه را غرق نکند. مثال: صف <code>payments</code> با workerهای اختصاصی جدا از صف <code>emails</code>؛ یا pool جدا برای فراخوانی سرویس گزارش‌گیری کند.</p>
+
+    <h3>۵. Fallback و Graceful Degradation</h3>
+    <ul>
+      <li>داده‌ی cache‌شده‌ی کهنه (stale) به‌جای خطا: «پیشنهادهای محبوب» به‌جای «پیشنهاد شخصی‌سازی‌شده».</li>
+      <li>مقدار پیش‌فرض یا غیرفعال کردن قابلیت غیرحیاتی.</li>
+      <li>قبول درخواست و پردازش بعدی (صف) به‌جای رد کردن.</li>
+    </ul>
+
+    <h3>۶. Load Shedding و Rate Limiting</h3>
+    <p>وقتی بار از ظرفیت بیشتر است، بهتر است بخشی از درخواست‌ها سریع با <code>503</code>/<code>429</code> رد شوند (ترجیحاً کم‌اهمیت‌ترها) تا اینکه همه کند شوند و سیستم کامل از دسترس خارج شود.</p>
+    <div class="callout exam"><p>ترکیب استاندارد هر فراخوانی بیرونی: <strong>Timeout</strong> (همیشه) ← <strong>Retry</strong> محدود با backoff و jitter (فقط خطای گذرا و عملیات idempotent) ← <strong>Circuit Breaker</strong> (جلوگیری از فشار روی سرویس بیمار) ← <strong>Fallback</strong> (تجربه‌ی کاربری قابل قبول) و <strong>Bulkhead</strong> (محدود کردن شعاع آسیب).</p></div>
+  </section>
+
+  <section class="lesson" id="observability" data-title="Observability در سیستم توزیع‌شده">
+    <h2>Observability در سیستم توزیع‌شده</h2>
+    <p><strong>Monitoring</strong> می‌گوید <em>چه چیزی</em> خراب است (برای خرابی‌های شناخته‌شده)؛ <strong>Observability</strong> توانایی پاسخ به سوال‌های پیش‌بینی‌نشده درباره‌ی <em>چرایی</em> رفتار سیستم از روی خروجی‌هایش است. در microservices که یک درخواست از ده سرویس عبور می‌کند، بدون آن debug تقریباً غیرممکن است.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ستون</th><th>چیست</th><th>ابزار رایج</th><th>به چه سوالی پاسخ می‌دهد</th></tr></thead>
+      <tbody>
+        <tr><td>Logs</td><td>رخدادهای گسسته؛ ترجیحاً structured (JSON)</td><td>ELK/OpenSearch، Loki</td><td>دقیقاً چه اتفاقی افتاد؟</td></tr>
+        <tr><td>Metrics</td><td>اعداد تجمیعی در طول زمان (counter، gauge، histogram)</td><td>Prometheus + Grafana</td><td>روند چیست؟ آیا از SLO عبور کردیم؟</td></tr>
+        <tr><td>Traces</td><td>مسیر یک درخواست بین سرویس‌ها با زمان هر مرحله</td><td>OpenTelemetry + Jaeger/Tempo/Zipkin</td><td>زمان کجا صرف شد؟ کدام سرویس مقصر است؟</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Correlation ID</h3>
+    <p>شناسه‌ای یکتا که در لبه (gateway) برای هر درخواست ساخته یا از header ورودی خوانده می‌شود، در همه‌ی لاگ‌ها ثبت و به همه‌ی فراخوانی‌های HTTP و پیام‌های صف منتقل می‌شود؛ با یک جستجو همه‌ی لاگ‌های یک درخواست در همه‌ی سرویس‌ها پیدا می‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+// app/Http/Middleware/CorrelationId.php
+use Illuminate\Support\Facades\Context;
+
+public function handle(Request $request, Closure $next): Response
+{
+    $id = $request-&gt;header('X-Correlation-ID') ?: (string) Str::uuid();
+
+    // Context (Laravel 11+): به metadata لاگ‌ها اضافه و به jobهای dispatch‌شده منتقل می‌شود
+    Context::add('correlation_id', $id);
+
+    $response = $next($request);
+    $response-&gt;headers-&gt;set('X-Correlation-ID', $id);
+    return $response;
+}
+
+// هنگام صدا زدن سرویس دیگر
+Http::withHeaders(['X-Correlation-ID' =&gt; Context::get('correlation_id')])
+    -&gt;get($url);</code></pre>
+
+    <h3>Distributed Tracing</h3>
+    <ul>
+      <li><strong>Trace:</strong> کل سفر یک درخواست؛ <strong>Span:</strong> یک عملیات (فراخوانی HTTP، query، publish) با زمان شروع، مدت و parent.</li>
+      <li>انتشار context با استاندارد <strong>W3C Trace Context</strong>، header <code>traceparent</code>: <code>00-&lt;trace-id&gt;-&lt;parent-span-id&gt;-&lt;flags&gt;</code>.</li>
+      <li><strong>OpenTelemetry</strong> استاندارد بی‌طرف برای تولید و ارسال trace، metric و log است؛ backend قابل تعویض است.</li>
+      <li><strong>Sampling:</strong> head-based (تصمیم در ابتدای درخواست، مثلاً ۱٪، ارزان) در برابر tail-based (تصمیم بعد از پایان؛ می‌تواند همه‌ی traceهای خطادار یا کند را نگه دارد اما گران‌تر).</li>
+    </ul>
+    <pre class="diagram">Trace 4bf92f3577b34da6…   (کل: 840ms)
+├─ gateway            ████████████████████████████████████  840ms
+│  ├─ order-svc        ██████████████████████████████████    800ms
+│  │  ├─ mysql insert  ██                                     35ms
+│  │  ├─ inventory     ████                                   90ms
+│  │  └─ payment       ██████████████████████████            640ms   ◄── گلوگاه
+│  │     └─ bank-api     ████████████████████████            610ms</pre>
+
+    <h3>متریک‌های کلیدی</h3>
+    <ul>
+      <li><strong>RED</strong> برای سرویس‌ها: Rate (درخواست در ثانیه)، Errors (نرخ خطا)، Duration (توزیع latency، p50/p95/p99).</li>
+      <li><strong>USE</strong> برای منابع: Utilization، Saturation، Errors.</li>
+      <li>متریک‌های صف: طول صف، سن قدیمی‌ترین پیام، consumer lag در Kafka.</li>
+      <li><strong>SLI/SLO:</strong> شاخص (مثلاً درصد درخواست‌های زیر ۳۰۰ms) و هدف (۹۹٪ در ۳۰ روز)؛ هشدار بر اساس مصرف error budget.</li>
+    </ul>
+    <div class="callout tip"><p>از میانگین latency گزارش نگیرید؛ میانگین، tail را پنهان می‌کند. همیشه percentile (p95، p99) را پایش کنید، چون یک درخواست کاربر که با ۱۰ سرویس کار دارد احتمال زیادی دارد به tail دست‌کم یکی از آن‌ها برخورد کند.</p></div>
+  </section>
+
+  <section class="lesson" id="deployment-security" data-title="استقرار و امنیت بین سرویس‌ها">
+    <h2>استقرار و امنیت بین سرویس‌ها</h2>
+    <h3>Container و Kubernetes</h3>
+    <p>Container برنامه و وابستگی‌هایش را در یک image تغییرناپذیر بسته‌بندی می‌کند تا در همه‌ی محیط‌ها یکسان اجرا شود. با ده‌ها سرویس و صدها container، به <strong>orchestrator</strong> نیاز است که زمان‌بندی، self-healing، scaling و rollout را انجام دهد؛ استاندارد عملی Kubernetes است.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>شیء</th><th>نقش</th></tr></thead>
+      <tbody>
+        <tr><td>Pod</td><td>کوچک‌ترین واحد اجرا؛ یک یا چند container با شبکه و volume مشترک</td></tr>
+        <tr><td>Deployment</td><td>تعداد replica مطلوب، rolling update و rollback برای podهای stateless</td></tr>
+        <tr><td>Service</td><td>نام DNS و IP پایدار + load balancing بین podها (service discovery)</td></tr>
+        <tr><td>Ingress / Gateway API</td><td>مسیریابی HTTP بیرونی به Serviceها، TLS</td></tr>
+        <tr><td>ConfigMap / Secret</td><td>پیکربندی و اطلاعات محرمانه جدا از image</td></tr>
+        <tr><td>HorizontalPodAutoscaler</td><td>تغییر خودکار تعداد replica بر اساس CPU یا متریک دلخواه</td></tr>
+        <tr><td>StatefulSet</td><td>برای workloadهای stateful با هویت و storage پایدار</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-yaml">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: order-service }
+  template:
+    metadata:
+      labels: { app: order-service }
+    spec:
+      containers:
+        - name: app
+          image: registry.example.com/order-service:1.4.2
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:            # آماده‌ی دریافت ترافیک؟ (DB وصل، cache گرم)
+            httpGet: { path: /ready, port: 8080 }
+          livenessProbe:             # گیر کرده؟ اگر شکست بخورد container ری‌استارت می‌شود
+            httpGet: { path: /health, port: 8080 }
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits:   { memory: "512Mi" }</code></pre>
+    <div class="callout warn"><p>liveness probe نباید وابستگی‌های بیرونی (DB) را چک کند؛ وگرنه با قطع موقت DB همه‌ی podها همزمان ری‌استارت می‌شوند و مشکل بدتر می‌شود. چک وابستگی‌ها جایش در <strong>readiness</strong> است.</p></div>
+    <p><strong>استراتژی‌های انتشار:</strong> <em>Rolling update</em> (جایگزینی تدریجی podها؛ پیش‌فرض)، <em>Blue/Green</em> (دو محیط کامل و سوئیچ آنی ترافیک؛ rollback سریع اما هزینه‌ی دوبرابر)، <em>Canary</em> (درصد کمی از ترافیک به نسخه‌ی جدید و افزایش تدریجی با پایش متریک‌ها). در هر سه، تغییرات schema دیتابیس باید <strong>backward compatible</strong> باشند (expand/contract) چون دو نسخه همزمان اجرا می‌شوند.</p>
+
+    <h3>Service Mesh</h3>
+    <p>لایه‌ی زیرساختی که ارتباط سرویس‌به‌سرویس را از کد برنامه بیرون می‌کشد؛ معمولاً با یک <strong>sidecar proxy</strong> (مثل Envoy) کنار هر pod. نمونه‌ها: Istio، Linkerd.</p>
+    <pre class="diagram">┌──────── Pod A ────────┐            ┌──────── Pod B ────────┐
+│ [order app] ◄► [proxy]│ ══ mTLS ══►│[proxy] ◄► [payment app]│
+└───────────────────────┘            └───────────────────────┘
+            ▲  control plane: سیاست‌ها، گواهی‌ها، routing  ▲</pre>
+    <ul>
+      <li>قابلیت‌ها: mTLS خودکار، retry/timeout/circuit breaking، traffic splitting برای canary، متریک و trace یکسان بدون تغییر کد.</li>
+      <li>هزینه: پیچیدگی عملیاتی، مصرف منابع و latency اضافه برای هر hop. برای چند سرویس معدود معمولاً زیادی است.</li>
+    </ul>
+
+    <h3>امنیت بین سرویس‌ها (Zero Trust)</h3>
+    <p>فرض «شبکه‌ی داخلی امن است» غلط است؛ اگر یک سرویس نفوذ شود، مهاجم نباید بتواند آزادانه بقیه را صدا بزند. دو سوال جدا داریم: <strong>کدام سرویس</strong> صدا می‌زند (هویت سرویس) و <strong>از طرف کدام کاربر</strong> (هویت کاربر).</p>
+    <dl class="terms">
+      <dt>mTLS</dt><dd>TLS دوطرفه: هم سرور و هم کلاینت گواهی ارائه می‌کنند؛ ترافیک رمز می‌شود و هویت سرویس فراخواننده احراز می‌شود. مدیریت و چرخش گواهی‌ها سخت است؛ service mesh آن را خودکار می‌کند.</dd>
+      <dt>JWT Propagation</dt><dd>Gateway توکن کاربر را اعتبارسنجی می‌کند و آن را (یا یک توکن داخلی کوتاه‌عمر) به سرویس‌های پایین‌دست می‌فرستد. هر سرویس <strong>دوباره امضا را بررسی</strong> می‌کند (با کلید عمومی از JWKS) و فقط به claimها اعتماد می‌کند، نه به headerهای ساده مثل <code>X-User-Id</code>.</dd>
+      <dt>Token Exchange</dt><dd>تبدیل توکن بیرونی به توکن داخلی با audience و scope محدود به سرویس مقصد تا توکن دزدیده‌شده همه‌جا کار نکند.</dd>
+      <dt>Service Account / Client Credentials</dt><dd>برای فراخوانی‌هایی که از طرف کاربر نیستند (jobهای پس‌زمینه)، سرویس با OAuth2 client credentials توکن خودش را می‌گیرد.</dd>
+    </dl>
+    <ul>
+      <li>اصل <strong>least privilege</strong>: هر سرویس فقط به endpointهای لازم دسترسی دارد (authorization policy در mesh یا NetworkPolicy در Kubernetes).</li>
+      <li>Secretها در vault یا Secret manager، نه در image یا repository؛ با چرخش دوره‌ای.</li>
+      <li>توکن‌های کوتاه‌عمر؛ authorization در سطح دامنه (مالکیت منبع) در خود سرویس، نه فقط در gateway.</li>
+    </ul>
+    <div class="callout exam"><p>پاسخ نمونه: «<strong>mTLS</strong> هویت و رمزنگاری در سطح سرویس را تأمین می‌کند و <strong>JWT</strong> هویت و مجوزهای کاربر را در زنجیره‌ی فراخوانی منتقل می‌کند؛ این دو مکمل‌اند نه جایگزین.»</p></div>
+  </section>
+
+  <section class="lesson" id="case-url-shortener-rate-limiter" data-title="طراحی نمونه: URL Shortener و Rate Limiter">
+    <h2>طراحی نمونه: URL Shortener و Rate Limiter</h2>
+    <h3>الف) URL Shortener</h3>
+    <h4>نیازمندی‌ها و تخمین</h4>
+    <ul>
+      <li>Functional: ساخت لینک کوتاه برای URL بلند، redirect، alias دلخواه (اختیاری)، تاریخ انقضا، آمار کلیک.</li>
+      <li>Non-functional: redirect بسیار سریع (p99 زیر ۵۰ms)، availability بالا، لینک‌ها قابل حدس نباشند.</li>
+    </ul>
+    <pre><code class="language-plaintext">نوشتن: 100M لینک جدید در ماه  ⇒ 100M / (30 × 86,400) ≈ 40 write/s   (اوج ≈ 100)
+خواندن: نسبت 100:1              ⇒ ≈ 4,000 redirect/s               (اوج ≈ 10,000)
+ذخیره: 100M × 12 × 5 سال = 6B رکورد × ~500B ≈ 3TB
+فضای کلید: Base62 با 7 کاراکتر = 62^7 ≈ 3.5 × 10^12   ⇒ کافی برای 6B</code></pre>
+    <h4>API و مدل داده</h4>
+    <pre><code class="language-plaintext">POST /api/v1/links          {"url": "https://…", "alias": "nowruz", "expires_at": "…"}
+     ⇒ 201 {"code": "aZ3kP9q", "short_url": "https://sho.rt/aZ3kP9q"}
+GET  /{code}                ⇒ 302 Location: https://…    (404 / 410 اگر نبود یا منقضی شده)
+
+links(id BIGINT PK, code VARCHAR(10) UNIQUE, long_url TEXT, user_id, created_at, expires_at)</code></pre>
+    <h4>تولید کلید</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>روش</th><th>مزیت</th><th>عیب</th></tr></thead>
+      <tbody>
+        <tr><td>Hash (MD5/SHA) و برداشتن ۷ کاراکتر</td><td>بدون هماهنگی؛ URL یکسان ⇒ کد یکسان</td><td>collision؛ نیاز به چک و retry با salt</td></tr>
+        <tr><td>شمارنده‌ی سراسری + Base62</td><td>بدون collision، کوتاه</td><td>قابل حدس (ترتیبی)؛ شمارنده‌ی مرکزی گلوگاه/SPOF</td></tr>
+        <tr><td>بازه‌های از پیش تخصیص‌یافته (range allocation)</td><td>هر سرور بازه‌ای (مثلاً ۱ میلیون ID) را می‌گیرد و محلی مصرف می‌کند؛ مقیاس‌پذیر</td><td>IDهای گم‌شده با ری‌استارت (قابل قبول)</td></tr>
+        <tr><td>Snowflake-like ID (timestamp + machine + sequence)</td><td>توزیع‌شده، مرتب بر اساس زمان</td><td>کد طولانی‌تر (۶۴ بیت ≈ ۱۱ کاراکتر Base62)</td></tr>
+      </tbody>
+    </table></div>
+    <p>برای غیرقابل حدس بودن، ID عددی را قبل از Base62 با یک permutation برگشت‌پذیر (مثلاً رمزنگاری بلوکی کوچک یا ضرب در عدد اول به پیمانه) درهم کنید.</p>
+    <h4>طراحی سطح بالا</h4>
+    <pre class="diagram">                    ┌───────────── CDN / Edge (cache پاسخ‌های 301) ─────────────┐
+Client ──► LB ──► [Redirect Svc ×N] ──► Redis Cache (code → url, LRU) ──miss──► [DB Replicas]
+            │              │
+            │              └──► Kafka "clicks" ──► [Analytics Consumer] ──► ClickHouse/OLAP
+            └──► [Write Svc] ──► Key Range Allocator ──► [Primary DB, sharded by code]</pre>
+    <h4>Deep dives</h4>
+    <ul>
+      <li><strong>301 یا 302؟</strong> 301 (دائمی) توسط مرورگر cache می‌شود: بار کمتر اما آمار کلیک از دست می‌رود و تغییر مقصد ممکن نیست. 302/307 برای آمار و کنترل.</li>
+      <li><strong>Cache:</strong> توزیع کلیک‌ها power-law است؛ cache کردن بخش کوچکی از لینک‌های داغ اکثر ترافیک را پوشش می‌دهد. cache-aside با TTL؛ نتیجه‌ی «یافت نشد» را هم کوتاه‌مدت cache کنید (در برابر حمله با کدهای تصادفی) یا از Bloom filter استفاده کنید.</li>
+      <li><strong>آمار:</strong> ثبت کلیک هرگز در مسیر redirect همزمان نباشد؛ event به Kafka و پردازش batch.</li>
+      <li><strong>Sharding:</strong> بر اساس hash کد؛ چون همه‌ی lookupها با کد است، هر درخواست فقط به یک shard می‌رود.</li>
+      <li><strong>سوءاستفاده:</strong> rate limit روی ساخت لینک، بررسی URL در لیست‌های بدافزار.</li>
+    </ul>
+
+    <h3>ب) Distributed Rate Limiter</h3>
+    <ul>
+      <li>Functional: محدود کردن تعداد درخواست به‌ازای کاربر/API key/IP، قوانین قابل پیکربندی، پاسخ <code>429 Too Many Requests</code> با <code>Retry-After</code>.</li>
+      <li>Non-functional: latency اضافه‌ی بسیار کم (کمتر از چند میلی‌ثانیه)، دقیق بین چند instance، تحمل خرابی.</li>
+    </ul>
+    <pre class="diagram">Client ──► [API Gateway ×N] ──(EVALSHA اتمیک)──► Redis Cluster  (key = rl:{api_key}:{rule})
+                  │  allowed?                         ▲
+                  ├── yes ──► Upstream services       │ قوانین از Config Service (cache محلی)
+                  └── no  ──► 429 + Retry-After + X-RateLimit-Remaining</pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>الگوریتم</th><th>ایده</th><th>ویژگی</th></tr></thead>
+      <tbody>
+        <tr><td>Token Bucket</td><td>سطل با ظرفیت C که با نرخ r پر می‌شود؛ هر درخواست یک توکن</td><td>اجازه‌ی burst تا C؛ رایج‌ترین</td></tr>
+        <tr><td>Leaky Bucket</td><td>صف با خروجی ثابت</td><td>خروجی صاف؛ burst را جذب ولی کند می‌کند</td></tr>
+        <tr><td>Fixed Window</td><td>شمارنده در هر بازه‌ی ثابت (مثلاً هر دقیقه)</td><td>ساده؛ تا ۲ برابر حد در مرز دو پنجره</td></tr>
+        <tr><td>Sliding Window Log</td><td>ذخیره‌ی timestamp همه‌ی درخواست‌ها (ZSET)</td><td>دقیق؛ حافظه‌ی زیاد</td></tr>
+        <tr><td>Sliding Window Counter</td><td>ترکیب وزنی پنجره‌ی فعلی و قبلی</td><td>تقریب خوب با حافظه‌ی کم</td></tr>
+      </tbody>
+    </table></div>
+    <p>بخش «خواندن، محاسبه، نوشتن» باید <strong>اتمیک</strong> باشد؛ وگرنه دو gateway همزمان یک توکن را مصرف می‌کنند (race condition). راه‌حل: اسکریپت Lua در Redis.</p>
+    <pre><code class="language-lua">-- KEYS[1]=bucket key  ARGV: rate(token/s), capacity, now(ms), requested
+local rate      = tonumber(ARGV[1])
+local capacity  = tonumber(ARGV[2])
+local now       = tonumber(ARGV[3])
+local requested = tonumber(ARGV[4])
+
+local data   = redis.call('HMGET', KEYS[1], 'tokens', 'ts')
+local tokens = tonumber(data[1]) or capacity
+local ts     = tonumber(data[2]) or now
+
+tokens = math.min(capacity, tokens + (now - ts) / 1000 * rate)
+local allowed = 0
+if tokens &gt;= requested then
+  tokens = tokens - requested
+  allowed = 1
+end
+
+redis.call('HSET', KEYS[1], 'tokens', tokens, 'ts', now)
+redis.call('PEXPIRE', KEYS[1], math.ceil(capacity / rate * 1000))
+return allowed</code></pre>
+    <ul>
+      <li><strong>Fail-open یا fail-closed؟</strong> اگر Redis در دسترس نباشد، معمولاً fail-open (اجازه‌ی عبور) تا خرابی limiter کل API را نخواباند؛ برای endpointهای حساس (login، OTP) fail-closed.</li>
+      <li>در Laravel، <code>RateLimiter::for('api', fn (Request $r) =&gt; Limit::perMinute(60)-&gt;by($r-&gt;user()?-&gt;id ?: $r-&gt;ip()))</code> و middleware <code>throttle:api</code> همین کار را با cache store مشترک (Redis) انجام می‌دهد.</li>
+      <li>چندمنطقه‌ای: شمارش محلی در هر region با همگام‌سازی تقریبی؛ دقت کامل سراسری به latency بین‌منطقه‌ای می‌ارزد.</li>
+    </ul>
+  </section>
+
+  <section class="lesson" id="case-notification-order" data-title="طراحی نمونه: Notification و سفارش">
+    <h2>طراحی نمونه: Notification و سفارش</h2>
+    <h3>الف) Notification System</h3>
+    <ul>
+      <li>Functional: ارسال پیام از طریق Email، SMS و Push؛ قالب (template)؛ ترجیحات کاربر (opt-out، ساعات سکوت)؛ زمان‌بندی؛ وضعیت تحویل.</li>
+      <li>Non-functional: ارسال حداقل یک‌بار برای پیام‌های مهم (OTP، تراکنش)، عدم ارسال تکراری قابل‌توجه، اولویت (OTP مهم‌تر از تبلیغ)، مقیاس‌پذیری در کمپین‌های میلیونی.</li>
+    </ul>
+    <pre class="diagram">Services (Order, Auth, Marketing)
+        │  POST /notifications  {user_id, type, data, idempotency_key, priority}
+        ▼
+┌──────────────────────┐   ┌──────────────┐  ┌──────────────┐
+│ Notification API      │──►│ Preferences  │  │ Template Svc │
+│ validate, dedupe,     │   │ + contact DB │  │ (i18n)       │
+│ rate-limit per user   │   └──────────────┘  └──────────────┘
+└──────────┬───────────┘
+           ▼  (outbox ─► broker)
+  ┌─────────────────┬──────────────────┬───────────────────┐
+  ▼                 ▼                  ▼                   ▼
+[q:sms.high]   [q:email.high]    [q:email.bulk]       [q:push]
+  │                 │                  │                   │
+[SMS Workers]  [Email Workers]   [Bulk Workers]      [Push Workers]
+  │                 │                  │                   │
+SMS Provider A/B   SMTP/ESP          ESP (throttled)     APNs / FCM
+  │ (failover)
+  └──► retry با backoff ─► بعد از N بار ─► DLQ ─► هشدار / بررسی دستی
+           ▼
+  [Delivery Status Store] ◄── webhook وضعیت تحویل از providerها</pre>
+    <ul>
+      <li><strong>جداسازی صف‌ها بر اساس کانال و اولویت</strong> (bulkhead): کمپین تبلیغاتی میلیونی نباید OTP را معطل کند.</li>
+      <li><strong>Dedupe:</strong> idempotency key (مثلاً <code>order-123:shipped:sms</code>) با کلید یکتا در DB یا <code>SET NX</code> با TTL در Redis، تا retry سرویس فراخوان پیام تکراری نسازد.</li>
+      <li><strong>Provider failover:</strong> اگر provider پیامک A خطا می‌دهد (circuit breaker باز)، به provider B سوئیچ شود.</li>
+      <li><strong>Rate limit</strong> به‌ازای کاربر (حداکثر پیام تبلیغاتی در روز) و به‌ازای provider (سقف API آن‌ها).</li>
+      <li><strong>Scheduling:</strong> پیام‌های زمان‌بندی‌شده در جدول با index روی زمان ارسال و یک scheduler که سررسیدها را به صف می‌فرستد؛ احترام به ساعات سکوت و منطقه‌ی زمانی کاربر.</li>
+      <li>در Laravel: هر کانال یک <code>Notification</code> channel، jobها با <code>$tries</code> و <code>backoff()</code>، صف‌های جدا (<code>-&gt;onQueue('sms-high')</code>) و Horizon برای پایش و تخصیص worker به هر صف.</li>
+    </ul>
+
+    <h3>ب) جریان سفارش در فروشگاه با Saga (Orchestration)</h3>
+    <pre class="diagram">Client ─► POST /orders (Idempotency-Key) ─► [Order Svc] ── Order=PENDING + outbox(OrderCreated) ── 202 Accepted
+                                                │
+                                      ┌─────────▼──────────┐
+                                      │ Saga Orchestrator   │  (state در جدول order_sagas)
+                                      └─┬───────┬───────┬───┘
+                    ① ReserveStock      │       │       │ ③ ConfirmOrder / CancelOrder
+                                        ▼       │       ▼
+                                  [Inventory]   │   [Order Svc]
+                                        ② AuthorizePayment
+                                                ▼
+                                           [Payment] ─► Bank Gateway
+                    ④ (بعد از تأیید) CapturePayment ─► Shipping: CreateShipment</pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>مرحله</th><th>عمل</th><th>جبران (Compensation)</th><th>نوع</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Order: ایجاد با وضعیت PENDING</td><td>Order: CANCELLED</td><td>Compensatable</td></tr>
+        <tr><td>2</td><td>Inventory: رزرو موجودی (با انقضا)</td><td>آزادسازی رزرو</td><td>Compensatable</td></tr>
+        <tr><td>3</td><td>Payment: authorize (بلوکه کردن وجه)</td><td>void / refund</td><td>Compensatable</td></tr>
+        <tr><td>4</td><td>Order: CONFIRMED + capture پرداخت</td><td>—</td><td>Pivot</td></tr>
+        <tr><td>5</td><td>Shipping: ایجاد مرسوله، Notification: ایمیل</td><td>—</td><td>Retriable</td></tr>
+      </tbody>
+    </table></div>
+    <pre class="diagram">State machine:
+STARTED ─► STOCK_RESERVED ─► PAYMENT_AUTHORIZED ─► CONFIRMED ─► (shipment, email: retry تا موفقیت)
+   │              │                   │
+   │ StockFailed  │ PaymentFailed /   │
+   ▼              ▼ timeout(15 min)   ▼
+CANCELLED ◄── RELEASING_STOCK ◄───────┘</pre>
+    <pre><code class="language-php">&lt;?php
+final class OrderSaga
+{
+    public function onStockReserved(StockReserved $e): void
+    {
+        DB::transaction(function () use ($e) {
+            $saga = SagaState::lockForUpdate()-&gt;findOrFail($e-&gt;orderId);
+            if ($saga-&gt;state !== 'STARTED') {
+                return;                                   // پیام تکراری یا خارج از ترتیب
+            }
+            $saga-&gt;update(['state' =&gt; 'STOCK_RESERVED']);
+            Outbox::push('payment.commands', new AuthorizePayment(
+                orderId: $e-&gt;orderId,
+                amount: $saga-&gt;amount,
+                idempotencyKey: "pay-{$e-&gt;orderId}",      // retry امن در Payment
+            ));
+        });
+    }
+
+    public function onPaymentFailed(PaymentFailed $e): void
+    {
+        DB::transaction(function () use ($e) {
+            $saga = SagaState::lockForUpdate()-&gt;findOrFail($e-&gt;orderId);
+            $saga-&gt;update(['state' =&gt; 'RELEASING_STOCK']);
+            Outbox::push('inventory.commands', new ReleaseStock($e-&gt;orderId));
+        });
+    }
+}</code></pre>
+    <ul>
+      <li>هر انتقال state و ارسال command در <strong>یک تراکنش محلی + outbox</strong>؛ هر handler با بررسی state فعلی idempotent است.</li>
+      <li><strong>Timeout:</strong> اگر پاسخ Payment در زمان مشخص نیامد، saga به مسیر جبران می‌رود (با یک scheduled job که sagaهای معطل را پیدا می‌کند).</li>
+      <li>کاربر بلافاصله <code>202 Accepted</code> و شناسه‌ی سفارش می‌گیرد و وضعیت را با polling یا WebSocket دنبال می‌کند.</li>
+      <li>رزرو موجودی با <strong>انقضا</strong> تا اگر saga گیر کرد، موجودی برای همیشه قفل نماند.</li>
+    </ul>
+    <div class="callout exam"><p>در سوال طراحی سفارش، سه نکته را حتماً بنویسید: چرا تراکنش توزیع‌شده (2PC) را انتخاب نکردید، جدول مراحل و جبران‌ها، و اینکه پیام‌ها با Outbox منتشر و با idempotency مصرف می‌شوند.</p></div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-system-design-1">
+      <summary>معماری Monolith و Microservices را تعریف و مقایسه کنید. در چه شرایطی مهاجرت به Microservices را پیشنهاد می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> <strong>Monolith</strong> برنامه‌ای است که به‌صورت یک واحد build و deploy می‌شود و معمولاً یک پایگاه داده‌ی مشترک دارد. <strong>Microservices</strong> سبکی است که سیستم را به سرویس‌های کوچک، مستقل‌الاستقرار و حول قابلیت‌های کسب‌وکار تقسیم می‌کند؛ هر سرویس مالک داده‌ی خودش است و از طریق شبکه ارتباط برقرار می‌کند.</p>
+        <p><strong>مقایسه:</strong></p>
+        <ul>
+          <li><strong>سادگی:</strong> monolith در توسعه، تست، debug و deploy ساده‌تر است؛ microservices پیچیدگی شبکه، سازگاری داده و عملیات را اضافه می‌کند.</li>
+          <li><strong>تراکنش:</strong> monolith از ACID محلی بهره می‌برد؛ microservices به Saga و eventual consistency نیاز دارد.</li>
+          <li><strong>مقیاس‌پذیری:</strong> microservices امکان scale مستقل هر بخش را می‌دهد؛ monolith کل برنامه را scale می‌کند (که اغلب کافی است).</li>
+          <li><strong>تیم:</strong> microservices استقلال تیم‌ها و deploy مستقل را ممکن می‌کند (Conway's Law).</li>
+          <li><strong>Fault isolation:</strong> در microservices خرابی محدود می‌ماند، به شرط timeout، circuit breaker و bulkhead.</li>
+        </ul>
+        <p><strong>چه زمانی مهاجرت:</strong> وقتی چند تیم روی یک کدبیس به هم برخورد می‌کنند و چرخه‌ی انتشار کند شده، بخش‌هایی نیاز scaling یا فناوری بسیار متفاوت دارند، دامنه و مرزها پایدار شده‌اند و زیرساخت CI/CD، container orchestration و observability آماده است. برای تیم کوچک یا محصول در مرحله‌ی کشف، <strong>modular monolith</strong> انتخاب بهتری است.</p>
+        <p><strong>روش:</strong> مهاجرت تدریجی با <strong>Strangler Fig</strong>، نه بازنویسی کامل؛ اول ماژولی با مرز روشن و ارزش بالا جدا شود. باید از <strong>distributed monolith</strong> (سرویس‌های جدا با DB مشترک یا deploy هماهنگ) پرهیز کرد چون هزینه‌های هر دو دنیا را دارد بدون مزایایشان.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-2">
+      <summary>یک monolith قدیمی Laravel داریم که توسعه‌اش کند شده است. چطور آن را بدون توقف سرویس به معماری سرویس‌گرا منتقل می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>رویکرد:</strong> مهاجرت تدریجی با الگوی <strong>Strangler Fig</strong>؛ بازنویسی یکباره ریسک بالا، توقف ارائه‌ی قابلیت جدید و احتمال شکست زیادی دارد.</p>
+        <ol>
+          <li><strong>Modularize first:</strong> داخل همان monolith مرز ماژول‌ها (bounded contextها) را مشخص کنید؛ وابستگی‌های مستقیم بین ماژول‌ها را به interface و event تبدیل کنید و با تست معماری اجبار کنید. اغلب همین قدم بیشترین سود را دارد.</li>
+          <li><strong>Facade:</strong> یک reverse proxy یا API Gateway جلوی monolith قرار دهید تا امکان هدایت مسیر به مسیر وجود داشته باشد.</li>
+          <li><strong>انتخاب اولین سرویس:</strong> بخشی با وابستگی کم، مرز روشن و ارزش بالا (مثلاً Notification یا Search)، نه هسته‌ی پرریسک.</li>
+          <li><strong>انتقال داده:</strong> سرویس جدید DB خودش را دارد؛ در دوره‌ی گذار داده با event یا CDC همگام می‌شود تا مالکیت کامل منتقل شود. یک <strong>Anti-Corruption Layer</strong> مانع نشت مدل قدیمی می‌شود.</li>
+          <li><strong>هدایت ترافیک تدریجی:</strong> با feature flag یا canary درصدی از ترافیک به سرویس جدید؛ مقایسه‌ی نتایج (shadow traffic) و امکان rollback فوری در proxy.</li>
+          <li><strong>حذف کد قدیمی</strong> پس از پایداری و تکرار برای ماژول بعدی.</li>
+        </ol>
+        <pre class="diagram">Client ─► Gateway ─┬─ /notifications ─► [Notification Svc] ─ own DB
+                   └─ همه‌ی مسیرهای دیگر ─► [Legacy Monolith]</pre>
+        <p><strong>پیش‌نیازها:</strong> CI/CD مستقل، correlation id و tracing، تست قرارداد (contract test) بین monolith و سرویس جدید. <strong>ریسک‌ها:</strong> دوره‌ی طولانی دوگانگی داده و منطق، و وسوسه‌ی دسترسی سرویس جدید به DB قدیمی که باید از آن پرهیز شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-3">
+      <summary>الگوی Database per Service چیست و چرا توصیه می‌شود؟ گزارشی که به داده‌ی سفارش و مشتری از دو سرویس مختلف نیاز دارد را چطور پیاده می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> هر سرویس مالک انحصاری داده‌ی خودش است و هیچ سرویس دیگری مستقیم به DB آن دسترسی ندارد؛ دسترسی فقط از طریق API یا event منتشرشده.</p>
+        <p><strong>چرا:</strong></p>
+        <ul>
+          <li><strong>Loose coupling:</strong> تغییر schema بدون هماهنگی با تیم‌های دیگر؛ deploy مستقل واقعی.</li>
+          <li><strong>Polyglot persistence:</strong> انتخاب DB مناسب هر سرویس (رابطه‌ای برای سفارش، Elasticsearch برای جستجو).</li>
+          <li>scale و fault isolation مستقل؛ کوئری سنگین یک سرویس DB دیگری را کند نمی‌کند.</li>
+        </ul>
+        <p><strong>هزینه‌ها:</strong> JOIN و تراکنش بین سرویس‌ها ممکن نیست؛ داده‌ی تکراری و eventual consistency.</p>
+        <p><strong>راه‌حل گزارش:</strong></p>
+        <ul>
+          <li><strong>API Composition:</strong> یک لایه (BFF یا سرویس گزارش) از Order لیست سفارش‌ها و از Customer اطلاعات مشتری‌ها را (batch با لیست IDها، نه N+1 فراخوانی) می‌گیرد و در حافظه ترکیب می‌کند. ساده است اما برای داده‌ی حجیم، فیلتر و مرتب‌سازی روی فیلدهای دو طرف ناکارآمد است.</li>
+          <li><strong>CQRS read model:</strong> سرویس گزارش با subscribe به <code>OrderPlaced</code> و <code>CustomerUpdated</code> یک جدول denormalized (یا data warehouse) می‌سازد که کوئری روی آن سریع است؛ هزینه، eventual consistency و نگهداری projector است.</li>
+          <li>برای تحلیل‌های سنگین: CDC از DBهای سرویس‌ها به یک data warehouse.</li>
+        </ul>
+        <p><strong>جمع‌بندی:</strong> برای صفحه‌ی جزئیات با داده‌ی کم API Composition؛ برای گزارش‌گیری با فیلتر و حجم بالا، read model.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-4">
+      <summary>ارتباط همزمان (Synchronous) و ناهمزمان (Asynchronous) بین سرویس‌ها را مقایسه کنید. در فرایند ثبت سفارش، کدام بخش‌ها را همزمان و کدام را ناهمزمان طراحی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>همزمان (REST/gRPC):</strong> فراخواننده تا رسیدن پاسخ منتظر می‌ماند. ساده و قابل فهم است و پاسخ فوری می‌دهد، اما <strong>temporal coupling</strong> ایجاد می‌کند: اگر مقصد کند یا down باشد، فراخواننده هم آسیب می‌بیند. در زنجیره، latency جمع و availability ضرب می‌شود (پنج سرویس 99.9٪ ⇒ حدود 99.5٪).</p>
+        <p><strong>ناهمزمان (صف، pub/sub، stream):</strong> فرستنده پیام را به broker می‌دهد و ادامه می‌دهد. decoupling زمانی، جذب اوج بار، fan-out به چند مصرف‌کننده و مقاومت در برابر خرابی موقت مقصد؛ در عوض eventual consistency، پیام تکراری یا خارج از ترتیب، و debug سخت‌تر.</p>
+        <p><strong>در ثبت سفارش:</strong></p>
+        <ul>
+          <li><strong>همزمان:</strong> اعتبارسنجی ورودی، خواندن قیمت فعلی (یا استفاده از snapshot قیمت در سبد) و ذخیره‌ی سفارش با وضعیت <code>PENDING</code> در سرویس Order؛ پاسخ <code>202 Accepted</code> با شناسه‌ی سفارش.</li>
+          <li><strong>ناهمزمان:</strong> رزرو موجودی، پرداخت (در قالب saga با پیام)، ارسال ایمیل/SMS، به‌روزرسانی search index و analytics، صدور فاکتور.</li>
+          <li>اگر کسب‌وکار نیاز دارد کاربر بلافاصله نتیجه‌ی پرداخت را ببیند، redirect به درگاه همزمان است اما تأیید نهایی (callback/webhook) ناهمزمان و idempotent پردازش می‌شود.</li>
+        </ul>
+        <p><strong>قاعده:</strong> query و آنچه کاربر همان لحظه لازم دارد همزمان (با timeout و circuit breaker)؛ side-effectها و هماهنگی بین contextها ناهمزمان (با outbox و consumer idempotent).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-5">
+      <summary>RabbitMQ و Kafka را مقایسه کنید. برای (الف) صف ارسال ایمیل و (ب) جریان رویدادهای سفارش که چند تیم مصرف می‌کنند، کدام را انتخاب می‌کنید و چرا؟</summary>
+      <div class="answer">
+        <p><strong>RabbitMQ:</strong> message broker مبتنی بر AMQP با مدل exchange، binding و queue. پیام به consumer push می‌شود و پس از ack حذف می‌شود. routing انعطاف‌پذیر (direct، topic، fanout، headers)، DLX، TTL و priority داخلی دارد. مناسب <strong>task queue</strong> و توزیع کار بین workerهای رقیب.</p>
+        <p><strong>Kafka:</strong> لاگ توزیع‌شده‌ی append-only و ماندگار. topic به partition تقسیم می‌شود؛ ترتیب فقط درون partition تضمین است؛ consumerها pull می‌کنند و هر consumer group offset مستقل دارد؛ پیام‌ها تا پایان retention باقی می‌مانند و قابل <strong>replay</strong>‌اند. throughput بسیار بالا به لطف I/O ترتیبی و batching.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>RabbitMQ</th><th>Kafka</th></tr></thead>
+          <tbody>
+            <tr><td>نگهداری</td><td>تا ack</td><td>retention، replay</td></tr>
+            <tr><td>Routing</td><td>غنی</td><td>topic/partition</td></tr>
+            <tr><td>مصرف چندگانه</td><td>با صف جدا برای هر مصرف‌کننده</td><td>طبیعی با consumer groupها</td></tr>
+            <tr><td>Retry/DLQ</td><td>داخلی</td><td>در سطح برنامه</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>(الف) ایمیل:</strong> RabbitMQ (یا حتی صف Laravel روی Redis/SQS). هر پیام یک کار مستقل است، باید یک‌بار انجام و حذف شود، retry و DLQ داخلی می‌خواهیم و replay معنا ندارد.</p>
+        <p><strong>(ب) رویدادهای سفارش:</strong> Kafka. چند مصرف‌کننده‌ی مستقل (Inventory، Analytics، Fraud) هرکدام با سرعت خودشان می‌خوانند؛ مصرف‌کننده‌ی جدید می‌تواند از تاریخچه شروع کند؛ با <code>order_id</code> به‌عنوان key، ترتیب رویدادهای هر سفارش حفظ می‌شود.</p>
+        <p>در هر دو حالت تحویل عملاً <strong>at-least-once</strong> است و مصرف‌کننده باید idempotent باشد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-6">
+      <summary>الگوی Saga را تعریف کنید و دو روش Choreography و Orchestration را با مثال ثبت سفارش مقایسه کنید. چرا از 2PC استفاده نمی‌کنیم؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Saga دنباله‌ای از تراکنش‌های محلی در سرویس‌های مختلف است؛ هر مرحله تراکنش خودش را commit و پیامی برای شروع مرحله‌ی بعد منتشر می‌کند. در صورت شکست، <strong>تراکنش‌های جبرانی</strong> اثر مراحل قبلی را به‌صورت معنایی خنثی می‌کنند (آزادسازی موجودی، بازپرداخت).</p>
+        <p><strong>چرا نه 2PC:</strong> 2PC در زمان prepare قفل نگه می‌دارد و blocking است؛ با خرابی coordinator شرکت‌کننده‌ها معطل می‌مانند؛ availability را به کمترین شرکت‌کننده گره می‌زند و بسیاری از brokerها، NoSQLها و APIهای خارجی (درگاه بانک) از آن پشتیبانی نمی‌کنند.</p>
+        <p><strong>Choreography:</strong> هماهنگ‌کننده‌ی مرکزی نیست؛ هر سرویس به event واکنش نشان می‌دهد: Order ⇒ <code>OrderCreated</code> ⇒ Payment ⇒ <code>PaymentCompleted</code> ⇒ Inventory ⇒ <code>StockReserved</code> ⇒ Order تأیید. در شکست، <code>StockFailed</code> باعث refund در Payment و لغو در Order می‌شود. مزیت: ساده برای جریان کوتاه، coupling کم. عیب: جریان در کد چند سرویس پخش است، فهم و تغییرش سخت و خطر وابستگی چرخه‌ای.</p>
+        <p><strong>Orchestration:</strong> یک orchestrator (state machine ماندگار) به ترتیب command می‌فرستد (<code>ReserveStock</code>، <code>AuthorizePayment</code>) و بر اساس پاسخ‌ها مرحله‌ی بعد یا جبران را اجرا می‌کند. مزیت: کل فرایند در یک جا، مدیریت timeout و شاخه‌ها آسان، تست‌پذیر. عیب: جزء اضافه و خطر تمرکز منطق دامنه در orchestrator.</p>
+        <p><strong>نکات تکمیلی:</strong> Saga isolation ندارد ⇒ از <strong>semantic lock</strong> (وضعیت PENDING) استفاده می‌کنیم؛ هر مرحله با <strong>Outbox</strong> منتشر و با <strong>idempotency</strong> مصرف می‌شود؛ مراحل پرریسک قبل از <strong>pivot</strong> (capture پرداخت) قرار می‌گیرند. برای سفارش با ۴ مرحله و timeout پرداخت، orchestration را ترجیح می‌دهم.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-7">
+      <summary>کد زیر در سرویس Order چه مشکلاتی دارد؟ آن را بازطراحی کنید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">&lt;?php
+public function store(Request $request)
+{
+    return DB::transaction(function () use ($request) {
+        $order = Order::create($request-&gt;all());
+        $res = Http::post('http://payment/charge', ['order' =&gt; $order-&gt;id, 'amount' =&gt; $order-&gt;total]);
+        $order-&gt;update(['status' =&gt; $res-&gt;json('status')]);
+        Kafka::publish('orders', ['event' =&gt; 'OrderCreated', 'id' =&gt; $order-&gt;id]);
+        return $order;
+    });
+}</code></pre>
+        <p><strong>مشکلات:</strong></p>
+        <ul>
+          <li><strong>فراخوانی شبکه داخل تراکنش DB:</strong> تراکنش و قفل‌ها در تمام مدت پاسخ Payment باز می‌مانند؛ کندی Payment به قفل و تمام شدن connectionهای DB منجر می‌شود.</li>
+          <li><strong>بدون timeout و retry کنترل‌شده:</strong> سرویس کند همه‌ی workerهای PHP-FPM را اشغال می‌کند (cascading failure).</li>
+          <li><strong>Dual write:</strong> اگر publish موفق شود اما commit شکست بخورد، event برای سفارشی که وجود ندارد منتشر شده؛ اگر پس از commit پروسه کرش کند (در نسخه‌ی خارج از تراکنش)، event گم می‌شود.</li>
+          <li><strong>ناسازگاری با پرداخت:</strong> اگر charge انجام شود و بعد تراکنش rollback شود، پول کسر شده ولی سفارشی نیست. در retry کلاینت هم احتمال <strong>پرداخت دوباره</strong> است چون idempotency key ندارد.</li>
+          <li><code>$request-&gt;all()</code>: mass assignment؛ باید داده‌ی validate‌شده استفاده شود. خطای پاسخ Payment هم بررسی نمی‌شود.</li>
+        </ul>
+        <p><strong>بازطراحی:</strong></p>
+        <pre><code class="language-php">&lt;?php
+public function store(StoreOrderRequest $request)
+{
+    $order = DB::transaction(function () use ($request) {
+        $order = Order::create($request-&gt;validated() + ['status' =&gt; 'PENDING']);
+        Outbox::record('OrderCreated', ['order_id' =&gt; $order-&gt;id, 'total' =&gt; $order-&gt;total]);
+        return $order;
+    });
+
+    return response()-&gt;json(['id' =&gt; $order-&gt;id, 'status' =&gt; 'PENDING'], 202);
+}
+// پرداخت در saga با فرمان AuthorizePayment و Idempotency-Key = "pay-{order_id}"
+// relay رکوردهای outbox را به Kafka می‌فرستد؛ consumerها idempotent هستند.</code></pre>
+        <p>اگر فراخوانی همزمان واقعاً لازم باشد، خارج از تراکنش، با <code>timeout</code>، retry محدود، circuit breaker و idempotency key انجام شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-8">
+      <summary>چرا گفته می‌شود «exactly-once delivery» در سیستم‌های توزیع‌شده افسانه است؟ چطور یک consumer طراحی می‌کنید که پیام تکراری اثر دوباره نگذارد؟</summary>
+      <div class="answer">
+        <p><strong>سه تضمین:</strong> at-most-once (ممکن است گم شود)، at-least-once (ممکن است تکرار شود)، exactly-once.</p>
+        <p><strong>چرا exactly-once ممکن نیست:</strong> consumer پیام را پردازش می‌کند و قبل از ارسال ack کرش می‌کند یا ack در شبکه گم می‌شود. broker نمی‌تواند تشخیص دهد پردازش انجام شده یا نه؛ پس یا دوباره می‌فرستد (تکرار) یا نمی‌فرستد (گم شدن). همین مسئله برای retry در HTTP هم وجود دارد. Kafka تضمین exactly-once را با idempotent producer و transaction ارائه می‌دهد، اما فقط درون خود Kafka (read-process-write)؛ side-effect بیرونی مثل DB یا API پرداخت را پوشش نمی‌دهد.</p>
+        <p><strong>راه‌حل عملی:</strong> at-least-once + <strong>پردازش idempotent</strong> = effectively-once.</p>
+        <ul>
+          <li>هر پیام یک <code>message_id</code> یکتا دارد (از outbox).</li>
+          <li><strong>Inbox/processed_messages:</strong> در همان تراکنشی که اثر کسب‌وکار ثبت می‌شود، <code>message_id</code> با unique constraint درج می‌شود؛ اگر تکراری بود، پیام نادیده گرفته و ack می‌شود.</li>
+          <li><strong>Natural idempotency:</strong> unique روی کلید کسب‌وکار (یک رزرو برای هر <code>order_id</code>)؛ عملیات مطلق (<code>status = PAID</code>) به‌جای نسبی (<code>balance -= x</code>)؛ شرط نسخه.</li>
+          <li>برای API خارجی، <strong>Idempotency-Key</strong> ارسال شود تا طرف مقابل هم dedupe کند.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+DB::transaction(function () use ($msg) {
+    if (DB::table('processed_messages')-&gt;insertOrIgnore(['message_id' =&gt; $msg['id']]) === 0) {
+        return; // تکراری
+    }
+    Payment::markPaid($msg['order_id']);
+});</code></pre>
+        <p><strong>اشتباه رایج:</strong> چک کردن «آیا قبلاً پردازش شده؟» با SELECT و سپس پردازش در دو مرحله‌ی جدا؛ در همزمانی دو consumer هر دو عبور می‌کنند. اتمیک بودن با unique constraint یا قفل تضمین می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-9">
+      <summary>CQRS و Event Sourcing را تعریف کنید، تفاوت و رابطه‌ی آن‌ها را توضیح دهید و بگویید در چه شرایطی استفاده از آن‌ها ارزش هزینه‌اش را دارد.</summary>
+      <div class="answer">
+        <p><strong>CQRS:</strong> جداسازی مدل نوشتن (command، قوانین دامنه) از مدل خواندن (query، داده‌ی بهینه برای نمایش). می‌تواند فقط در سطح کد باشد یا با ذخیره‌سازی جدا: write DB نرمال و read store دی‌نرمال که از طریق event به‌روز می‌شود.</p>
+        <p><strong>Event Sourcing:</strong> به‌جای ذخیره‌ی وضعیت فعلی، تمام رویدادهای تغییر وضعیت به‌صورت append-only ذخیره و وضعیت با replay ساخته می‌شود؛ با snapshot برای کارایی و optimistic concurrency روی شماره‌ی نسخه‌ی stream.</p>
+        <p><strong>رابطه:</strong> مستقل‌اند. Event Sourcing تقریباً همیشه CQRS لازم دارد، چون query روی دنباله‌ی رویدادها عملی نیست و باید projection ساخت. اما CQRS بدون Event Sourcing رایج است.</p>
+        <p><strong>مزایا:</strong> CQRS: scale و بهینه‌سازی مستقل خواندن و نوشتن، حل مسئله‌ی query بین سرویس‌ها. ES: audit trail کامل، query زمانی («وضعیت در تاریخ X»)، ساخت read model جدید از تاریخچه، debug با replay.</p>
+        <p><strong>هزینه‌ها:</strong> eventual consistency بین نوشتن و خواندن؛ زیرساخت projector؛ در ES، تکامل schema رویدادها (versioning و upcasting)، حذف داده‌ی شخصی در لاگ تغییرناپذیر و منحنی یادگیری.</p>
+        <p><strong>چه زمانی ارزش دارد:</strong></p>
+        <ul>
+          <li>CQRS: نسبت خواندن به نوشتن بسیار بالا با الگوهای خواندن متفاوت، داشبورد و جستجو، گزارش‌گیری بین چند سرویس.</li>
+          <li>ES: دامنه‌های مالی و ledger، کیف پول، سیستم‌هایی با الزام ممیزی قانونی، دامنه‌ی پیچیده‌ای که رویدادها برای کسب‌وکار معنادارند.</li>
+          <li><strong>نه</strong> برای CRUD ساده یا کل سیستم؛ فقط برای bounded context خاصی که نیاز دارد.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-10">
+      <summary>سرویس Payment گاهی ۳۰ ثانیه طول می‌کشد تا پاسخ دهد و در این زمان کل سایت (حتی صفحاتی که به پرداخت ربط ندارند) از دسترس خارج می‌شود. علت چیست و چطور سیستم را مقاوم می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>علت:</strong> <strong>cascading failure</strong> ناشی از منابع مشترک. هر درخواست به Payment یک worker PHP-FPM (و شاید connection DB) را تا ۳۰ ثانیه اشغال می‌کند. با چند ده درخواست در ثانیه، همه‌ی workerها منتظر Payment می‌مانند و درخواست‌های بی‌ربط هم worker آزاد پیدا نمی‌کنند. retryهای بی‌حساب کلاینت‌ها هم بار Payment را بیشتر می‌کنند.</p>
+        <p><strong>راه‌حل لایه‌لایه:</strong></p>
+        <ul>
+          <li><strong>Timeout:</strong> connect timeout حدود ۱ ثانیه و request timeout بر اساس p99 سالم (مثلاً ۳ ثانیه)؛ هیچ فراخوانی بدون timeout.</li>
+          <li><strong>Retry محدود</strong> فقط برای خطای گذرا، با exponential backoff + jitter و Idempotency-Key تا پرداخت تکراری رخ ندهد؛ retry فقط در یک لایه.</li>
+          <li><strong>Circuit breaker:</strong> وقتی نرخ خطا یا timeout از آستانه گذشت، مدار باز می‌شود و درخواست‌ها فوراً fallback می‌گیرند؛ پس از cooldown در حالت half-open آزمایش می‌شود.</li>
+          <li><strong>Bulkhead:</strong> محدود کردن تعداد فراخوانی همزمان به Payment یا جدا کردن pool/worker برای مسیر پرداخت تا بقیه‌ی سایت سالم بماند.</li>
+          <li><strong>Async کردن:</strong> سفارش با وضعیت <code>PENDING_PAYMENT</code> ثبت و پرداخت از طریق صف/saga پیگیری شود؛ کاربر با polling یا WebSocket نتیجه را می‌بیند.</li>
+          <li><strong>Fallback و degradation:</strong> پیام «پرداخت در حال بررسی است» یا غیرفعال کردن موقت روش پرداخت مشکل‌دار.</li>
+          <li><strong>Observability:</strong> متریک latency p99 و نرخ خطای Payment، هشدار روی باز شدن circuit و trace برای یافتن ریشه (مثلاً کندی درگاه بانک).</li>
+        </ul>
+        <p><strong>نتیجه:</strong> سرویس کند از سرویس مرده خطرناک‌تر است؛ هدف این است که خرابی یک وابستگی، سریع و محدود شکست بخورد (fail fast) و شعاع آسیبش مهار شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-11">
+      <summary>چرا retry باید همراه با exponential backoff و jitter باشد؟ «retry storm» چیست و چطور از آن جلوگیری می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>Retry</strong> برای عبور از خطاهای گذرا (قطع لحظه‌ای شبکه، 503، 429) ضروری است، اما retry بی‌محابا خودش عامل خرابی می‌شود.</p>
+        <ul>
+          <li><strong>Exponential backoff:</strong> فاصله‌ی تلاش‌ها نمایی بیشتر می‌شود (۱۰۰، ۲۰۰، ۴۰۰ میلی‌ثانیه…) تا به سرویس تحت فشار فرصت بهبود داده شود، با یک سقف (cap).</li>
+          <li><strong>Jitter:</strong> بدون تصادفی‌سازی، هزاران کلاینتی که همزمان خطا گرفته‌اند همزمان هم retry می‌کنند (thundering herd) و موج‌های بار هماهنگ می‌سازند. Full jitter: <code>sleep = random(0, min(cap, base × 2^n))</code>.</li>
+        </ul>
+        <p><strong>Retry storm:</strong> وقتی چند لایه هرکدام مستقل retry کنند، بار ضرب می‌شود: Gateway ۳ بار × Order ۳ بار × Inventory ۳ بار ⇒ تا ۲۷ درخواست برای هر درخواست کاربر به سرویسی که همین الان زیر بار مانده؛ بازیابی را غیرممکن می‌کند.</p>
+        <p><strong>پیشگیری:</strong></p>
+        <ul>
+          <li>retry فقط در <strong>یک لایه</strong> (معمولاً نزدیک‌ترین به وابستگی یا در mesh).</li>
+          <li><strong>Retry budget:</strong> حداکثر درصد مشخصی از درخواست‌ها می‌توانند retry باشند.</li>
+          <li><strong>Circuit breaker</strong> که در خرابی پایدار retry را متوقف می‌کند.</li>
+          <li>retry فقط خطاهای گذرا و عملیات idempotent؛ احترام به header <code>Retry-After</code>.</li>
+          <li>تعداد تلاش محدود و deadline کلی درخواست.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+Http::timeout(2)-&gt;retry(3, fn (int $n) =&gt; random_int(0, min(2000, 100 * 2 ** $n)))
+    -&gt;get($url);</code></pre>
+        <p>در صف‌های Laravel همین ایده با <code>public function backoff(): array { return [10, 60, 300]; }</code> و <code>$tries</code> پیاده می‌شود و پیام‌های ناموفق نهایی به failed jobs (معادل DLQ) می‌روند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-12">
+      <summary>API Gateway و الگوی BFF را تعریف کنید، وظایف و ریسک‌های Gateway را بنویسید و توضیح دهید Service Discovery چه مسئله‌ای را حل می‌کند.</summary>
+      <div class="answer">
+        <p><strong>API Gateway:</strong> نقطه‌ی ورود واحد کلاینت‌های بیرونی به مجموعه‌ی سرویس‌ها. وظایف: routing و versioning، احراز هویت (اعتبارسنجی JWT)، rate limiting، TLS termination، CORS، request aggregation، protocol translation (REST ↔ gRPC)، ساخت correlation id و لاگ/متریک مرکزی. مزیت: کلاینت از ساختار داخلی جدا می‌شود و دغدغه‌های مشترک یکبار پیاده می‌شوند.</p>
+        <p><strong>ریسک‌ها:</strong> SPOF و گلوگاه (نیاز به چند instance و autoscaling)، hop و latency اضافه، و خطر تبدیل شدن به محل منطق کسب‌وکار؛ gateway باید «نازک» بماند.</p>
+        <p><strong>BFF:</strong> برای هر نوع کلاینت (وب، موبایل، پارتنر) یک backend اختصاصی که داده را از سرویس‌ها جمع و دقیقاً مطابق نیاز همان UI شکل می‌دهد؛ معمولاً تیم frontend مالک آن است. مزیت: payload بهینه برای موبایل، تغییر UI بدون تغییر سرویس‌های هسته. عیب: تکرار کد بین BFFها. در عمل: Gateway برای دغدغه‌های مشترک + BFFها پشت آن.</p>
+        <p><strong>Service Discovery:</strong> در محیط پویا (container، autoscaling) IP نمونه‌ها دائماً تغییر می‌کند؛ discovery امکان یافتن نمونه‌های سالم با نام سرویس را می‌دهد.</p>
+        <ul>
+          <li><strong>Client-side:</strong> کلاینت از registry (Consul، Eureka) لیست می‌گیرد و خودش load balance می‌کند.</li>
+          <li><strong>Server-side:</strong> کلاینت به LB یا DNS ثابت می‌زند؛ در Kubernetes شیء <code>Service</code> با DNS داخلی و kube-proxy این کار را انجام می‌دهد.</li>
+          <li>ثبت با self-registration و heartbeat یا توسط پلتفرم، همراه با health check.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-13">
+      <summary>کاربران گزارش می‌دهند endpoint ثبت سفارش گاهی ۵ ثانیه طول می‌کشد. این درخواست از ۶ سرویس عبور می‌کند. چطور علت را پیدا می‌کنید و چه زیرساخت Observability‌ای پیشنهاد می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>ابزار اصلی: Distributed Tracing.</strong> هر درخواست یک trace id در لبه می‌گیرد و هر عملیات (HTTP، query، publish) یک span با زمان شروع و مدت و parent است. context با header استاندارد <code>traceparent</code> (W3C Trace Context) بین سرویس‌ها و در metadata پیام‌ها منتقل می‌شود. با OpenTelemetry instrument می‌کنیم و در Jaeger/Tempo نمودار waterfall می‌بینیم که دقیقاً کدام span زمان را مصرف کرده است.</p>
+        <p><strong>مراحل عیب‌یابی:</strong></p>
+        <ol>
+          <li>در متریک‌ها (RED: rate، errors، duration) ببینیم مشکل در p99 است یا همه‌ی درخواست‌ها، از چه زمانی، و آیا با deploy یا اوج ترافیک هم‌زمان است.</li>
+          <li>traceهای کند را فیلتر کنیم (tail-based sampling کمک می‌کند traceهای کند حتماً نگه داشته شوند).</li>
+          <li>span مقصر را پیدا کنیم: query بدون index، فراخوانی سریالی که می‌توانست موازی باشد، retry پنهان، انتظار برای connection pool، lock DB یا سرویس خارجی.</li>
+          <li>با <strong>correlation id</strong> لاگ‌های structured همه‌ی سرویس‌ها را برای همان درخواست جستجو کنیم تا جزئیات خطا یا retry معلوم شود.</li>
+        </ol>
+        <p><strong>زیرساخت پیشنهادی:</strong></p>
+        <ul>
+          <li><strong>Logs:</strong> JSON ساختاریافته با correlation_id، service، version؛ تجمیع در ELK یا Loki. در Laravel با middleware و <code>Context::add()</code> که به لاگ‌ها و jobها منتقل می‌شود.</li>
+          <li><strong>Metrics:</strong> Prometheus/Grafana؛ histogram برای latency و percentileها؛ طول صف و consumer lag.</li>
+          <li><strong>Traces:</strong> OpenTelemetry SDK + collector.</li>
+          <li><strong>SLO و alert</strong> بر اساس error budget، نه آستانه‌های دلخواه.</li>
+        </ul>
+        <p>نکته: میانگین latency مشکل tail را پنهان می‌کند؛ با ۶ سرویس، احتمال اینکه یک درخواست به tail یکی از آن‌ها بخورد زیاد است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-14">
+      <summary>امنیت ارتباط بین میکروسرویس‌ها را چطور تأمین می‌کنید؟ نقش mTLS و JWT را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>اصل:</strong> <strong>Zero Trust</strong>؛ شبکه‌ی داخلی امن فرض نمی‌شود. اگر یک سرویس نفوذ شود، نباید بتواند آزادانه سرویس‌های دیگر را صدا بزند یا ترافیک را شنود کند. دو هویت مجزا داریم: هویت <strong>سرویس</strong> فراخواننده و هویت <strong>کاربر</strong> نهایی.</p>
+        <ul>
+          <li><strong>mTLS:</strong> TLS دوطرفه که در آن هر دو طرف گواهی ارائه می‌کنند؛ ترافیک رمز و هویت سرویس احراز می‌شود. چالش: صدور و چرخش گواهی‌ها؛ service mesh (Istio، Linkerd) این را خودکار و policyهای «چه سرویسی اجازه‌ی صدا زدن چه سرویسی را دارد» را اعمال می‌کند.</li>
+          <li><strong>JWT propagation:</strong> gateway توکن کاربر را اعتبارسنجی و به پایین‌دست منتقل می‌کند. هر سرویس امضا، <code>exp</code> و <code>aud</code> را خودش با کلید عمومی (JWKS) بررسی می‌کند و به headerهای ساده‌ای مثل <code>X-User-Id</code> که قابل جعل‌اند اعتماد نمی‌کند.</li>
+          <li><strong>Token exchange / توکن داخلی:</strong> تبدیل توکن بیرونی به توکن کوتاه‌عمر با audience و scope محدود به سرویس مقصد تا نشت یک توکن همه‌جا کارایی نداشته باشد.</li>
+          <li><strong>Client credentials:</strong> برای فراخوانی‌های سیستمی (job پس‌زمینه) که از طرف کاربر نیست.</li>
+        </ul>
+        <p><strong>تکمیلی:</strong> authorization در سطح منبع (مالکیت سفارش) درون سرویس، نه فقط در gateway؛ NetworkPolicy برای محدود کردن مسیرهای شبکه؛ مدیریت secret در vault با چرخش؛ least privilege برای کاربر DB هر سرویس؛ لاگ ممیزی.</p>
+        <p><strong>جمع‌بندی:</strong> mTLS می‌گوید «چه کسی (کدام سرویس) با من حرف می‌زند و کانال امن است»؛ JWT می‌گوید «این درخواست از طرف کدام کاربر و با چه مجوزی است». مکمل‌اند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-15">
+      <summary>یک سرویس کوتاه‌کننده‌ی لینک (URL Shortener) با ۱۰۰ میلیون لینک جدید در ماه طراحی کنید.</summary>
+      <div class="answer">
+        <p><strong>نیازمندی‌ها:</strong> ساخت لینک کوتاه، redirect سریع، alias دلخواه و انقضا، آمار کلیک. غیرعملکردی: redirect با p99 کم، availability بالا، کدهای غیرقابل حدس.</p>
+        <p><strong>تخمین:</strong> 100M/ماه ⇒ حدود ۴۰ نوشتن در ثانیه؛ با نسبت خواندن ۱۰۰ به ۱، حدود ۴۰۰۰ redirect در ثانیه (اوج حدود ۱۰ هزار). ۵ سال ⇒ ۶ میلیارد رکورد × ۵۰۰ بایت ≈ ۳TB. Base62 با ۷ کاراکتر ≈ ۳.۵ تریلیون کد؛ کافی.</p>
+        <p><strong>API:</strong> <code>POST /api/v1/links</code> ⇒ <code>201</code> با کد؛ <code>GET /{code}</code> ⇒ <code>302</code> با header <code>Location</code>.</p>
+        <p><strong>تولید کد:</strong> range allocation: هر instance بازه‌ای از IDها را از یک allocator (یا sequence در DB) رزرو می‌کند و محلی مصرف می‌کند؛ ID با permutation برگشت‌پذیر درهم و به Base62 تبدیل می‌شود. بدون collision و بدون گلوگاه مرکزی. جایگزین: hash با بررسی collision.</p>
+        <pre class="diagram">Client ─► CDN ─► LB ─► Redirect Svc ─► Redis (hot codes) ─miss─► DB replicas (sharded by code)
+                         └─► Kafka(clicks) ─► Analytics
+Client ─► LB ─► Write Svc ─► ID range allocator ─► Primary DB</pre>
+        <p><strong>Deep dives:</strong></p>
+        <ul>
+          <li><strong>Cache:</strong> سیستم به‌شدت read-heavy و توزیع کلیک power-law است ⇒ cache-aside در Redis با LRU؛ negative caching یا Bloom filter برای کدهای ناموجود.</li>
+          <li><strong>301 در برابر 302:</strong> 301 بار را کم می‌کند (cache مرورگر) اما آمار و امکان تغییر مقصد از دست می‌رود؛ برای آمار 302.</li>
+          <li><strong>آمار ناهمزمان:</strong> ثبت کلیک در مسیر redirect همزمان نیست؛ event به Kafka و تجمیع batch در OLAP.</li>
+          <li><strong>داده:</strong> الگوی دسترسی key-value ⇒ sharding با hash کد؛ unique روی code؛ انقضا با job پاک‌سازی.</li>
+          <li><strong>امنیت:</strong> rate limit ساخت لینک، بررسی URLهای مخرب.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-16">
+      <summary>News Feed یک شبکه‌ی اجتماعی را طراحی کنید. رویکرد fan-out on write و fan-out on read را مقایسه کنید و مشکل کاربران پرطرفدار (celebrity) را چطور حل می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>نیازمندی:</strong> کاربر پست منتشر می‌کند و دنبال‌کنندگان در feed خود پست‌ها را (معمولاً به ترتیب زمان یا رتبه) با صفحه‌بندی می‌بینند. سیستم به‌شدت read-heavy است و latency خواندن feed باید کم باشد.</p>
+        <div class="grid-2">
+          <div class="card"><h4>Fan-out on write (push)</h4><ul>
+            <li>هنگام انتشار، ID پست در feed cache همه‌ی دنبال‌کنندگان (مثلاً Redis list/sorted set) درج می‌شود.</li>
+            <li>خواندن بسیار سریع (feed از قبل آماده).</li>
+            <li>نوشتن گران برای کاربر با میلیون‌ها دنبال‌کننده؛ هدر رفتن کار برای کاربران غیرفعال.</li>
+          </ul></div>
+          <div class="card"><h4>Fan-out on read (pull)</h4><ul>
+            <li>هنگام خواندن، پست‌های اخیر همه‌ی دنبال‌شونده‌ها جمع و merge می‌شود.</li>
+            <li>نوشتن ارزان؛ بدون کار اضافه برای غیرفعال‌ها.</li>
+            <li>خواندن کند و پرهزینه برای کسی که هزاران نفر را دنبال می‌کند.</li>
+          </ul></div>
+        </div>
+        <p><strong>رویکرد ترکیبی (hybrid):</strong> برای کاربران عادی fan-out on write از طریق صف (Post Service ⇒ event <code>PostCreated</code> ⇒ Fan-out workers ⇒ feed cache هر دنبال‌کننده). برای celebrityها (دنبال‌کننده بیش از یک آستانه) fan-out انجام نمی‌شود؛ هنگام خواندن feed، پست‌های اخیر celebrityهایی که کاربر دنبال می‌کند جداگانه خوانده (و چون پرخواننده‌اند در cache هستند) و با feed آماده merge می‌شود.</p>
+        <pre class="diagram">Post ─► Post Svc ─► DB + outbox ─► Kafka(PostCreated) ─► Fan-out Workers ─► Redis feed:{user} (ZSET, آخرین ۵۰۰)
+Read ─► Feed Svc ─► Redis feed:{user} ∪ posts of followed celebrities ─► hydrate (Post/User cache) ─► rank ─► cursor pagination</pre>
+        <ul>
+          <li>feed فقط ID نگه می‌دارد؛ محتوا با batch از cache پست‌ها hydrate می‌شود.</li>
+          <li>صفحه‌بندی <strong>cursor-based</strong> (نه offset) چون feed مدام تغییر می‌کند.</li>
+          <li>feed cache فقط برای کاربران فعال؛ برای کاربر برگشتی، ساخت مجدد با pull.</li>
+          <li>Eventual consistency قابل قبول است: چند ثانیه تأخیر در رسیدن پست مشکلی ندارد.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-system-design-17">
+      <summary>Eventual Consistency را تعریف کنید. کاربری بلافاصله پس از ثبت سفارش، آن را در لیست سفارش‌هایش نمی‌بیند (لیست از read model ساخته می‌شود). این مشکل را چطور مدیریت می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Eventual consistency تضمینی است که اگر نوشتن جدیدی انجام نشود، همه‌ی replicaها و نماهای داده پس از مدتی به یک مقدار همگرا می‌شوند؛ در بازه‌ی میانی، خواندن ممکن است داده‌ی کهنه برگرداند. این انتخابی آگاهانه برای availability، latency و decoupling بهتر است (CAP/PACELC) و نتیجه‌ی طبیعی پیام‌رسانی ناهمزمان، read replica و CQRS است.</p>
+        <p><strong>علت مشکل:</strong> سفارش در write DB ثبت شده اما event هنوز به projector نرسیده یا پردازش نشده است؛ کاربر نوشتن خودش را نمی‌بیند (نقض <strong>read-your-writes</strong>).</p>
+        <p><strong>راه‌حل‌ها:</strong></p>
+        <ul>
+          <li><strong>بازگرداندن داده در پاسخ نوشتن:</strong> فرانت سفارش جدید را از پاسخ <code>POST</code> به‌صورت optimistic به لیست اضافه کند.</li>
+          <li><strong>خواندن از منبع اصلی برای مدت کوتاه:</strong> پس از نوشتن، تا چند ثانیه درخواست‌های همان کاربر از write model/primary خوانده شوند (مشابه گزینه‌ی <code>sticky</code> در اتصال read/write لاراول برای replica).</li>
+          <li><strong>Version/token:</strong> پاسخ نوشتن یک شماره‌ی نسخه یا offset برمی‌گرداند و read model فقط وقتی پاسخ می‌دهد که به آن نسخه رسیده باشد (یا کلاینت کمی صبر کند).</li>
+          <li><strong>UX صادقانه:</strong> نمایش وضعیت «در حال پردازش» و به‌روزرسانی با WebSocket یا polling.</li>
+          <li><strong>کاهش تأخیر:</strong> پایش consumer lag، CDC به‌جای polling outbox، مقیاس دادن projectorها.</li>
+        </ul>
+        <p><strong>نکته:</strong> همه‌ی داده‌ها نباید eventual باشند؛ برای موجودی حساب یا جلوگیری از فروش بیش از موجودی، تصمیم در سرویس مالک با سازگاری قوی (تراکنش محلی، قفل یا شرط نسخه) گرفته می‌شود و فقط نماها eventual هستند.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>چارچوب پاسخ</h3>
+      <ul>
+        <li>Requirements (functional + non-functional) ← Estimation (QPS، storage) ← API ← Data model ← High-level ← Deep dives ← Bottlenecks/trade-offs.</li>
+        <li>QPS ≈ DAU × req/day ÷ 10^5؛ اوج ≈ ۲ تا ۳ برابر. ۷ کاراکتر Base62 ≈ ۳.۵ تریلیون.</li>
+        <li>هر تصمیم: «چون…» + یک جایگزین ردشده.</li>
+      </ul>
+      <h3>معماری</h3>
+      <ul>
+        <li>Microservices = deploy مستقل + مالکیت داده + حول business capability. حل مسئله‌ی <strong>سازمانی</strong>، نه لزوماً performance.</li>
+        <li>شروع با <strong>Modular Monolith</strong>؛ مهاجرت با <strong>Strangler Fig</strong> + Anti-Corruption Layer.</li>
+        <li>ضدالگو: <strong>Distributed Monolith</strong> (DB مشترک، deploy هماهنگ، زنجیره‌ی همزمان طولانی).</li>
+        <li>مرز = Bounded Context (DDD)؛ Aggregate = مرز تراکنش؛ Database per Service؛ JOIN ⇒ API Composition یا CQRS read model.</li>
+      </ul>
+      <h3>ارتباط</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>موضوع</th><th>خلاصه</th></tr></thead>
+        <tbody>
+          <tr><td>Sync</td><td>REST (عمومی، cache) / gRPC (HTTP/2 + Protobuf، داخلی، streaming)؛ temporal coupling؛ availability ضرب می‌شود</td></tr>
+          <tr><td>Async</td><td>Queue (یک مصرف‌کننده)، Pub/Sub (همه)، Stream (لاگ ماندگار + replay)</td></tr>
+          <tr><td>RabbitMQ</td><td>exchange/queue، push، حذف پس از ack، routing غنی، DLX ⇒ task queue</td></tr>
+          <tr><td>Kafka</td><td>partitioned log، pull، retention/replay، ترتیب در partition (key)، consumer group ⇒ event streaming</td></tr>
+          <tr><td>Gateway / BFF</td><td>ورودی واحد: auth، rate limit، routing، TLS / backend اختصاصی هر کلاینت</td></tr>
+          <tr><td>Discovery</td><td>client-side (Consul/Eureka) / server-side (LB، K8s Service DNS)</td></tr>
+        </tbody>
+      </table></div>
+      <h3>داده و سازگاری</h3>
+      <ul>
+        <li>2PC: blocking، coordinator SPOF، availability کم ⇒ معمولاً نه.</li>
+        <li><strong>Saga</strong> = تراکنش‌های محلی + جبران. Choreography (event، ساده، پراکنده) / Orchestration (state machine مرکزی، پیچیده‌ها). Compensatable ← Pivot ← Retriable. بدون isolation ⇒ semantic lock (PENDING).</li>
+        <li><strong>Outbox</strong>: تغییر داده + رکورد event در یک تراکنش؛ relay با polling یا CDC (Debezium، binlog/WAL) ⇒ at-least-once.</li>
+        <li><strong>Inbox / idempotent consumer</strong>: <code>message_id</code> یکتا در همان تراکنش اثر کسب‌وکار.</li>
+        <li>Exactly-once delivery افسانه است ⇒ at-least-once + dedupe = effectively-once. Kafka EOS فقط درون Kafka.</li>
+        <li>Idempotency-Key در POST؛ ذخیره‌ی پاسخ اول؛ قفل روی کلید؛ مقایسه‌ی hash بدنه.</li>
+        <li>Eventual consistency: UX وضعیت میانی، read-your-writes، ترتیب با partition key یا version، reconciliation job.</li>
+        <li>CQRS: جدا کردن خواندن/نوشتن. Event Sourcing: ذخیره‌ی رویدادها، replay، snapshot، projection؛ هزینه: schema evolution، GDPR. فقط برای context خاص.</li>
+      </ul>
+      <h3>Resilience</h3>
+      <ul>
+        <li>سرویس <strong>کند</strong> از سرویس مرده خطرناک‌تر است ⇒ cascading failure.</li>
+        <li><strong>Timeout</strong> همیشه (connect کوتاه، read بر اساس p99)، deadline propagation.</li>
+        <li><strong>Retry</strong>: فقط خطای گذرا + idempotent؛ <code>random(0, min(cap, base·2^n))</code>؛ یک لایه؛ retry budget.</li>
+        <li><strong>Circuit Breaker</strong>: Closed ⇒ Open (fail fast) ⇒ Half-Open (آزمایش) ⇒ Closed.</li>
+        <li><strong>Bulkhead</strong>: pool/صف/worker جدا. <strong>Fallback</strong>: cache کهنه، پیش‌فرض. <strong>Load shedding</strong>: 429/503 سریع.</li>
+        <li>Laravel: <code>Http::timeout()-&gt;connectTimeout()-&gt;retry()</code>، job با <code>$tries</code> و <code>backoff()</code>، middleware <code>ThrottlesExceptions</code>.</li>
+      </ul>
+      <h3>Observability، استقرار، امنیت</h3>
+      <ul>
+        <li>Logs (structured JSON + correlation id) / Metrics (RED، USE، percentile) / Traces (OpenTelemetry، <code>traceparent</code>، span).</li>
+        <li>Laravel <code>Context::add('correlation_id', …)</code> ⇒ لاگ‌ها و jobها؛ ارسال در header فراخوانی‌ها.</li>
+        <li>K8s: Pod، Deployment، Service، Ingress، ConfigMap/Secret، HPA؛ readiness (وابستگی‌ها) در برابر liveness (فقط خود پروسه).</li>
+        <li>Rolling / Blue-Green / Canary؛ migration سازگار با عقب (expand/contract).</li>
+        <li>Service mesh: sidecar (Envoy)، mTLS خودکار، retry، traffic split؛ هزینه‌ی عملیاتی.</li>
+        <li>Zero trust: <strong>mTLS</strong> = هویت سرویس + رمزنگاری؛ <strong>JWT</strong> = هویت کاربر، اعتبارسنجی در هر سرویس (JWKS)، توکن کوتاه‌عمر، token exchange.</li>
+      </ul>
+      <h3>طراحی‌های نمونه در یک خط</h3>
+      <ul>
+        <li><strong>URL Shortener:</strong> read-heavy ⇒ Redis + CDN؛ range allocation + Base62؛ 302 برای آمار؛ کلیک‌ها ناهمزمان به Kafka؛ shard با hash کد.</li>
+        <li><strong>Rate Limiter:</strong> در gateway؛ token bucket با Lua اتمیک در Redis؛ 429 + Retry-After؛ fail-open به‌جز endpointهای حساس.</li>
+        <li><strong>Notification:</strong> API + dedupe + preferences ⇒ صف جدا برای هر کانال/اولویت ⇒ workerها ⇒ providerها با failover؛ retry + DLQ؛ rate limit کاربر.</li>
+        <li><strong>Order Saga:</strong> PENDING + 202 ⇒ Reserve ⇒ Authorize ⇒ Confirm/Capture (pivot) ⇒ Ship؛ جبران: release/void؛ outbox + idempotency + timeout.</li>
+        <li><strong>News Feed:</strong> hybrid fan-out؛ push برای عادی، pull برای celebrity؛ ZSET از IDها؛ cursor pagination.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

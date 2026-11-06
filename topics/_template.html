@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TOPIC TITLE — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="SLUG">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>TOPIC TITLE</h1>
+    <p class="lead">یک یا دو جمله خلاصه درباره اینکه این مبحث چیست و چه چیزهایی در آن پوشش داده می‌شود.</p>
+  </header>
+
+  <!-- Every lesson = <section class="lesson" id="kebab-id" data-title="عنوان فارسی کوتاه">, first child <h2>. -->
+  <section class="lesson" id="intro" data-title="مفاهیم پایه">
+    <h2>مفاهیم پایه</h2>
+    <p>متن فارسی با اصطلاحات انگلیسی مثل <code>git rebase</code> و <strong>Dependency Injection</strong>.</p>
+
+    <div class="callout exam"><p>نکته‌ای که احتمال سوال آمدنش بالاست.</p></div>
+    <div class="callout tip"><p>نکته کاربردی.</p></div>
+    <div class="callout warn"><p>اشتباه رایج.</p></div>
+    <div class="callout note"><p>توضیح جانبی.</p></div>
+
+    <pre><code class="language-php">&lt;?php
+$users = User::where('active', true)-&gt;get();</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>A</th><th>B</th></tr></thead>
+      <tbody><tr><td>…</td><td>…</td><td>…</td></tr></tbody>
+    </table></div>
+
+    <div class="grid-2">
+      <div class="card"><h4>گزینه A</h4><ul><li>…</li></ul></div>
+      <div class="card"><h4>گزینه B</h4><ul><li>…</li></ul></div>
+    </div>
+
+    <dl class="terms">
+      <dt>Idempotent</dt><dd>تعریف کوتاه فارسی.</dd>
+    </dl>
+
+    <pre class="diagram">Client ──► Load Balancer ──► App 1
+                          └──► App 2</pre>
+  </section>
+
+  <!-- Second-to-last section: descriptive questions with model answers -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+    <details class="qa" id="q-unique-id">
+      <summary>متن سوال تشریحی؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> …</p>
+        <p><strong>چرا / کاربرد:</strong> …</p>
+        <pre><code class="language-php">// مثال کوتاه</code></pre>
+        <p><strong>مزایا و معایب:</strong> …</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- Last section: cheat sheet for the final review before the exam -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <ul><li>…</li></ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1403 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scaled Applications — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="scaled-applications">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Scaled Applications</h1>
+    <p class="lead">چطور یک اپلیکیشن Laravel را از یک سرور به ده‌ها سرور برسانیم: Stateless بودن، Load Balancing، کش در همهٔ لایه‌ها و مقابله با Cache Stampede، صف‌ها و Jobهای Idempotent، Rate Limiting، مسیر مقیاس‌پذیری دیتابیس، Octane، مسائل همزمانی، تخمین ظرفیت و حذف SPOF.</p>
+  </header>
+
+  <!-- ============ 1 ============ -->
+  <section class="lesson" id="fundamentals" data-title="مقیاس‌پذیری، کارایی و دسترس‌پذیری">
+    <h2>مقیاس‌پذیری، کارایی و دسترس‌پذیری</h2>
+    <p>این سه مفهوم اغلب با هم قاطی می‌شوند، در حالی که به سه سؤال متفاوت جواب می‌دهند:</p>
+    <dl class="terms">
+      <dt>Performance (کارایی)</dt><dd>سیستم برای <strong>یک</strong> درخواست چقدر سریع است؟ با <strong>Latency</strong> (مثلاً p50/p95/p99 زمان پاسخ) و مصرف منابع به ازای هر درخواست سنجیده می‌شود.</dd>
+      <dt>Scalability (مقیاس‌پذیری)</dt><dd>توانایی سیستم برای پاسخ‌گویی به <strong>بار بیشتر</strong> با افزودن منابع، به‌طوری که کارایی افت جدی نکند. معیارش <strong>Throughput</strong> (مثلاً RPS) در برابر منابع افزوده‌شده است. سیستم ایده‌آل تقریباً خطی مقیاس می‌گیرد: دو برابر سرور ≈ دو برابر ظرفیت.</dd>
+      <dt>Availability (دسترس‌پذیری)</dt><dd>درصد زمانی که سیستم در دسترس است و درست جواب می‌دهد؛ معمولاً با «تعداد ۹ها» بیان می‌شود (۹۹٫۹٪ و …). با Redundancy و حذف SPOF به دست می‌آید.</dd>
+      <dt>Reliability</dt><dd>سیستم در طول زمان <strong>درست</strong> کار کند (داده‌ها خراب نشوند، خطا پنهان نشود). سیستمی که در دسترس است ولی جواب غلط می‌دهد Available هست ولی Reliable نیست.</dd>
+      <dt>Elasticity</dt><dd>توانایی افزایش <strong>و کاهش</strong> خودکار منابع متناسب با بار (Autoscaling)؛ بُعد هزینه‌ای مقیاس‌پذیری.</dd>
+    </dl>
+    <div class="callout exam"><p>جملهٔ کلیدی برای پاسخ تشریحی: «اگر سیستم برای یک کاربر کند است، مشکل <strong>Performance</strong> داریم؛ اگر برای یک کاربر سریع است ولی زیر بار زیاد کند می‌شود، مشکل <strong>Scalability</strong> داریم؛ اگر گاهی اصلاً جواب نمی‌دهد، مشکل <strong>Availability</strong> داریم.»</p></div>
+
+    <h3>Vertical در برابر Horizontal Scaling</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Vertical (Scale Up)</h4><ul>
+        <li>سرور قوی‌تر: CPU، RAM، دیسک NVMe بیشتر.</li>
+        <li>بدون تغییر کد؛ ساده و سریع.</li>
+        <li>سقف سخت‌افزاری دارد و هزینه غیرخطی رشد می‌کند.</li>
+        <li>همچنان <strong>SPOF</strong> است؛ ارتقا معمولاً Downtime دارد.</li>
+        <li>برای دیتابیس اصلی (Primary) اولین و معقول‌ترین قدم است.</li>
+      </ul></div>
+      <div class="card"><h4>Horizontal (Scale Out)</h4><ul>
+        <li>افزودن سرورهای بیشتر پشت Load Balancer.</li>
+        <li>عملاً بی‌سقف و Redundancy ذاتی (افزایش Availability).</li>
+        <li>پیش‌نیاز: اپلیکیشن <strong>Stateless</strong> و منابع مشترک (Redis، S3، DB).</li>
+        <li>پیچیدگی: هماهنگی، Consistency، شبکه، Deploy و Observability.</li>
+        <li>برای لایهٔ اپلیکیشن (PHP) و Workerها حالت طبیعی است.</li>
+      </ul></div>
+    </div>
+    <div class="callout tip"><p>در عمل ترکیبی کار می‌کنیم: لایهٔ App را Horizontal مقیاس می‌دهیم (چون PHP ذاتاً Shared-Nothing است) و دیتابیس را ابتدا Vertical و بعد با Read Replica و در نهایت Sharding.</p></div>
+
+    <h3>معماری مرجع یک اپلیکیشن مقیاس‌پذیر</h3>
+    <pre class="diagram">  Users
+    │
+    ▼
+  DNS ──► CDN (static assets, cached pages)
+            │  cache miss
+            ▼
+   ┌──────────────────┐
+   │  Load Balancer   │  L7, TLS termination, health checks
+   └──┬─────┬─────┬───┘
+      ▼     ▼     ▼
+   ┌─────┐┌─────┐┌─────┐   Stateless app nodes (autoscaled)
+   │App 1││App 2││App N│   PHP-FPM / Octane
+   └──┬──┘└──┬──┘└──┬──┘
+      └──────┼──────┘
+     ┌───────┼──────────────┬────────────────┐
+     ▼       ▼              ▼                ▼
+ ┌───────┐ ┌──────────┐ ┌──────────┐   ┌───────────┐
+ │ Redis │ │ DB       │ │ DB       │   │ S3 object │
+ │cache  │ │ Primary  ├►│ Replicas │   │ storage   │
+ │session│ │ (writes) │ │ (reads)  │   └───────────┘
+ │queue  │ └──────────┘ └──────────┘
+ └───┬───┘
+     ▼
+ Queue Workers (Horizon) ──► Mail / SMS / 3rd-party APIs</pre>
+    <div class="callout note"><p>Amdahl's Law یادآوری می‌کند که بخش سریالی سیستم (مثلاً یک Lock سراسری یا یک دیتابیس واحد) سقف مقیاس‌پذیری را تعیین می‌کند؛ هرچقدر هم سرور App اضافه کنید، گلوگاه مشترک جابه‌جا نمی‌شود.</p></div>
+  </section>
+
+  <!-- ============ 2 ============ -->
+  <section class="lesson" id="stateless" data-title="Stateless بودن اپلیکیشن">
+    <h2>Stateless بودن اپلیکیشن</h2>
+    <p><strong>Stateless</strong> یعنی هیچ نود اپلیکیشنی دادهٔ ماندگاری که درخواست بعدی به آن نیاز دارد در حافظه یا دیسک محلی خودش نگه ندارد. در نتیجه هر درخواست می‌تواند به <strong>هر</strong> نودی برود، نودها قابل‌جایگزینی‌اند (Cattle, not Pets) و می‌توان آن‌ها را بی‌دردسر اضافه، حذف یا Restart کرد.</p>
+    <h3>چه Stateهایی را باید بیرون ببریم؟</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>State</th><th>پیش‌فرض خطرناک</th><th>جایگزین مقیاس‌پذیر</th><th>تنظیم Laravel</th></tr></thead>
+      <tbody>
+        <tr><td>Session</td><td><code>file</code> روی دیسک محلی</td><td>Redis / Database / Cookie</td><td><code>SESSION_DRIVER=redis</code></td></tr>
+        <tr><td>Cache</td><td><code>file</code> یا <code>array</code></td><td>Redis / Memcached</td><td><code>CACHE_STORE=redis</code></td></tr>
+        <tr><td>فایل‌های آپلودی</td><td><code>storage/app</code> محلی</td><td>Object Storage (S3، MinIO)</td><td><code>FILESYSTEM_DISK=s3</code></td></tr>
+        <tr><td>Queue</td><td><code>sync</code></td><td>Redis / SQS / RabbitMQ</td><td><code>QUEUE_CONNECTION=redis</code></td></tr>
+        <tr><td>Lockها</td><td>فایل Lock محلی</td><td>Atomic Lock روی Redis</td><td><code>Cache::lock()</code></td></tr>
+        <tr><td>لاگ‌ها</td><td><code>storage/logs</code></td><td>stdout/stderr ← جمع‌آوری متمرکز</td><td><code>LOG_CHANNEL=stderr</code></td></tr>
+        <tr><td>Cron</td><td>روی همهٔ سرورها اجرا می‌شود</td><td>اجرا روی یک سرور</td><td><code>-&gt;onOneServer()</code></td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-ini"># .env روی همهٔ نودهای App (یکسان)
+APP_KEY=base64:...        # باید روی همهٔ نودها یکی باشد (رمزنگاری Cookie/Session)
+SESSION_DRIVER=redis
+CACHE_STORE=redis
+QUEUE_CONNECTION=redis
+FILESYSTEM_DISK=s3
+LOG_CHANNEL=stderr
+REDIS_HOST=redis.internal</code></pre>
+    <div class="callout warn"><p>اشتباه رایج: <code>APP_KEY</code> متفاوت روی نودها؛ کاربر با رفتن به نود دیگر Logout می‌شود یا خطای <code>DecryptException</code> می‌گیرد. همچنین Scheduler اگر روی همهٔ نودها اجرا شود، هر Task چندبار اجرا می‌شود؛ از <code>-&gt;onOneServer()</code> استفاده کنید (نیازمند Cache Driver مشترک مثل Redis).</p></div>
+    <pre><code class="language-php">// routes/console.php (Laravel 11+)
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('reports:daily')
+    -&gt;dailyAt('02:00')
+    -&gt;onOneServer()          // فقط یکی از سرورها اجرا می‌کند
+    -&gt;withoutOverlapping();  // اگر اجرای قبلی تمام نشده، اجرا نکن</code></pre>
+    <h3>پشت Load Balancer: Trusted Proxies</h3>
+    <p>وقتی TLS روی Load Balancer خاتمه پیدا می‌کند، اپلیکیشن درخواست را HTTP و با IP خود LB می‌بیند. برای اینکه <code>$request-&gt;ip()</code>، <code>url()</code> و <code>isSecure()</code> درست کار کنند باید هدرهای <code>X-Forwarded-*</code> را فقط از Proxyهای مورد اعتماد بپذیریم:</p>
+    <pre><code class="language-php">// bootstrap/app.php
+-&gt;withMiddleware(function (Middleware $middleware) {
+    $middleware-&gt;trustProxies(at: ['10.0.0.0/8']);
+})</code></pre>
+    <div class="callout exam"><p>Stateless بودن <strong>پیش‌نیاز</strong> Horizontal Scaling، Autoscaling، Rolling Deploy و Self-healing است. State حذف نمی‌شود؛ به <strong>Backing Serviceهای مشترک</strong> منتقل می‌شود که خودشان باید HA باشند (Redis Sentinel/Cluster، S3، DB با Replica).</p></div>
+    <p>JWT یا Session در Cookie (رمزنگاری‌شده) هم راه دیگری برای Stateless بودن سمت سرور است، ولی ابطال (Revocation) را سخت می‌کند و اندازهٔ هر درخواست را بالا می‌برد.</p>
+  </section>
+
+  <!-- ============ 3 ============ -->
+  <section class="lesson" id="load-balancing" data-title="Load Balancing">
+    <h2>Load Balancing</h2>
+    <p><strong>Load Balancer</strong> ترافیک ورودی را بین چند سرور Backend توزیع می‌کند تا ظرفیت بالا برود، نود خراب از مدار خارج شود و بتوان بدون Downtime دیپلوی کرد.</p>
+    <h3>L4 در برابر L7</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>L4 (Transport)</th><th>L7 (Application)</th></tr></thead>
+      <tbody>
+        <tr><td>چه چیزی می‌بیند</td><td>IP، Port، پروتکل TCP/UDP</td><td>کل درخواست HTTP: URL، Header، Cookie، Body</td></tr>
+        <tr><td>تصمیم مسیریابی</td><td>فقط بر اساس اتصال</td><td>بر اساس Path، Host، Header (مثلاً <code>/api</code> به یک گروه)</td></tr>
+        <tr><td>TLS</td><td>معمولاً Pass-through</td><td>TLS Termination، HTTP/2، فشرده‌سازی</td></tr>
+        <tr><td>سرعت و سربار</td><td>بسیار سریع، سربار کم</td><td>سربار بیشتر (Parse کردن HTTP)</td></tr>
+        <tr><td>قابلیت‌ها</td><td>ساده</td><td>Sticky Cookie، Rewrite، WAF، Rate Limit، Caching، Retry</td></tr>
+        <tr><td>نمونه</td><td>AWS NLB، LVS، HAProxy (mode tcp)</td><td>Nginx، HAProxy (mode http)، AWS ALB، Envoy، Traefik</td></tr>
+      </tbody>
+    </table></div>
+    <h3>الگوریتم‌های توزیع بار</h3>
+    <dl class="terms">
+      <dt>Round Robin</dt><dd>نوبتی؛ ساده و مناسب وقتی سرورها هم‌توان و درخواست‌ها هم‌هزینه‌اند.</dd>
+      <dt>Weighted Round Robin</dt><dd>سرور قوی‌تر سهم بیشتری می‌گیرد؛ برای سخت‌افزار ناهمگن یا Canary (مثلاً ۵٪ ترافیک به نسخهٔ جدید).</dd>
+      <dt>Least Connections</dt><dd>به سروری که کمترین اتصال فعال دارد؛ برای درخواست‌هایی با زمان پاسخ متغیر (آپلود، گزارش، WebSocket) بهتر است.</dd>
+      <dt>Least Response Time</dt><dd>ترکیب اتصال فعال و Latency اندازه‌گیری‌شده.</dd>
+      <dt>IP Hash</dt><dd>هش IP کلاینت تعیین می‌کند به کدام سرور برود؛ نوعی Stickiness بدون Cookie. با NAT یا Proxy (کاربران زیاد پشت یک IP) توزیع نامتوازن می‌شود.</dd>
+      <dt>Consistent Hashing</dt><dd>با اضافه/حذف شدن سرور فقط بخش کوچکی از کلیدها جابه‌جا می‌شوند؛ برای Cache Clusterها و Sharding مهم است.</dd>
+      <dt>Power of Two Choices</dt><dd>دو سرور تصادفی انتخاب و کم‌بارترشان استفاده می‌شود؛ تقریباً به خوبیِ Least Connections با هزینهٔ کمتر.</dd>
+    </dl>
+    <h3>Health Check</h3>
+    <ul>
+      <li><strong>Active:</strong> LB به‌طور دوره‌ای Endpoint سلامت (مثلاً <code>/up</code> در Laravel 11+) را صدا می‌زند و نود ناسالم را خارج می‌کند.</li>
+      <li><strong>Passive:</strong> LB خطاهای واقعی ترافیک را می‌شمارد (مثلاً <code>max_fails</code> در Nginx) و نود را موقتاً کنار می‌گذارد.</li>
+      <li><strong>Liveness</strong> (پروسس زنده است؟) با <strong>Readiness</strong> (آمادهٔ گرفتن ترافیک است؟) فرق دارد. Readiness نباید به وابستگی‌ای چک شود که از کار افتادنش همهٔ نودها را هم‌زمان از مدار خارج کند (Cascading Failure).</li>
+    </ul>
+    <pre><code class="language-nginx">upstream laravel_app {
+    least_conn;
+    server 10.0.0.11:80 max_fails=3 fail_timeout=30s;
+    server 10.0.0.12:80 max_fails=3 fail_timeout=30s;
+    server 10.0.0.13:80 backup;   # فقط وقتی بقیه از دسترس خارج‌اند
+    keepalive 32;                 # استفادهٔ مجدد از اتصال‌ها به Backend
+}
+
+server {
+    listen 443 ssl;
+    server_name shop.example.com;
+
+    location / {
+        proxy_pass http://laravel_app;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 30s;
+    }
+}</code></pre>
+    <h3>Sticky Sessions؛ مزایا و معایب</h3>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul>
+        <li>اپلیکیشن Stateful قدیمی بدون تغییر کد پشت LB کار می‌کند.</li>
+        <li>Cache محلی نود (In-process) بازدهی بیشتری دارد.</li>
+        <li>برای WebSocket یا پروتکل‌های چندمرحله‌ای گاهی لازم است.</li>
+      </ul></div>
+      <div class="card"><h4>معایب</h4><ul>
+        <li>توزیع بار نامتوازن (Hot Node).</li>
+        <li>با خرابی یا Scale-in یک نود، Session کاربرانش از بین می‌رود.</li>
+        <li>Autoscaling و Rolling Deploy را پیچیده می‌کند (Connection Draining لازم است).</li>
+        <li>مشکل اصلی (State محلی) را پنهان می‌کند، حل نمی‌کند.</li>
+      </ul></div>
+    </div>
+    <div class="callout exam"><p>پاسخ استاندارد: «Sticky Session راه‌حل موقت است؛ راه درست Stateless کردن App و انتقال Session به Redis است.» و یادتان باشد خود LB نباید SPOF باشد: جفت LB با Floating IP (keepalived/VRRP) یا LB مدیریت‌شدهٔ ابری، و در لایهٔ بالاتر DNS با چند رکورد یا GeoDNS.</p></div>
+  </section>
+
+  <!-- ============ 4 ============ -->
+  <section class="lesson" id="caching-layers" data-title="کش در همهٔ لایه‌ها">
+    <h2>کش در همهٔ لایه‌ها</h2>
+    <p>سریع‌ترین درخواست درخواستی است که اصلاً به سرور شما نرسد. کش را باید از نزدیک‌ترین لایه به کاربر شروع کرد:</p>
+    <pre class="diagram">Browser cache ─► CDN edge ─► Reverse proxy ─► App cache (Redis/APCu) ─► DB buffer pool
+   (0 ms)        (~10-30 ms)   (Nginx/Varnish)   (~1 ms network hop)      (InnoDB/shared_buffers)
+ ◄──────────── نزدیک‌تر به کاربر = ارزان‌تر و سریع‌تر، ولی کنترل/Invalidation سخت‌تر ────────────►</pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>لایه</th><th>چه چیزی</th><th>ابزار / مکانیزم</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td>Browser</td><td>Asset، پاسخ‌های GET</td><td><code>Cache-Control</code>، <code>ETag</code>، <code>Last-Modified</code></td><td>Invalidation عملاً ممکن نیست؛ از نام فایل نسخه‌دار (Hash) استفاده کنید.</td></tr>
+        <tr><td>CDN</td><td>Static، تصاویر، صفحات عمومی</td><td><code>s-maxage</code>، Purge API</td><td>فقط محتوای عمومی؛ مراقب Cache شدن پاسخ شخصی باشید.</td></tr>
+        <tr><td>Reverse Proxy</td><td>صفحات کامل HTML، پاسخ API</td><td>Nginx <code>fastcgi_cache</code>/<code>proxy_cache</code>، Varnish</td><td>Micro-caching (۱ تا ۵ ثانیه) در Spike معجزه می‌کند.</td></tr>
+        <tr><td>Application</td><td>نتیجهٔ Query، محاسبات، Fragment</td><td>Redis، Memcached، APCu (محلی)</td><td>بیشترین کنترل؛ Laravel Cache.</td></tr>
+        <tr><td>Framework</td><td>Config، Route، View، Event</td><td><code>php artisan optimize</code>، OPcache</td><td>هر Deploy اجرا شود.</td></tr>
+        <tr><td>Database</td><td>صفحات داده و Index در RAM</td><td>InnoDB Buffer Pool، PostgreSQL shared_buffers</td><td>Query Cache در MySQL 8 حذف شده است.</td></tr>
+      </tbody>
+    </table></div>
+    <h3>هدرهای HTTP کش</h3>
+    <pre><code class="language-plaintext"># Asset با نام Hash‌دار (Vite build): یک سال، بدون Revalidate
+Cache-Control: public, max-age=31536000, immutable
+
+# صفحهٔ عمومی: مرورگر ۶۰ ثانیه، CDN ده دقیقه، تا ۳۰ ثانیه Stale مجاز
+Cache-Control: public, max-age=60, s-maxage=600, stale-while-revalidate=30
+
+# پاسخ شخصی (پروفایل، سبد خرید): هرگز در کش مشترک
+Cache-Control: private, no-store
+
+# Conditional Request: مرورگر با If-None-Match می‌پرسد، سرور 304 بدون Body می‌دهد
+ETag: "a1b2c3"</code></pre>
+    <div class="callout warn"><p><code>no-cache</code> یعنی «کش کن ولی قبل از استفاده Revalidate کن»؛ برای «اصلاً ذخیره نکن» باید از <code>no-store</code> استفاده کرد. این تفاوت سؤال کلاسیک است.</p></div>
+    <h3>چه چیزی را کش کنیم؟</h3>
+    <ul>
+      <li>داده‌ای که <strong>زیاد خوانده و کم نوشته</strong> می‌شود (کاتالوگ محصول، تنظیمات، منو).</li>
+      <li>محاسبات <strong>گران</strong> (Aggregation، گزارش، رندر Markdown).</li>
+      <li>پاسخ APIهای خارجی کند یا محدود (با توجه به قوانین آن سرویس).</li>
+      <li>نه: داده‌ای که Staleness آن غیرقابل‌قبول است (موجودی حساب هنگام برداشت)، یا با Hit Ratio بسیار پایین.</li>
+    </ul>
+    <div class="callout tip"><p>معیار موفقیت کش <strong>Hit Ratio</strong> است. کشی با Hit Ratio پایین فقط یک Hop شبکه و یک نقطهٔ خرابی اضافه کرده است. آن را مانیتور کنید (<code>INFO stats</code> در Redis: <code>keyspace_hits</code> و <code>keyspace_misses</code>).</p></div>
+  </section>
+
+  <!-- ============ 5 ============ -->
+  <section class="lesson" id="cache-strategies" data-title="استراتژی‌های کش و Invalidation">
+    <h2>استراتژی‌های کش و Invalidation</h2>
+    <h3>چهار الگوی اصلی</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>الگو</th><th>خواندن</th><th>نوشتن</th><th>مزیت</th><th>عیب</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Cache-Aside</strong> (Lazy Loading)</td><td>App اول کش را می‌خواند؛ در Miss از DB می‌خواند و در کش می‌گذارد.</td><td>App در DB می‌نویسد و کلید را <strong>حذف</strong> می‌کند.</td><td>ساده، فقط دادهٔ پرمصرف کش می‌شود، خرابی کش ≠ خرابی سیستم.</td><td>اولین درخواست کند است؛ ریسک Stale و Stampede.</td></tr>
+        <tr><td><strong>Read-Through</strong></td><td>App فقط از کش می‌خواند؛ <strong>خود لایهٔ کش</strong> در Miss از DB بارگذاری می‌کند.</td><td>—</td><td>منطق بارگذاری متمرکز.</td><td>نیازمند کتابخانه/سرویس کش با Loader.</td></tr>
+        <tr><td><strong>Write-Through</strong></td><td>از کش</td><td>نوشتن هم‌زمان (سنکرون) در کش و DB.</td><td>کش همیشه تازه است.</td><td>Latency نوشتن بیشتر؛ داده‌ای که هرگز خوانده نمی‌شود هم کش می‌شود.</td></tr>
+        <tr><td><strong>Write-Behind</strong> (Write-Back)</td><td>از کش</td><td>فقط در کش؛ بعداً به‌صورت Async و Batch به DB.</td><td>نوشتن بسیار سریع، Batch کردن (مثلاً شمارندهٔ بازدید).</td><td>ریسک <strong>از دست رفتن داده</strong> در صورت خرابی کش؛ پیچیده.</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">&lt;?php
+// Cache-Aside در Laravel
+$product = Cache::remember(
+    "product:{$id}:v1",
+    now()-&gt;addMinutes(10),
+    fn () =&gt; Product::with('images', 'category')-&gt;findOrFail($id)
+);
+
+// Invalidation پس از Commit (نه داخل تراکنش!)
+DB::transaction(function () use ($product, $data) {
+    $product-&gt;update($data);
+    DB::afterCommit(fn () =&gt; Cache::forget("product:{$product-&gt;id}:v1"));
+});</code></pre>
+    <div class="callout warn"><p>اگر کلید را <strong>داخل</strong> تراکنش و قبل از Commit حذف کنید، یک درخواست هم‌زمان ممکن است دادهٔ قدیمی را از DB بخواند و دوباره در کش بگذارد؛ نتیجه: کش Stale تا پایان TTL. همیشه بعد از Commit Invalidate کنید. همچنین در Cache-Aside کلید را <strong>حذف</strong> کنید، نه اینکه مقدار جدید را Set کنید؛ دو نوشتن هم‌زمان ممکن است با ترتیب برعکس به کش برسند.</p></div>
+
+    <h3>استراتژی‌های Invalidation</h3>
+    <ul>
+      <li><strong>TTL:</strong> ساده‌ترین؛ Staleness حداکثر به اندازهٔ TTL. برای جلوگیری از انقضای هم‌زمان، <strong>Jitter</strong> اضافه کنید (<code>600 + random_int(0, 120)</code>).</li>
+      <li><strong>Explicit Delete:</strong> حذف کلید هنگام تغییر داده (Model Event، Observer، Event دامنه).</li>
+      <li><strong>Versioned Keys:</strong> نسخه را در کلید بگذارید (<code>products:v{$version}</code>)؛ با افزایش نسخه همهٔ کلیدهای قدیمی عملاً بی‌اثر می‌شوند و با TTL پاک می‌شوند.</li>
+      <li><strong>Tags:</strong> گروه‌بندی کلیدها برای Flush دسته‌جمعی (در Laravel فقط با Driverهایی مثل Redis و Memcached؛ File و Database پشتیبانی نمی‌کنند).</li>
+      <li><strong>Event-based:</strong> سرویس‌های دیگر با پیام (Pub/Sub یا CDC) از تغییر باخبر می‌شوند.</li>
+    </ul>
+    <pre><code class="language-php">Cache::tags(['products', "category:{$catId}"])-&gt;put("product:{$id}", $product, 600);
+
+// بعد از تغییر قیمت‌های یک دسته:
+Cache::tags(["category:{$catId}"])-&gt;flush();</code></pre>
+
+    <h3>Cache Stampede (Thundering Herd / Dog-piling)</h3>
+    <p>وقتی یک کلید <strong>داغ</strong> منقضی می‌شود، صدها درخواست هم‌زمان Miss می‌خورند و همه با هم Query گران را به DB می‌فرستند؛ DB زیر بار می‌رود، Queryها کندتر می‌شوند و درخواست‌های بیشتری Miss می‌خورند (حلقهٔ معیوب).</p>
+    <pre class="diagram">t=0  key "home:feed" expires
+     req1 ─┐
+     req2 ─┤  MISS ×500  ──►  500 × heavy query  ──►  DB CPU 100%  ──► timeouts
+     ...   │
+     req500┘</pre>
+    <h4>راه‌حل‌ها</h4>
+    <ol>
+      <li><strong>Mutex / Lock:</strong> فقط یک درخواست مقدار را بازسازی می‌کند؛ بقیه کمی صبر می‌کنند یا مقدار Stale می‌گیرند.</li>
+      <li><strong>Stale-While-Revalidate:</strong> بعد از انقضای نرم، مقدار قدیمی سرو می‌شود و بازسازی در پس‌زمینه انجام می‌شود (<code>Cache::flexible</code> در Laravel 11+).</li>
+      <li><strong>Probabilistic Early Expiration (XFetch):</strong> هر درخواست با احتمالی که با نزدیک شدن به انقضا بالا می‌رود، زودتر بازسازی می‌کند؛ پس بازسازی پخش می‌شود.</li>
+      <li><strong>Pre-warming / Refresh-ahead:</strong> یک Job زمان‌بندی‌شده کلیدهای داغ را قبل از انقضا بازسازی می‌کند.</li>
+      <li><strong>TTL Jitter:</strong> جلوگیری از انقضای دسته‌جمعی (Cache Avalanche).</li>
+    </ol>
+    <pre><code class="language-php">&lt;?php
+// ۱) Lock: فقط یک پروسس بازسازی می‌کند
+function feed(): array
+{
+    if (($cached = Cache::get('home:feed')) !== null) {
+        return $cached;
+    }
+
+    // حداکثر ۵ ثانیه برای گرفتن Lock صبر کن؛ Lock خودش بعد از ۱۰ ثانیه آزاد می‌شود
+    return Cache::lock('lock:home:feed', 10)-&gt;block(5, function () {
+        // Double-check: شاید پروسس دیگری همین الان پر کرده باشد
+        return Cache::get('home:feed') ?? tap(
+            FeedBuilder::build(),
+            fn ($feed) =&gt; Cache::put('home:feed', $feed, 600 + random_int(0, 60))
+        );
+    });
+}
+
+// ۲) Stale-While-Revalidate (Laravel 11+)
+// تا ۵ دقیقه تازه؛ بین ۵ تا ۱۰ دقیقه مقدار قدیمی سرو و پس از پاسخ، بازسازی می‌شود
+$stats = Cache::flexible('dashboard:stats', [300, 600], fn () =&gt; Stats::compute());</code></pre>
+    <h3>سایر مشکلات کلاسیک کش</h3>
+    <dl class="terms">
+      <dt>Cache Penetration</dt><dd>درخواست برای کلیدهایی که در DB هم وجود ندارند (مثلاً ID تصادفی توسط مهاجم) همیشه Miss است. راه‌حل: کش کردن نتیجهٔ خالی با TTL کوتاه، Bloom Filter، اعتبارسنجی ورودی.</dd>
+      <dt>Cache Avalanche</dt><dd>انقضای هم‌زمان تعداد زیادی کلید یا از کار افتادن کل کش. راه‌حل: Jitter، کش HA، Circuit Breaker و Rate Limit روی مسیر DB.</dd>
+      <dt>Hot Key</dt><dd>یک کلید آن‌قدر پرخواننده است که یک نود Redis را اشباع می‌کند. راه‌حل: کش محلی In-process با TTL کوتاه (APCu)، Replica کردن کلید با پسوند تصادفی.</dd>
+    </dl>
+    <div class="callout exam"><p>جملهٔ معروف Phil Karlton: «در علوم کامپیوتر فقط دو چیز سخت است: Cache Invalidation و نام‌گذاری.» در پاسخ تشریحی همیشه بگویید <strong>چه مقدار Staleness برای این داده قابل‌قبول است</strong>؛ این تصمیم، TTL و استراتژی را تعیین می‌کند.</p></div>
+  </section>
+
+  <!-- ============ 6 ============ -->
+  <section class="lesson" id="cdn-storage" data-title="CDN و Object Storage">
+    <h2>CDN و Object Storage</h2>
+    <h3>CDN</h3>
+    <p><strong>CDN</strong> شبکه‌ای از سرورهای لبه (Edge / PoP) در نقاط مختلف جغرافیایی است که محتوا را نزدیک کاربر کش می‌کند. نتیجه: Latency کمتر، بار کمتر روی Origin، جذب Spike و حملات DDoS لایهٔ شبکه.</p>
+    <div class="grid-2">
+      <div class="card"><h4>Pull CDN</h4><ul>
+        <li>در اولین درخواست، Edge محتوا را از Origin می‌گیرد و کش می‌کند.</li>
+        <li>راه‌اندازی ساده؛ فقط DNS یا URL را عوض می‌کنید.</li>
+        <li>اولین درخواست هر Edge کند است.</li>
+      </ul></div>
+      <div class="card"><h4>Push CDN</h4><ul>
+        <li>شما محتوا را صریحاً روی CDN آپلود می‌کنید.</li>
+        <li>کنترل کامل و مناسب فایل‌های بزرگ و کم‌تغییر.</li>
+        <li>مدیریت چرخهٔ عمر فایل‌ها بر عهدهٔ شماست.</li>
+      </ul></div>
+    </div>
+    <ul>
+      <li><strong>Cache Busting:</strong> Vite نام فایل را با Hash تولید می‌کند (<code>app-3f9a1c.js</code>)؛ با هر تغییر URL عوض می‌شود و می‌توان <code>max-age</code> یک‌ساله داد.</li>
+      <li><strong>Cache Key:</strong> مشخص کنید کدام Query String، Header یا Cookie در کلید باشند؛ Cookieهای غیرضروری Hit Ratio را صفر می‌کنند.</li>
+      <li><strong>Origin Shield:</strong> یک لایهٔ کش میانی که Edgeها به جای Origin از آن می‌خوانند؛ تعداد درخواست‌ها به Origin را کم می‌کند.</li>
+      <li><strong>Purge:</strong> با API یا Tag/Surrogate-Key برای حذف فوری محتوای تغییر‌یافته.</li>
+    </ul>
+    <h3>Object Storage</h3>
+    <p>در معماری چندنودی، فایل‌های کاربر نباید روی دیسک محلی بمانند. <strong>Object Storage</strong> (S3، MinIO، Ceph) فضای تقریباً نامحدود، Durability بالا با Replication داخلی و دسترسی HTTP می‌دهد. برخلاف File System، ساختارش Flat (Bucket + Key) است و برای تغییر جزئی فایل یا قفل فایل مناسب نیست.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>مثال</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td>Block Storage</td><td>EBS، دیسک VM</td><td>دیسک دیتابیس؛ یک سرور در هر لحظه</td></tr>
+        <tr><td>File Storage</td><td>NFS، EFS</td><td>File System مشترک؛ ساده ولی در مقیاس بالا کند و خودش گلوگاه</td></tr>
+        <tr><td>Object Storage</td><td>S3، MinIO</td><td>آپلودها، بکاپ، مدیا؛ مقیاس‌پذیرترین گزینه</td></tr>
+      </tbody>
+    </table></div>
+    <p>الگوی مهم: <strong>آپلود مستقیم کلاینت به S3 با Presigned URL</strong>؛ فایل‌های حجیم از سرور PHP عبور نمی‌کنند و Workerهای FPM مشغول نمی‌مانند.</p>
+    <pre class="diagram">Client ──(1) POST /uploads/sign──► Laravel  (auth + validate type/size)
+Client ◄─(2) presigned PUT URL───── Laravel
+Client ──(3) PUT file────────────► S3 bucket (private)
+Client ──(4) POST /uploads/done──► Laravel ──► queue: virus scan, thumbnails
+Viewer ◄──── temporary GET URL / CDN ──── S3</pre>
+    <pre><code class="language-php">&lt;?php
+// URL موقت برای آپلود مستقیم (s3 driver)
+['url' =&gt; $url, 'headers' =&gt; $headers] = Storage::disk('s3')-&gt;temporaryUploadUrl(
+    "uploads/{$user-&gt;id}/" . Str::uuid() . '.jpg',
+    now()-&gt;addMinutes(5)
+);
+
+// URL موقت برای دانلود فایل خصوصی
+$downloadUrl = Storage::disk('s3')-&gt;temporaryUrl($path, now()-&gt;addMinutes(10));</code></pre>
+    <div class="callout tip"><p>Bucket را Private نگه دارید و دسترسی را با URL موقت یا از طریق CDN با Origin Access محدود کنید. پردازش‌های سنگین (Resize، Transcode، اسکن) را در Queue انجام دهید.</p></div>
+  </section>
+
+  <!-- ============ 7 ============ -->
+  <section class="lesson" id="queues" data-title="پردازش Async با صف">
+    <h2>پردازش Async با صف</h2>
+    <p>هر کاری که برای پاسخ دادن به کاربر <strong>لازم نیست</strong> باید از مسیر درخواست خارج شود: ارسال ایمیل و SMS، تولید PDF، پردازش تصویر، فراخوانی Webhook، همگام‌سازی با سرویس خارجی. صف سه مزیت اصلی دارد:</p>
+    <ul>
+      <li><strong>Latency کمتر</strong> برای کاربر (پاسخ ۲۰۲ یا پاسخ فوری).</li>
+      <li><strong>Load Leveling:</strong> Spike ورودی در صف بافر می‌شود و Workerها با سرعت ثابت مصرف می‌کنند؛ DB و سرویس‌های پایین‌دستی منفجر نمی‌شوند.</li>
+      <li><strong>Decoupling و Resilience:</strong> اگر سرویس SMS پنج دقیقه قطع باشد، Jobها با Retry بعداً اجرا می‌شوند و درخواست کاربر خطا نمی‌دهد.</li>
+    </ul>
+    <pre class="diagram">HTTP request ──► Controller ──► dispatch(Job) ──► Redis queue ──► Worker 1 ─┐
+       │                                         (payments)      Worker 2 ─┼─► Gateway / Mail
+       ◄── 202 Accepted (fast)                   (default)       Worker N ─┘
+                                                      │ fails after max tries
+                                                      ▼
+                                                failed_jobs (DLQ) ──► alert + queue:retry</pre>
+    <h3>یک Job قابل‌اعتماد در Laravel</h3>
+    <pre><code class="language-php">&lt;?php
+namespace App\Jobs;
+
+use App\Models\Order;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Throwable;
+
+class CapturePayment implements ShouldQueue
+{
+    use Queueable;
+
+    public int $tries = 5;          // حداکثر تلاش
+    public int $maxExceptions = 3;  // حداکثر Exception (جدا از Release دستی)
+    public int $timeout = 30;       // ثانیه؛ باید از retry_after کمتر باشد
+
+    // فقط ID را Serialize کنید، نه کل آبجکت سنگین را
+    public function __construct(public int $orderId) {}
+
+    // Exponential Backoff: 10s، 30s، 2m، 5m
+    public function backoff(): array
+    {
+        return [10, 30, 120, 300];
+    }
+
+    public function middleware(): array
+    {
+        // دو Worker هم‌زمان روی یک سفارش کار نکنند
+        return [(new WithoutOverlapping($this-&gt;orderId))-&gt;expireAfter(60)];
+    }
+
+    public function handle(PaymentGateway $gateway): void
+    {
+        $order = Order::findOrFail($this-&gt;orderId);
+
+        if ($order-&gt;paid_at !== null) {
+            return; // Idempotent: قبلاً انجام شده، دوباره پول کم نکن
+        }
+
+        // کلید Idempotency به Gateway: اگر Retry شد، دوبار Capture نمی‌شود
+        $result = $gateway-&gt;capture($order-&gt;payment_ref, idempotencyKey: "order-{$order-&gt;id}");
+
+        $order-&gt;update(['paid_at' =&gt; now(), 'gateway_tx' =&gt; $result-&gt;id]);
+    }
+
+    public function failed(?Throwable $e): void
+    {
+        // بعد از تمام شدن Retryها: اطلاع به تیم/کاربر، تغییر وضعیت سفارش
+        report($e);
+    }
+}
+
+// Dispatch فقط بعد از Commit تراکنش (وگرنه Worker رکوردی را که هنوز Commit نشده نمی‌بیند)
+CapturePayment::dispatch($order-&gt;id)-&gt;onQueue('payments')-&gt;afterCommit();</code></pre>
+    <h3>مفاهیم کلیدی</h3>
+    <dl class="terms">
+      <dt>At-least-once delivery</dt><dd>صف‌ها (از جمله Redis در Laravel) تضمین می‌کنند پیام <strong>حداقل یک‌بار</strong> پردازش شود، نه دقیقاً یک‌بار. اگر Worker وسط کار بمیرد یا Timeout شود، Job دوباره اجرا می‌شود؛ پس Job باید <strong>Idempotent</strong> باشد.</dd>
+      <dt>retry_after</dt><dd>در <code>config/queue.php</code>: اگر Job بعد از این مدت Ack نشده باشد، دوباره در دسترس Worker دیگر قرار می‌گیرد. باید از <code>--timeout</code> Worker چند ثانیه <strong>بیشتر</strong> باشد، وگرنه یک Job هم‌زمان دوبار اجرا می‌شود.</dd>
+      <dt>Backoff</dt><dd>فاصلهٔ بین تلاش‌ها؛ Exponential (با Jitter) تا سرویس در حال بهبود را زیر بار Retryها خفه نکنیم.</dd>
+      <dt>Failed Jobs / DLQ</dt><dd>Jobهایی که همهٔ تلاش‌هایشان شکست خورده در جدول <code>failed_jobs</code> ذخیره می‌شوند (معادل Dead-Letter Queue). با <code>php artisan queue:failed</code> دیده و با <code>queue:retry</code> دوباره اجرا می‌شوند.</dd>
+      <dt>Poison Message</dt><dd>پیامی که همیشه شکست می‌خورد (مثلاً دادهٔ خراب)؛ بدون سقف <code>tries</code> صف را برای همیشه مشغول می‌کند.</dd>
+      <dt>Unique Jobs</dt><dd><code>ShouldBeUnique</code> جلوی قرار گرفتن Job تکراری با همان <code>uniqueId</code> در صف را می‌گیرد (نیازمند Lock روی کش مشترک).</dd>
+    </dl>
+    <h3>Horizon</h3>
+    <p><strong>Laravel Horizon</strong> داشبورد و Supervisor برای صف‌های Redis است: پیکربندی Workerها در کد، Auto-balancing تعداد پروسس‌ها بین صف‌ها بر اساس حجم کار، متریک Throughput و Wait Time، مشاهدهٔ Jobهای ناموفق و هشدار وقتی زمان انتظار صف از حد بگذرد.</p>
+    <pre><code class="language-php">// config/horizon.php
+'environments' =&gt; [
+    'production' =&gt; [
+        'supervisor-critical' =&gt; [
+            'connection'   =&gt; 'redis',
+            'queue'        =&gt; ['payments'],
+            'balance'      =&gt; 'simple',
+            'processes'    =&gt; 5,
+            'tries'        =&gt; 5,
+            'timeout'      =&gt; 60,
+        ],
+        'supervisor-default' =&gt; [
+            'connection'   =&gt; 'redis',
+            'queue'        =&gt; ['default', 'emails', 'reports'],
+            'balance'      =&gt; 'auto',
+            'minProcesses' =&gt; 2,
+            'maxProcesses' =&gt; 30,
+            'tries'        =&gt; 3,
+        ],
+    ],
+],</code></pre>
+    <div class="callout exam"><p>نکات طلایی Job: (۱) <strong>Idempotent</strong> باشد، (۲) فقط ID را Serialize کنید و داده را تازه بخوانید، (۳) <code>tries</code> و <code>timeout</code> و <code>backoff</code> صریح داشته باشد، (۴) <code>afterCommit</code> استفاده کنید، (۵) صف‌های جدا برای کارهای حیاتی و کم‌اهمیت تا Job سنگین گزارش، پرداخت را معطل نکند، (۶) بعد از Deploy <code>php artisan horizon:terminate</code> یا <code>queue:restart</code> تا Workerها کد جدید را بارگذاری کنند.</p></div>
+  </section>
+
+  <!-- ============ 8 ============ -->
+  <section class="lesson" id="rate-limiting" data-title="Rate Limiting و Throttling">
+    <h2>Rate Limiting و Throttling</h2>
+    <p><strong>Rate Limiting</strong> تعداد درخواست‌های یک «کلید» (کاربر، IP، API Key، Tenant) را در بازهٔ زمانی محدود می‌کند. هدف: جلوگیری از سوءاستفاده و Brute-force، حفاظت از منابع مشترک در برابر یک کاربر پرمصرف (Noisy Neighbor)، تضمین عدالت و پیاده‌سازی پلن‌های تجاری. پاسخ استاندارد هنگام عبور از حد: <code>429 Too Many Requests</code> با هدر <code>Retry-After</code>.</p>
+    <h3>الگوریتم‌ها</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>الگوریتم</th><th>سازوکار</th><th>Burst</th><th>حافظه</th><th>نقطه ضعف</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Fixed Window</strong></td><td>شمارنده برای هر بازهٔ ثابت (مثلاً هر دقیقهٔ ساعت)؛ با شروع بازهٔ بعد صفر می‌شود.</td><td>در مرز دو پنجره تا ۲ برابر حد</td><td>O(1)</td><td>مشکل مرز: ۱۰۰ درخواست در ثانیهٔ ۵۹ و ۱۰۰ در ثانیهٔ ۶۱.</td></tr>
+        <tr><td><strong>Sliding Window Log</strong></td><td>Timestamp همهٔ درخواست‌ها ذخیره و موارد قدیمی‌تر از پنجره حذف می‌شوند.</td><td>دقیق</td><td>O(N) به ازای هر کلید</td><td>حافظهٔ زیاد در حد بالا.</td></tr>
+        <tr><td><strong>Sliding Window Counter</strong></td><td>تخمین وزنی: <code>prev × (هم‌پوشانی) + current</code></td><td>تقریباً دقیق</td><td>O(1)</td><td>تقریبی است (با فرض توزیع یکنواخت).</td></tr>
+        <tr><td><strong>Token Bucket</strong></td><td>سطل با ظرفیت B با نرخ r توکن پر می‌شود؛ هر درخواست یک توکن مصرف می‌کند.</td><td>تا B مجاز، میانگین r</td><td>O(1)</td><td>تنظیم دو پارامتر؛ رایج‌ترین در APIها.</td></tr>
+        <tr><td><strong>Leaky Bucket</strong></td><td>درخواست‌ها وارد صفی با ظرفیت محدود می‌شوند و با نرخ ثابت خارج می‌شوند.</td><td>خروجی کاملاً یکنواخت</td><td>O(B)</td><td>Burst مشروع هم کند می‌شود؛ Latency اضافه.</td></tr>
+      </tbody>
+    </table></div>
+    <pre class="diagram">Token Bucket (capacity=10, refill=5/s)           Leaky Bucket (queue=10, leak=5/s)
+
+  refill ──► [● ● ● ● ● ○ ○ ○ ○ ○]                 requests ──► [■■■■■□□□□□] ──► drip 5/s ──► server
+  request: token? yes ─► pass                        full? ─► drop (429)
+                  no  ─► 429                         output rate is constant</pre>
+    <div class="callout exam"><p>تفاوت کلیدی: <strong>Token Bucket</strong> نرخ <em>متوسط</em> را محدود می‌کند و Burst کوتاه را تا ظرفیت سطل اجازه می‌دهد؛ <strong>Leaky Bucket</strong> نرخ <em>خروجی</em> را صاف و ثابت می‌کند (Traffic Shaping). Nginx با <code>limit_req</code> رفتاری شبیه Leaky Bucket دارد و با پارامتر <code>burst</code> صف موقت می‌سازد.</p></div>
+    <h3>Rate Limiting در Laravel</h3>
+    <pre><code class="language-php">&lt;?php
+// AppServiceProvider::boot()
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
+
+RateLimiter::for('api', function (Request $request) {
+    return $request-&gt;user()
+        ? Limit::perMinute(120)-&gt;by($request-&gt;user()-&gt;id)
+        : Limit::perMinute(30)-&gt;by($request-&gt;ip());
+});
+
+RateLimiter::for('login', fn (Request $request) =&gt; [
+    Limit::perMinute(5)-&gt;by($request-&gt;input('email') . '|' . $request-&gt;ip()),
+    Limit::perMinute(100)-&gt;by($request-&gt;ip()),   // چند محدودیت هم‌زمان
+]);
+
+// routes/api.php
+Route::middleware(['auth:sanctum', 'throttle:api'])-&gt;group(function () { /* ... */ });
+
+// محدودیت دستی برای یک عملیات خاص
+$sent = RateLimiter::attempt("otp:{$user-&gt;id}", 3, fn () =&gt; $sms-&gt;sendOtp($user), 600);
+if (! $sent) {
+    return response()-&gt;json(['message' =&gt; 'Too many attempts'], 429);
+}</code></pre>
+    <p>Rate Limiter لاراول روی Cache Store پیش‌فرض کار می‌کند؛ در محیط چندنودی این Store باید <strong>مشترک</strong> (Redis) باشد، وگرنه هر نود شمارندهٔ خودش را دارد و حد واقعی N برابر می‌شود.</p>
+    <h3>پیاده‌سازی Sliding Window Log با Redis</h3>
+    <pre><code class="language-php">&lt;?php
+function allow(string $key, int $limit, int $windowSec): bool
+{
+    $now = microtime(true);
+    $member = $now . ':' . bin2hex(random_bytes(4));
+
+    // MULTI/EXEC: همهٔ دستورها اتمیک اجرا می‌شوند
+    $res = Redis::transaction(function ($tx) use ($key, $now, $member, $windowSec) {
+        $tx-&gt;zremrangebyscore($key, 0, $now - $windowSec); // حذف درخواست‌های قدیمی
+        $tx-&gt;zadd($key, $now, $member);                    // ثبت درخواست فعلی
+        $tx-&gt;zcard($key);                                  // شمارش داخل پنجره
+        $tx-&gt;expire($key, $windowSec);
+    });
+
+    return $res[2] &lt;= $limit;
+}</code></pre>
+    <div class="callout warn"><p>الگوی <code>INCR</code> و بعد <code>EXPIRE</code> در دو فراخوانی جدا اتمیک نیست: اگر پروسس بین این دو بمیرد، کلید بدون TTL می‌ماند و کاربر برای همیشه بلاک می‌شود. از MULTI، اسکریپت Lua یا <code>SET key 0 EX 60 NX</code> قبل از <code>INCR</code> استفاده کنید. Rate Limit را هرچه زودتر اعمال کنید (Edge/Gateway/Nginx) تا درخواست اضافه حتی PHP را بوت نکند.</p></div>
+    <p><strong>Throttling</strong> گاهی به معنای کند کردن (به‌جای رد کردن) درخواست‌هاست؛ و Rate Limit سمت <strong>خروجی</strong> هم مهم است: وقتی API شخص ثالث حد دارد، از Job Middleware <code>RateLimited</code> یا <code>Redis::throttle()</code> برای محدود کردن Workerها استفاده کنید.</p>
+  </section>
+
+  <!-- ============ 9 ============ -->
+  <section class="lesson" id="db-scaling" data-title="مسیر مقیاس‌پذیری دیتابیس">
+    <h2>مسیر مقیاس‌پذیری دیتابیس</h2>
+    <p>دیتابیس تقریباً همیشه اولین گلوگاه یک اپلیکیشن Stateless است، چون State اینجا متمرکز شده است. ترتیب منطقی (از ارزان و کم‌ریسک به گران و پیچیده):</p>
+    <pre class="diagram">1. Query &amp; index tuning      (EXPLAIN, N+1, slow query log)        ← ارزان‌ترین، بیشترین اثر
+2. Connection management     (pooling: PgBouncer / ProxySQL)
+3. Caching                   (Redis cache-aside, materialized results)
+4. Vertical scaling          (more RAM for buffer pool, faster disks)
+5. Read replicas             (read/write split, handle replication lag)
+6. Partitioning              (one server, table split by range/list/hash)
+7. Functional split          (separate DBs per domain / service)
+8. Sharding                  (data split across servers by shard key)  ← گران‌ترین، برگشت‌ناپذیر</pre>
+    <h3>۱. بهینه‌سازی Query</h3>
+    <ul>
+      <li>حذف <strong>N+1</strong> با Eager Loading (<code>with()</code>) و فعال کردن <code>Model::preventLazyLoading()</code> در محیط توسعه.</li>
+      <li>Index مناسب بر اساس <code>EXPLAIN</code>؛ Composite Index با ترتیب درست ستون‌ها.</li>
+      <li>انتخاب فقط ستون‌های لازم، Pagination با Cursor (<code>cursorPaginate</code>) به‌جای <code>OFFSET</code> بزرگ.</li>
+      <li>پردازش دسته‌ای با <code>chunkById()</code> یا <code>lazyById()</code> به‌جای بارگذاری همه در حافظه.</li>
+    </ul>
+    <h3>۲. Read Replicas در Laravel</h3>
+    <pre><code class="language-php">// config/database.php
+'mysql' =&gt; [
+    'driver' =&gt; 'mysql',
+    'read' =&gt; [
+        'host' =&gt; ['10.0.1.21', '10.0.1.22'],   // یکی به‌صورت تصادفی انتخاب می‌شود
+    ],
+    'write' =&gt; [
+        'host' =&gt; ['10.0.1.10'],
+    ],
+    'sticky' =&gt; true,
+    'database' =&gt; env('DB_DATABASE'),
+    'username' =&gt; env('DB_USERNAME'),
+    'password' =&gt; env('DB_PASSWORD'),
+    // ...
+],</code></pre>
+    <p>Replication معمولاً Asynchronous است و Replica چند میلی‌ثانیه تا چند ثانیه عقب است (<strong>Replication Lag</strong>). سناریوی خطرناک: کاربر پروفایلش را ویرایش می‌کند، Redirect می‌شود و صفحه از Replica خوانده می‌شود و دادهٔ قدیمی نشان می‌دهد. این همان نقض <strong>Read-Your-Writes</strong> است.</p>
+    <ul>
+      <li><code>'sticky' =&gt; true</code>: اگر در <strong>همین درخواست</strong> نوشتنی انجام شده باشد، خواندن‌های بعدی همان درخواست از Write Connection انجام می‌شود. توجه: این فقط در محدودهٔ یک چرخهٔ درخواست است، نه درخواست بعدی کاربر.</li>
+      <li>برای درخواست‌های بعدی: خواندن صریح از Primary (<code>User::useWritePdo()-&gt;find($id)</code>) برای چند ثانیه پس از نوشتن (مثلاً با یک Flag در Session)، یا خواندن داده‌های حساس همیشه از Primary.</li>
+      <li>Jobهایی که بلافاصله پس از نوشتن Dispatch می‌شوند هم ممکن است از Replica دادهٔ قدیمی بخوانند.</li>
+    </ul>
+    <h3>۳. Partitioning در برابر Sharding</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Partitioning</h4><ul>
+        <li>تقسیم یک جدول بزرگ به چند قسمت <strong>داخل همان سرور</strong> (Range بر اساس تاریخ، List، Hash).</li>
+        <li>برای اپلیکیشن شفاف است.</li>
+        <li>Partition Pruning و حذف داده‌های قدیمی با <code>DROP PARTITION</code> به‌جای <code>DELETE</code> سنگین.</li>
+        <li>ظرفیت نوشتن کل سرور را افزایش نمی‌دهد.</li>
+      </ul></div>
+      <div class="card"><h4>Sharding</h4><ul>
+        <li>تقسیم داده بین <strong>چند سرور مستقل</strong> بر اساس Shard Key (مثلاً <code>tenant_id</code>).</li>
+        <li>ظرفیت نوشتن و ذخیره‌سازی را افقی افزایش می‌دهد.</li>
+        <li>Join و تراکنش بین Shardها سخت یا ناممکن؛ Resharding دردناک؛ Hot Shard.</li>
+        <li>منطق Routing در App یا لایهٔ Proxy (مثل Vitess برای MySQL، Citus برای PostgreSQL).</li>
+      </ul></div>
+    </div>
+    <div class="callout exam"><p>انتخاب <strong>Shard Key</strong> مهم‌ترین تصمیم است: باید Cardinality بالا داشته باشد، بار را یکنواخت پخش کند و بیشتر Queryها فقط به یک Shard نیاز داشته باشند. <code>tenant_id</code> در SaaS معمولاً انتخاب خوبی است؛ <code>created_at</code> بد است چون همهٔ نوشتن‌ها به آخرین Shard می‌رود (Hot Shard).</p></div>
+    <h3>۴. Connection Pooling</h3>
+    <p>با Horizontal Scaling، تعداد اتصال‌ها چندبرابر می‌شود: <code>تعداد سرور × pm.max_children</code> (یا تعداد Workerهای Octane). مثلاً ۲۰ سرور × ۵۰ Worker = ۱۰۰۰ اتصال؛ PostgreSQL به ازای هر اتصال یک پروسس می‌سازد و این حجم را خوب تحمل نمی‌کند. راه‌حل: <strong>PgBouncer</strong> (حالت Transaction Pooling) یا <strong>ProxySQL</strong> برای MySQL. در حالت Transaction Pooling، Prepared Statementهای سمت سرور و تنظیمات سطح Session باید با احتیاط استفاده شوند.</p>
+    <div class="callout warn"><p>Autoscaling لایهٔ App بدون فکر کردن به سقف اتصال دیتابیس، در اوج ترافیک خطای <code>Too many connections</code> می‌دهد. سقف Autoscaling را با ظرفیت DB هماهنگ کنید.</p></div>
+  </section>
+
+  <!-- ============ 10 ============ -->
+  <section class="lesson" id="concurrency" data-title="همزمانی، Race Condition و Idempotency">
+    <h2>همزمانی، Race Condition و Idempotency</h2>
+    <p>در سیستمی با چند نود و چند Worker، دو درخواست هم‌زمان روی یک داده کار کردن <strong>قاعده</strong> است، نه استثنا. <strong>Race Condition</strong> یعنی نتیجه به ترتیب زمانی غیرقابل‌پیش‌بینی اجرای عملیات بستگی دارد. رایج‌ترین شکلش <strong>Read-Modify-Write</strong> است:</p>
+    <pre class="diagram">stock = 1
+Request A: SELECT stock → 1          Request B: SELECT stock → 1
+Request A: 1 &gt; 0 ✓ → UPDATE stock=0  Request B: 1 &gt; 0 ✓ → UPDATE stock=0
+Result: 2 orders, stock 0  ⇒ oversold (Lost Update)</pre>
+    <h3>راه‌حل‌ها (از ساده به پیچیده)</h3>
+    <ol>
+      <li><strong>عملیات اتمیک در دیتابیس:</strong> شرط و تغییر در یک Statement.</li>
+      <li><strong>Pessimistic Locking:</strong> <code>SELECT … FOR UPDATE</code> داخل تراکنش.</li>
+      <li><strong>Optimistic Locking:</strong> ستون <code>version</code>؛ اگر کسی وسط کار تغییرش داده، Update روی صفر سطر اثر می‌گذارد و دوباره تلاش می‌کنیم.</li>
+      <li><strong>Distributed Lock:</strong> <code>Cache::lock()</code> روی Redis برای عملیاتی که فقط در DB نیست (مثلاً فراخوانی API خارجی).</li>
+      <li><strong>Unique Constraint:</strong> آخرین خط دفاع؛ DB تکراری را رد می‌کند.</li>
+    </ol>
+    <pre><code class="language-php">&lt;?php
+// ۱) اتمیک: شرط داخل WHERE
+$affected = Product::whereKey($id)
+    -&gt;where('stock', '&gt;', 0)
+    -&gt;decrement('stock');
+
+if ($affected === 0) {
+    throw new OutOfStockException();
+}
+
+// ۲) Pessimistic
+DB::transaction(function () use ($id, $qty) {
+    $product = Product::whereKey($id)-&gt;lockForUpdate()-&gt;firstOrFail();
+    if ($product-&gt;stock &lt; $qty) {
+        throw new OutOfStockException();
+    }
+    $product-&gt;decrement('stock', $qty);
+});
+
+// ۳) Optimistic
+$updated = Product::whereKey($p-&gt;id)
+    -&gt;where('version', $p-&gt;version)
+    -&gt;update(['stock' =&gt; $p-&gt;stock - 1, 'version' =&gt; $p-&gt;version + 1]);
+// $updated === 0  ⇒ conflict ⇒ reload &amp; retry یا خطای 409
+
+// ۴) Distributed Lock با Redis
+$lock = Cache::lock("wallet:{$userId}", 10);   // TTL جلوی Deadlock در صورت مرگ پروسس را می‌گیرد
+if ($lock-&gt;get()) {
+    try {
+        // عملیات بحرانی
+    } finally {
+        $lock-&gt;release();   // فقط صاحب Lock می‌تواند آزادش کند
+    }
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>روش</th><th>مناسب برای</th><th>هزینه</th></tr></thead>
+      <tbody>
+        <tr><td>Atomic UPDATE</td><td>شمارنده، موجودی، کیف پول ساده</td><td>کمترین؛ بهترین انتخاب در صورت امکان</td></tr>
+        <tr><td>Pessimistic (<code>lockForUpdate</code>)</td><td>رقابت بالا روی یک سطر، منطق چندمرحله‌ای</td><td>Lock Contention، ریسک Deadlock؛ تراکنش را کوتاه نگه دارید</td></tr>
+        <tr><td>Optimistic (version)</td><td>رقابت کم، ویرایش فرم‌ها، زمان «فکر کردن» کاربر</td><td>Retry در صورت تعارض</td></tr>
+        <tr><td>Redis Lock</td><td>منابع خارج از DB، جلوگیری از اجرای هم‌زمان Job</td><td>وابستگی به Redis؛ TTL باید از زمان کار بیشتر باشد</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>Redis Lock با یک نود Redis و Failover آسنکرون تضمین قطعی نمی‌دهد (Lock ممکن است بعد از Failover گم شود و GC Pause طولانی ممکن است باعث شود Lock منقضی شده باشد ولی پروسس هنوز فکر کند صاحب آن است). برای درستی مطلق داده، به Constraint و تراکنش دیتابیس یا <strong>Fencing Token</strong> تکیه کنید و Lock را فقط برای کارایی/کاهش تکرار استفاده کنید.</p></div>
+    <h3>Idempotency Key</h3>
+    <p>عملیاتی <strong>Idempotent</strong> است که اجرای چندبارهٔ آن همان اثر اجرای یک‌باره را داشته باشد. GET، PUT و DELETE طبق تعریف HTTP Idempotent هستند؛ POST نیست. وقتی شبکه قطع می‌شود، کلاینت نمی‌داند درخواست پرداخت انجام شده یا نه و دوباره می‌فرستد؛ بدون Idempotency دوبار پول کم می‌شود.</p>
+    <pre class="diagram">Client ── POST /payments  Idempotency-Key: 7f3a… ──► API
+           (timeout, retry with SAME key)
+Client ── POST /payments  Idempotency-Key: 7f3a… ──► API: key seen → return stored response (no 2nd charge)</pre>
+    <pre><code class="language-php">&lt;?php
+class EnsureIdempotency
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        $key = $request-&gt;header('Idempotency-Key');
+        if (! $key) {
+            return $next($request);
+        }
+
+        $cacheKey = "idem:{$request-&gt;user()-&gt;id}:{$key}";
+        $fingerprint = hash('sha256', $request-&gt;getContent());
+
+        if ($saved = Cache::get($cacheKey)) {
+            if ($saved['fingerprint'] !== $fingerprint) {
+                return response()-&gt;json(['message' =&gt; 'Key reused with different payload'], 422);
+            }
+            return response($saved['body'], $saved['status'])-&gt;header('Idempotent-Replayed', 'true');
+        }
+
+        $lock = Cache::lock("{$cacheKey}:lock", 30);
+        if (! $lock-&gt;get()) {
+            return response()-&gt;json(['message' =&gt; 'Request in progress'], 409);
+        }
+
+        try {
+            $response = $next($request);
+            if ($response-&gt;getStatusCode() &lt; 500) {
+                Cache::put($cacheKey, [
+                    'fingerprint' =&gt; $fingerprint,
+                    'status' =&gt; $response-&gt;getStatusCode(),
+                    'body' =&gt; $response-&gt;getContent(),
+                ], now()-&gt;addDay());
+            }
+            return $response;
+        } finally {
+            $lock-&gt;release();
+        }
+    }
+}</code></pre>
+    <div class="callout exam"><p>برای عملیات مالی، ذخیرهٔ کلید در <strong>دیتابیس</strong> با Unique Index و در همان تراکنش عملیات اصلی، از کش امن‌تر است؛ چون کش ممکن است Evict شود. پاسخ‌های 5xx را ذخیره نکنید تا کلاینت بتواند دوباره تلاش کند.</p></div>
+  </section>
+
+  <!-- ============ 11 ============ -->
+  <section class="lesson" id="octane" data-title="Laravel Octane">
+    <h2>Laravel Octane</h2>
+    <p>در مدل کلاسیک <strong>PHP-FPM</strong> هر درخواست از صفر شروع می‌شود: Autoload، ساخت Container، ثبت Service Providerها، بارگذاری Config و Route؛ و در پایان همه چیز دور ریخته می‌شود (<strong>Shared-Nothing</strong>). این مدل امن و ساده است ولی سربار Bootstrap در هر درخواست دارد. <strong>Octane</strong> اپلیکیشن را <strong>یک‌بار</strong> بوت می‌کند و در حافظهٔ Workerهای طولانی‌مدت نگه می‌دارد؛ درخواست‌ها فقط Handle می‌شوند.</p>
+    <pre class="diagram">PHP-FPM:   request ─► [boot framework ─► handle ─► teardown]   (every request)
+
+Octane:    worker start ─► [boot framework once]
+                               │
+           request 1 ─────────►├─ handle ─► reset request state
+           request 2 ─────────►├─ handle ─► reset request state
+           ...                 │
+           after --max-requests ─► worker restarts (memory hygiene)</pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Server</th><th>ویژگی</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Swoole / Open Swoole</strong></td><td>اکستنشن PHP؛ قابلیت‌های اضافه مثل <code>Octane::concurrently()</code>، Octane Cache و Swoole Tables، Ticks و Intervals.</td></tr>
+        <tr><td><strong>RoadRunner</strong></td><td>Application Server نوشته‌شده با Go که Workerهای PHP را مدیریت می‌کند؛ بدون نیاز به اکستنشن.</td></tr>
+        <tr><td><strong>FrankenPHP</strong></td><td>سرور مبتنی بر Caddy (Go) با Worker Mode؛ HTTPS خودکار، HTTP/2 و HTTP/3، Early Hints.</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-bash">composer require laravel/octane
+php artisan octane:install            # انتخاب سرور
+php artisan octane:start --server=frankenphp --workers=8 --max-requests=500
+php artisan octane:reload             # بعد از Deploy: Workerها را با کد جدید بالا بیاور</code></pre>
+    <h3>دام‌های Octane: State Leakage</h3>
+    <p>چون Container و آبجکت‌ها بین درخواست‌ها زنده می‌مانند، هر State که به درخواست وابسته است ممکن است به درخواست <strong>کاربر بعدی</strong> نشت کند؛ این یک باگ امنیتی جدی است.</p>
+    <pre><code class="language-php">&lt;?php
+// ❌ اشتباه: Singleton که Request را در Constructor می‌گیرد
+$this-&gt;app-&gt;singleton(TenantContext::class, function ($app) {
+    return new TenantContext($app['request']-&gt;header('X-Tenant')); // Tenant اولین درخواست برای همیشه!
+});
+
+// ✅ درست: scoped — در هر درخواست (و هر Job) از نو ساخته می‌شود
+$this-&gt;app-&gt;scoped(TenantContext::class, function ($app) {
+    return new TenantContext($app['request']-&gt;header('X-Tenant'));
+});
+
+// ✅ یا Resolver تزریق کنید و در زمان استفاده Request را بگیرید
+$this-&gt;app-&gt;singleton(Pricing::class, fn ($app) =&gt; new Pricing(fn () =&gt; $app['request']));
+
+// ❌ Memory Leak: آرایهٔ Static که با هر درخواست بزرگ‌تر می‌شود
+class Audit
+{
+    public static array $events = [];
+    public static function log(string $e): void { static::$events[] = $e; } // هرگز خالی نمی‌شود
+}</code></pre>
+    <h3>چک‌لیست Octane</h3>
+    <ul>
+      <li>به Singletonها Container، Request یا Config Repository را در Constructor تزریق نکنید؛ از <code>scoped</code> یا Closure Resolver استفاده کنید.</li>
+      <li>از Static Property و متغیر Global برای State درخواست استفاده نکنید.</li>
+      <li><code>--max-requests</code> را برای محدود کردن اثر Memory Leak تنظیم کنید.</li>
+      <li>اتصال دیتابیس بین درخواست‌ها حفظ می‌شود؛ تعداد اتصال = تعداد Worker × تعداد سرور.</li>
+      <li><code>exit()</code> و <code>die()</code> و هدرهای خام <code>header()</code> مشکل‌سازند؛ از Response لاراول استفاده کنید.</li>
+      <li>پکیج‌های Third-party را از نظر سازگاری با محیط Long-running بررسی کنید.</li>
+      <li>در حالت توسعه با <code>--watch</code> تغییر فایل‌ها را بارگذاری کنید؛ در Production بعد از Deploy حتماً <code>octane:reload</code>.</li>
+    </ul>
+    <div class="callout exam"><p>Octane <strong>Latency</strong> و <strong>Throughput</strong> را با حذف سربار Bootstrap بهبود می‌دهد، ولی Queryهای کند یا I/O را سریع نمی‌کند. اگر گلوگاه دیتابیس است، Octane مشکل را حل نمی‌کند. بهای آن: مدل ذهنی Stateful و ریسک نشت داده بین درخواست‌ها.</p></div>
+  </section>
+
+  <!-- ============ 12 ============ -->
+  <section class="lesson" id="twelve-factor" data-title="12-Factor App و Autoscaling">
+    <h2>12-Factor App و Autoscaling</h2>
+    <p><strong>The Twelve-Factor App</strong> مجموعه‌ای از اصول برای ساخت اپلیکیشن‌های SaaS قابل‌استقرار در Cloud، قابل‌مقیاس و قابل‌حمل است. تقریباً همهٔ اصول آن مستقیماً به Horizontal Scaling کمک می‌کنند.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>اصل</th><th>معنی</th><th>در Laravel</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Codebase</td><td>یک Codebase در Version Control، چند Deploy</td><td>یک Repo؛ staging و production از همان کد</td></tr>
+        <tr><td>2</td><td>Dependencies</td><td>وابستگی‌ها صریح و ایزوله</td><td><code>composer.json</code> + <code>composer.lock</code></td></tr>
+        <tr><td>3</td><td>Config</td><td>Config در Environment، نه در کد</td><td><code>.env</code> / Environment Variables؛ <code>env()</code> فقط داخل فایل‌های <code>config/</code></td></tr>
+        <tr><td>4</td><td>Backing Services</td><td>DB، کش، صف = منابع متصل‌شدنی با URL</td><td>عوض کردن Redis با تغییر Config</td></tr>
+        <tr><td>5</td><td>Build, Release, Run</td><td>جداسازی کامل مراحل</td><td>Build: <code>composer install --no-dev</code>، <code>npm run build</code>؛ Release: Image + Config</td></tr>
+        <tr><td>6</td><td>Processes</td><td>پروسس‌های Stateless و Shared-Nothing</td><td>Session/Cache/File در Redis و S3</td></tr>
+        <tr><td>7</td><td>Port Binding</td><td>سرویس خودش را روی Port ارائه می‌کند</td><td>Octane / FrankenPHP؛ یا Container شامل Nginx+FPM</td></tr>
+        <tr><td>8</td><td>Concurrency</td><td>مقیاس با افزودن پروسس از انواع مختلف</td><td>Web، Worker و Scheduler جداگانه مقیاس می‌گیرند</td></tr>
+        <tr><td>9</td><td>Disposability</td><td>شروع سریع، خاموشی Graceful</td><td>Worker با SIGTERM Job فعلی را تمام می‌کند؛ <code>queue:restart</code></td></tr>
+        <tr><td>10</td><td>Dev/Prod Parity</td><td>محیط توسعه شبیه Production</td><td>Docker / Laravel Sail با همان MySQL و Redis</td></tr>
+        <tr><td>11</td><td>Logs</td><td>لاگ به‌عنوان Event Stream روی stdout</td><td><code>LOG_CHANNEL=stderr</code> و جمع‌آوری متمرکز</td></tr>
+        <tr><td>12</td><td>Admin Processes</td><td>کارهای مدیریتی به‌صورت One-off با همان کد</td><td><code>php artisan migrate --force</code> در Release</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>بعد از <code>php artisan config:cache</code>، فایل <code>.env</code> دیگر خوانده نمی‌شود و <code>env()</code> بیرون از فایل‌های Config مقدار <code>null</code> برمی‌گرداند. همیشه از <code>config('app.x')</code> استفاده کنید.</p></div>
+    <h3>Autoscaling</h3>
+    <p><strong>Autoscaling</strong> یعنی تغییر خودکار تعداد نمونه‌ها متناسب با بار. سه نوع دارد:</p>
+    <ul>
+      <li><strong>Reactive:</strong> بر اساس متریک (CPU بالای ۶۰–۷۰٪، RPS به ازای هر نود، Latency p95). در Kubernetes: Horizontal Pod Autoscaler.</li>
+      <li><strong>Scheduled:</strong> افزایش ظرفیت قبل از زمان‌های شلوغ قابل‌پیش‌بینی (کمپین، ساعت اداری).</li>
+      <li><strong>Predictive:</strong> پیش‌بینی بر اساس الگوهای تاریخی.</li>
+    </ul>
+    <p>برای <strong>Queue Workerها</strong>، CPU متریک مناسبی نیست؛ <strong>طول صف</strong> یا <strong>Wait Time</strong> معیار بهتری است. Horizon درون یک Supervisor تعداد پروسس‌ها را تنظیم می‌کند، ولی افزودن ماشین جدید کار Autoscaler زیرساخت است.</p>
+    <div class="callout tip"><p>نکات عملی Autoscaling: (۱) <strong>Cooldown</strong> برای جلوگیری از نوسان (Flapping)، (۲) Scale-out سریع و Scale-in محتاطانه، (۳) Image آماده و Boot سریع (زمان Warm-up)، (۴) حداقل نمونه برای تحمل خرابی یک Zone، (۵) سقف هماهنگ با ظرفیت DB و سرویس‌های پایین‌دستی، (۶) Connection Draining هنگام حذف نود.</p></div>
+  </section>
+
+  <!-- ============ 13 ============ -->
+  <section class="lesson" id="resilience" data-title="Back-pressure، Degradation و حذف SPOF">
+    <h2>Back-pressure، Degradation و حذف SPOF</h2>
+    <h3>Back-pressure</h3>
+    <p><strong>Back-pressure</strong> سازوکاری است که در آن جزء پایین‌دستی وقتی ظرفیتش پر شده به بالادستی علامت می‌دهد «آهسته‌تر بفرست»، به‌جای اینکه درخواست‌ها را بی‌پایان در حافظه انباشته کند و در نهایت از کار بیفتد. بدون آن، صف‌های نامحدود فقط مشکل را عقب می‌اندازند و Latency را منفجر می‌کنند.</p>
+    <ul>
+      <li><strong>صف‌های محدود (Bounded):</strong> وقتی پر شد، درخواست جدید را رد کن (<code>503</code> یا <code>429</code> با <code>Retry-After</code>).</li>
+      <li><strong>Load Shedding:</strong> زیر فشار، درخواست‌های کم‌اهمیت (گزارش، Recommendation، ربات‌ها) را زودتر رد کن تا مسیرهای حیاتی (پرداخت، لاگین) سالم بمانند.</li>
+      <li><strong>Timeout در همه جا:</strong> اتصال DB، HTTP Client (<code>Http::timeout(3)-&gt;connectTimeout(1)</code>)، Job. فراخوانی بدون Timeout یعنی Workerهای قفل‌شده.</li>
+      <li><strong>محدودیت هم‌زمانی:</strong> سقف <code>pm.max_children</code>، سقف Worker هر صف، Bulkhead (Pool جدا برای هر وابستگی).</li>
+      <li><strong>Circuit Breaker:</strong> وقتی سرویسی پشت سر هم خطا می‌دهد، مدتی صدا زدنش را متوقف کن و سریع Fallback بده.</li>
+    </ul>
+    <h3>Graceful Degradation</h3>
+    <p>به‌جای «همه یا هیچ»، سیستم در شرایط بحرانی با <strong>قابلیت کمتر</strong> ولی همچنان مفید کار کند:</p>
+    <ul>
+      <li>سرو کردن دادهٔ <strong>Stale</strong> از کش وقتی DB در دسترس نیست.</li>
+      <li>خاموش کردن قابلیت‌های جانبی با <strong>Feature Flag</strong> (Laravel Pennant): پیشنهاد محصول، شمارندهٔ زنده، جست‌وجوی پیشرفته.</li>
+      <li>حالت <strong>Read-only</strong> هنگام مشکل Primary.</li>
+      <li>ارسال ایمیل و نوتیفیکیشن را به صف بسپار و بعداً انجام بده.</li>
+      <li>نسخهٔ سادهٔ صفحه (بدون شخصی‌سازی) که از CDN سرو می‌شود.</li>
+    </ul>
+    <h3>جدول ۹ها</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Availability</th><th>Downtime در سال</th><th>در ماه (~۳۰ روز)</th><th>در روز</th></tr></thead>
+      <tbody>
+        <tr><td>99% (two nines)</td><td>~3.65 روز</td><td>~7.2 ساعت</td><td>~14.4 دقیقه</td></tr>
+        <tr><td>99.9% (three nines)</td><td>~8.76 ساعت</td><td>~43.2 دقیقه</td><td>~1.44 دقیقه</td></tr>
+        <tr><td>99.95%</td><td>~4.38 ساعت</td><td>~21.6 دقیقه</td><td>~43 ثانیه</td></tr>
+        <tr><td>99.99% (four nines)</td><td>~52.6 دقیقه</td><td>~4.3 دقیقه</td><td>~8.6 ثانیه</td></tr>
+        <tr><td>99.999% (five nines)</td><td>~5.26 دقیقه</td><td>~26 ثانیه</td><td>~0.86 ثانیه</td></tr>
+      </tbody>
+    </table></div>
+    <h4>محاسبهٔ Availability ترکیبی</h4>
+    <pre><code class="language-plaintext">سری (همه باید سالم باشند):     A = A1 × A2 × A3
+  LB 99.99% × App 99.9% × DB 99.9%  ≈ 99.79%   ← از ضعیف‌ترین جزء هم کمتر!
+
+موازی (کافی است یکی سالم باشد):  A = 1 − (1 − A1) × (1 − A2)
+  دو App نود با 99%:  1 − 0.01 × 0.01 = 99.99%</code></pre>
+    <div class="callout exam"><p>دو نتیجهٔ مهم: (۱) هر وابستگی سری Availability را <strong>کاهش</strong> می‌دهد؛ پس وابستگی‌های غیرضروری مسیر درخواست را Async کنید. (۲) Redundancy (موازی کردن) Availability را به‌شدت <strong>افزایش</strong> می‌دهد، به شرط اینکه خرابی‌ها مستقل باشند (نه در یک Rack یا یک Zone).</p></div>
+    <h3>حذف SPOF</h3>
+    <p><strong>Single Point of Failure</strong> هر جزئی است که خرابی‌اش کل سیستم را از کار بیندازد. روش: نمودار معماری را بکشید و برای هر جعبه بپرسید «اگر این بمیرد چه می‌شود؟».</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>جزء</th><th>راه‌حل Redundancy</th></tr></thead>
+      <tbody>
+        <tr><td>Load Balancer</td><td>جفت Active-Passive با Floating IP (keepalived/VRRP) یا LB مدیریت‌شده</td></tr>
+        <tr><td>App Server</td><td>حداقل ۲ نود در Zoneهای مختلف + Health Check</td></tr>
+        <tr><td>Database</td><td>Primary + Replica با Failover خودکار (Orchestrator، Patroni، سرویس مدیریت‌شده)</td></tr>
+        <tr><td>Redis</td><td>Redis Sentinel یا Redis Cluster</td></tr>
+        <tr><td>Queue Worker</td><td>چند Worker روی چند ماشین</td></tr>
+        <tr><td>Scheduler (Cron)</td><td>روی همه نودها با <code>onOneServer()</code></td></tr>
+        <tr><td>Data Center</td><td>Multi-AZ، و برای نیاز بالاتر Multi-Region</td></tr>
+        <tr><td>انسان و فرایند</td><td>Runbook، دسترسی بیش از یک نفر، Deploy خودکار و قابل Rollback</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout note"><p>Failover بدون تست، Failover نیست. تمرین منظم (Game Day، Chaos Engineering) و تعریف <strong>RTO</strong> (حداکثر زمان بازیابی) و <strong>RPO</strong> (حداکثر دادهٔ قابل از دست رفتن) بخشی از طراحی HA است.</p></div>
+  </section>
+
+  <!-- ============ 14 ============ -->
+  <section class="lesson" id="capacity-estimation" data-title="تخمین ظرفیت (Back-of-the-envelope)">
+    <h2>تخمین ظرفیت (Back-of-the-envelope)</h2>
+    <p>هدف تخمین سرانگشتی دقت نیست؛ هدف فهمیدن <strong>مرتبهٔ بزرگی</strong> است تا تصمیم معماری درست گرفته شود: آیا یک سرور کافی است یا صد سرور؟ آیا داده در RAM جا می‌شود؟</p>
+    <h3>اعداد کلیدی</h3>
+    <ul>
+      <li>یک روز = ۸۶٬۴۰۰ ثانیه ≈ <strong>10<sup>5</sup></strong> ثانیه (برای ساده‌سازی).</li>
+      <li>۱ میلیون درخواست در روز ≈ <strong>~12 RPS</strong> میانگین.</li>
+      <li>Peak معمولاً <strong>۲ تا ۵ برابر</strong> میانگین در نظر گرفته می‌شود.</li>
+      <li>دسترسی RAM: نانوثانیه؛ Redis در شبکهٔ داخلی: زیر میلی‌ثانیه تا ~۱ms؛ Query ساده با Index: چند میلی‌ثانیه؛ رفت‌وبرگشت بین قاره‌ها: ~۱۰۰ms یا بیشتر.</li>
+      <li>قانون Pareto برای کش: معمولاً حدود ۲۰٪ داده ۸۰٪ خواندن‌ها را پوشش می‌دهد.</li>
+    </ul>
+    <h3>مثال کامل</h3>
+    <pre><code class="language-plaintext">فرض: ۱۰ میلیون DAU، هر کاربر ۲۰ درخواست خواندن و ۲ نوشتن در روز
+
+QPS خواندن  = 10M × 20 / 86,400 ≈ 2,300 RPS   → Peak (×3) ≈ 7,000 RPS
+QPS نوشتن   = 10M × 2  / 86,400 ≈ 230 RPS     → Peak ≈ 700 RPS
+نسبت Read:Write ≈ 10:1  → کش و Read Replica بیشترین اثر را دارند
+
+ذخیره‌سازی: هر نوشتن ~1 KB
+  20M رکورد/روز × 1 KB = 20 GB/روز → ~7.3 TB/سال (بدون Index و Replica)
+  با Index (~×1.5) و ۳ نسخه Replica → دهه‌ها TB در چند سال → Partitioning/Archiving لازم
+
+کش: ۲۰٪ داده‌های خوانده‌شدهٔ روزانه
+  اگر Working Set روزانه 20 GB باشد → حدود 4 GB RAM در Redis
+
+پهنای باند خروجی: 7,000 RPS × 20 KB ≈ 140 MB/s ≈ 1.1 Gbps در Peak → CDN ضروری</code></pre>
+    <h3>تعداد سرور و قانون Little</h3>
+    <p><strong>Little's Law:</strong> <code>L = λ × W</code>؛ تعداد درخواست‌های هم‌زمان در سیستم = نرخ ورود × میانگین زمان پاسخ. این فرمول مستقیماً تعداد Worker لازم را می‌دهد:</p>
+    <pre><code class="language-plaintext">Peak = 7,000 RPS ، میانگین زمان پاسخ = 100 ms
+Concurrency = 7,000 × 0.1 = 700 درخواست هم‌زمان
+→ حدود 700 Worker فعال PHP-FPM (به‌علاوهٔ حاشیهٔ اطمینان ~30٪ → ~900)
+اگر هر سرور 60 Worker داشته باشد (محدود به RAM: 60 × ~50MB ≈ 3GB) → ~15 سرور
++ N+1 یا N+2 برای تحمل خرابی و Deploy → 17 سرور
+
+اگر زمان پاسخ را با کش به 50 ms برسانیم → نصف Worker و نصف سرور.</code></pre>
+    <div class="callout exam"><p>در سؤال طراحی، تخمین را با فرض‌های صریح شروع کنید (DAU، درخواست به ازای کاربر، اندازهٔ رکورد، نسبت Read/Write)، اعداد را گرد کنید و در پایان <strong>نتیجهٔ معماری</strong> بگیرید: «نسبت ۱۰ به ۱ یعنی کش و Replica»، «۷ ترابایت در سال یعنی Partitioning و Archiving»، «۱ گیگابیت خروجی یعنی CDN».</p></div>
+    <div class="callout tip"><p>تخمین را با <strong>Load Test</strong> (k6، JMeter، Locust) روی محیط شبیه Production تأیید کنید. Latency را با Percentile (p95/p99) بسنجید؛ میانگین، دم توزیع را پنهان می‌کند و کاربرانِ کند معمولاً همان پرارزش‌ترین‌ها (با دادهٔ بیشتر) هستند.</p></div>
+  </section>
+
+  <!-- ============ QUESTIONS ============ -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-scaled-applications-1">
+      <summary>مفاهیم Scalability، Performance و Availability را تعریف کنید و تفاوت آن‌ها را با مثال توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>Performance:</strong> سرعت سیستم برای پاسخ به یک درخواست؛ با Latency (p50/p95/p99) و مصرف منابع به ازای هر درخواست سنجیده می‌شود.</p>
+        <p><strong>Scalability:</strong> توانایی حفظ کارایی هنگام افزایش بار با افزودن منابع؛ معیار آن Throughput است و ایده‌آل، رشد تقریباً خطی ظرفیت با منابع است.</p>
+        <p><strong>Availability:</strong> درصد زمانی که سیستم پاسخ درست می‌دهد (مثلاً 99.9٪ ≈ ۸٫۷۶ ساعت Downtime در سال)؛ با Redundancy و حذف SPOF به دست می‌آید.</p>
+        <ul>
+          <li>صفحه‌ای که با یک کاربر ۴ ثانیه طول می‌کشد ← مشکل <strong>Performance</strong> (مثلاً N+1 Query).</li>
+          <li>صفحه‌ای که با ۱۰ کاربر ۱۰۰ms و با ۵۰۰۰ کاربر ۸ ثانیه است ← مشکل <strong>Scalability</strong> (گلوگاه DB یا Worker).</li>
+          <li>سایتی که با خرابی تنها سرور دیتابیس کاملاً قطع می‌شود ← مشکل <strong>Availability</strong>.</li>
+        </ul>
+        <p><strong>رابطه:</strong> این‌ها مستقل ولی به هم مرتبط‌اند. Horizontal Scaling معمولاً Availability را هم بالا می‌برد (Redundancy)، ولی ممکن است Latency را به‌خاطر Hopهای شبکه و Consistency کمی بدتر کند. بهبود Performance (کاهش زمان هر درخواست) طبق قانون Little ظرفیت را هم افزایش می‌دهد، چون Worker سریع‌تر آزاد می‌شود. در طراحی باید برای هر سه هدف عددی (SLO) تعریف کرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-2">
+      <summary>Vertical Scaling و Horizontal Scaling را مقایسه کنید. در چه شرایطی هر کدام را انتخاب می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>Vertical (Scale Up):</strong> افزایش منابع یک ماشین (CPU، RAM، دیسک). <strong>Horizontal (Scale Out):</strong> افزودن ماشین‌های بیشتر و توزیع بار بینشان.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>معیار</th><th>Vertical</th><th>Horizontal</th></tr></thead>
+          <tbody>
+            <tr><td>تغییر کد</td><td>ندارد</td><td>نیازمند Stateless بودن</td></tr>
+            <tr><td>سقف</td><td>محدود به بزرگ‌ترین سخت‌افزار</td><td>عملاً نامحدود</td></tr>
+            <tr><td>هزینه</td><td>غیرخطی (سرورهای خیلی بزرگ گران‌اند)</td><td>تقریباً خطی، سخت‌افزار معمولی</td></tr>
+            <tr><td>Availability</td><td>SPOF باقی می‌ماند</td><td>Redundancy ذاتی</td></tr>
+            <tr><td>پیچیدگی</td><td>کم</td><td>LB، Consistency، Deploy، Observability</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>انتخاب:</strong></p>
+        <ul>
+          <li><strong>Vertical:</strong> مراحل اولیهٔ محصول، اجزای Stateful که توزیعشان سخت است (دیتابیس Primary)، وقتی زمان کم است و هنوز به سقف نرسیده‌ایم.</li>
+          <li><strong>Horizontal:</strong> لایهٔ App و Workerها (PHP ذاتاً Shared-Nothing است)، نیاز به HA، بار متغیر که Autoscaling می‌طلبد.</li>
+        </ul>
+        <p>در عمل ترکیبی: App را افقی، DB را ابتدا عمودی و سپس با Read Replica و در نهایت Sharding افقی می‌کنیم. پیش از هر دو، بهینه‌سازی (Index، کش، حذف N+1) ارزان‌ترین «Scaling» است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-3">
+      <summary>منظور از Stateless بودن اپلیکیشن چیست؟ برای اینکه یک اپلیکیشن Laravel را روی چند سرور پشت Load Balancer اجرا کنید، چه تغییراتی لازم است؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> نود Stateless هیچ دادهٔ ماندگاری که درخواست بعدی به آن نیاز داشته باشد در حافظه یا دیسک محلی نگه نمی‌دارد؛ بنابراین هر درخواست می‌تواند به هر نودی برود و نودها قابل جایگزینی‌اند.</p>
+        <p><strong>چرا:</strong> پیش‌نیاز Horizontal Scaling، Autoscaling، Rolling Deploy و تحمل خرابی است. بدون آن مجبور به Sticky Session هستیم.</p>
+        <p><strong>تغییرات در Laravel:</strong></p>
+        <ul>
+          <li><strong>Session:</strong> <code>SESSION_DRIVER=redis</code> (یا database).</li>
+          <li><strong>Cache و Lock:</strong> <code>CACHE_STORE=redis</code> تا Rate Limiter، <code>Cache::lock</code> و <code>ShouldBeUnique</code> سراسری باشند.</li>
+          <li><strong>فایل‌ها:</strong> <code>FILESYSTEM_DISK=s3</code>؛ هیچ آپلودی روی دیسک محلی.</li>
+          <li><strong>Queue:</strong> Redis/SQS به‌جای <code>sync</code>؛ Workerها روی ماشین‌های جدا.</li>
+          <li><strong>APP_KEY</strong> یکسان روی همهٔ نودها.</li>
+          <li><strong>Scheduler:</strong> <code>-&gt;onOneServer()</code> تا Taskها چندبار اجرا نشوند.</li>
+          <li><strong>لاگ:</strong> stderr یا ارسال متمرکز (ELK، Loki).</li>
+          <li><strong>Trusted Proxies:</strong> تنظیم <code>trustProxies</code> برای IP و HTTPS درست.</li>
+          <li>Build یکسان (Image واحد) و <code>php artisan optimize</code> در Deploy.</li>
+        </ul>
+        <p><strong>نکته:</strong> State حذف نمی‌شود، به Backing Serviceها منتقل می‌شود؛ پس Redis و DB خودشان باید HA باشند وگرنه SPOF جدید ساخته‌ایم.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-4">
+      <summary>تفاوت Load Balancer لایهٔ ۴ و لایهٔ ۷ چیست؟ الگوریتم‌های رایج توزیع بار و مزایا و معایب Sticky Session را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>L4:</strong> در لایهٔ Transport کار می‌کند و فقط IP و Port را می‌بیند؛ اتصال TCP را بدون فهم محتوای آن هدایت می‌کند. بسیار سریع و کم‌سربار (AWS NLB، HAProxy در mode tcp).</p>
+        <p><strong>L7:</strong> درخواست HTTP را Parse می‌کند؛ مسیریابی بر اساس Path، Host، Header و Cookie، TLS Termination، فشرده‌سازی، Rate Limit و WAF ممکن است (Nginx، ALB، Envoy). سربار بیشتر ولی انعطاف بسیار بیشتر.</p>
+        <p><strong>الگوریتم‌ها:</strong></p>
+        <ul>
+          <li><strong>Round Robin / Weighted:</strong> ساده؛ وزن برای سرورهای ناهمگن یا Canary.</li>
+          <li><strong>Least Connections:</strong> مناسب درخواست‌های با مدت متغیر.</li>
+          <li><strong>IP Hash / Consistent Hash:</strong> یک کلاینت یا کلید همیشه به یک سرور؛ برای کش‌های توزیع‌شده مفید، ولی پشت NAT نامتوازن.</li>
+          <li><strong>Least Response Time / Power of Two Choices:</strong> تطبیقی‌تر.</li>
+        </ul>
+        <p><strong>Health Check:</strong> Active (فراخوانی <code>/up</code>) و Passive (شمارش خطا)؛ بدون آن LB ترافیک را به نود مرده می‌فرستد.</p>
+        <p><strong>Sticky Session:</strong> مزیت: اپلیکیشن Stateful بدون تغییر کار می‌کند و کش محلی مؤثرتر است. معایب: توزیع نامتوازن، از دست رفتن Session با خرابی نود، دشواری Autoscaling و Deploy، و پنهان کردن مشکل اصلی. راه درست: Stateless کردن App و Session در Redis. همچنین خود LB نباید SPOF باشد (جفت LB با Floating IP یا سرویس مدیریت‌شده).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-5">
+      <summary>استراتژی‌های Cache-Aside، Read-Through، Write-Through و Write-Behind را تعریف و مقایسه کنید. هر کدام برای چه سناریویی مناسب است؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Cache-Aside (Lazy Loading):</strong> اپلیکیشن ابتدا کش را می‌خواند؛ در Miss از DB خوانده و در کش ذخیره می‌کند؛ هنگام نوشتن DB را به‌روز و کلید را حذف می‌کند. رایج‌ترین الگو و همان <code>Cache::remember</code>. مزیت: فقط دادهٔ پرمصرف کش می‌شود و خرابی کش سیستم را از کار نمی‌اندازد. عیب: Miss اول کند، ریسک Stale و Stampede.</li>
+          <li><strong>Read-Through:</strong> مثل Cache-Aside، ولی منطق بارگذاری از DB درون خود لایهٔ کش است و App فقط با کش صحبت می‌کند. کد تمیزتر، نیازمند کتابخانه یا سرویس با Loader.</li>
+          <li><strong>Write-Through:</strong> هر نوشتن به‌صورت سنکرون هم در کش و هم در DB انجام می‌شود. کش همیشه تازه است؛ عیب: Latency نوشتن بیشتر و کش شدن داده‌هایی که شاید هرگز خوانده نشوند (معمولاً با TTL ترکیب می‌شود).</li>
+          <li><strong>Write-Behind (Write-Back):</strong> نوشتن فقط در کش و انتقال Async و دسته‌ای به DB. سریع‌ترین نوشتن و کاهش بار DB؛ عیب: ریسک از دست رفتن داده در صورت خرابی کش و پیچیدگی ترتیب و Consistency.</li>
+        </ul>
+        <p><strong>سناریوها:</strong></p>
+        <ul>
+          <li>کاتالوگ محصول، پروفایل، تنظیمات ← <strong>Cache-Aside</strong>.</li>
+          <li>داده‌ای که بلافاصله پس از نوشتن زیاد خوانده می‌شود (مثلاً Leaderboard) ← <strong>Write-Through</strong>.</li>
+          <li>شمارندهٔ بازدید، لایک، آمار با تحمل از دست رفتن اندک ← <strong>Write-Behind</strong> (مثلاً <code>INCR</code> در Redis و Job دوره‌ای برای Flush به DB).</li>
+        </ul>
+        <p>در هر حالت باید مشخص کرد چه میزان <strong>Staleness</strong> قابل‌قبول است و Invalidation پس از Commit تراکنش انجام شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-6">
+      <summary>Cache Stampede چیست و چه راهکارهایی برای جلوگیری از آن در Laravel وجود دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> وقتی یک کلید پرمصرف منقضی می‌شود، تعداد زیادی درخواست هم‌زمان Miss می‌خورند و همه با هم محاسبهٔ گران یا Query سنگین را به DB می‌فرستند (Thundering Herd). DB کند می‌شود، Queryها طولانی‌تر و درخواست‌های بیشتری Miss می‌خورند؛ ممکن است کل سیستم از کار بیفتد.</p>
+        <p><strong>راهکارها:</strong></p>
+        <ol>
+          <li><strong>Lock (Mutex):</strong> فقط یک درخواست بازسازی می‌کند و بقیه صبر یا مقدار قدیمی دریافت می‌کنند.</li>
+          <li><strong>Stale-While-Revalidate:</strong> <code>Cache::flexible('key', [300, 600], fn () =&gt; ...)</code> در Laravel 11+؛ پس از Fresh Period مقدار قدیمی سرو و بازسازی پس از ارسال پاسخ انجام می‌شود.</li>
+          <li><strong>Probabilistic Early Expiration:</strong> بازسازی تصادفی زودتر از انقضا، متناسب با هزینهٔ محاسبه.</li>
+          <li><strong>Refresh-ahead:</strong> Job زمان‌بندی‌شده کلیدهای داغ را قبل از انقضا گرم می‌کند.</li>
+          <li><strong>TTL Jitter:</strong> جلوگیری از انقضای هم‌زمان کلیدهای متعدد (Avalanche).</li>
+        </ol>
+        <pre><code class="language-php">return Cache::get('home:feed') ?? Cache::lock('lock:home:feed', 10)
+    -&gt;block(5, fn () =&gt; Cache::get('home:feed') ?? tap(
+        FeedBuilder::build(),
+        fn ($v) =&gt; Cache::put('home:feed', $v, 600 + random_int(0, 60))
+    ));</code></pre>
+        <p><strong>نکات:</strong> Double-check بعد از گرفتن Lock ضروری است؛ TTL خود Lock باید از زمان محاسبه بیشتر باشد؛ Lock باید روی Store مشترک (Redis) باشد. Trade-off: Lock کمی Latency اضافه می‌کند و SWR داده را برای مدتی Stale نشان می‌دهد؛ انتخاب به میزان Staleness قابل‌تحمل بستگی دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-7">
+      <summary>سایت فروشگاهی داریم که صفحهٔ محصول آن در کمپین‌ها چندین هزار درخواست در ثانیه دریافت می‌کند و دیتابیس زیر بار می‌رود. کش را در چه لایه‌هایی و چگونه طراحی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تحلیل:</strong> بار عمدتاً خواندنی است و صفحهٔ محصول برای همه یکسان است، به جز بخش‌های شخصی (سبد خرید، قیمت ویژه) و موجودی که سریع تغییر می‌کند.</p>
+        <pre class="diagram">Browser ─► CDN (assets + product HTML, s-maxage=60) ─► Nginx micro-cache (2s)
+        ─► Laravel: Redis cache-aside (product data, 10m + jitter)
+        ─► MySQL replicas (cache misses) ; Primary only for writes
+Personal parts (cart, price for user) ─► small AJAX call, private, no-store</pre>
+        <ul>
+          <li><strong>Browser و CDN:</strong> Assetهای Hash‌دار با <code>max-age</code> یک‌ساله و <code>immutable</code>. HTML عمومی محصول با <code>s-maxage</code> کوتاه و <code>stale-while-revalidate</code>؛ Purge با API هنگام تغییر قیمت.</li>
+          <li><strong>جدا کردن بخش شخصی:</strong> صفحه برای همه یکسان سرو می‌شود و سبد خرید و موجودی لحظه‌ای با یک درخواست سبک جدا بارگذاری می‌شوند؛ این کار Hit Ratio را بالا نگه می‌دارد.</li>
+          <li><strong>Reverse Proxy:</strong> Micro-cache یک تا دو ثانیه‌ای در Nginx؛ هزاران درخواست در ثانیه به چند درخواست در ثانیه به PHP تبدیل می‌شود.</li>
+          <li><strong>Application:</strong> Cache-Aside در Redis برای دادهٔ محصول با TTL و Jitter؛ Invalidation با Model Event پس از Commit؛ محافظت از Stampede با Lock یا <code>Cache::flexible</code>.</li>
+          <li><strong>Hot Key:</strong> برای محصول کمپین، کش In-process کوتاه‌مدت (APCu چند ثانیه‌ای) تا یک نود Redis اشباع نشود.</li>
+          <li><strong>DB:</strong> Missها به Read Replica؛ نوشتن موجودی با UPDATE اتمیک روی Primary.</li>
+          <li><strong>پیش‌گرم کردن</strong> کش قبل از شروع کمپین.</li>
+        </ul>
+        <p><strong>Trade-off:</strong> قیمت یا موجودی ممکن است چند ثانیه Stale باشد؛ بنابراین مرجع نهایی همیشه هنگام ثبت سفارش، دیتابیس است (اعتبارسنجی مجدد قیمت و موجودی در Checkout).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-8">
+      <summary>چرا از صف (Queue) استفاده می‌کنیم؟ یک Job قابل‌اعتماد در Laravel چه ویژگی‌هایی باید داشته باشد؟ مفاهیم Retry، Backoff، Idempotency و Failed Jobs را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>چرا صف:</strong> (۱) کاهش Latency پاسخ با خارج کردن کارهای غیرضروری از مسیر درخواست؛ (۲) Load Leveling: صف Spike را جذب می‌کند و Workerها با نرخ قابل‌کنترل مصرف می‌کنند؛ (۳) Decoupling و Resilience: خرابی موقت سرویس خارجی با Retry جبران می‌شود؛ (۴) مقیاس مستقل Workerها.</p>
+        <p><strong>ویژگی‌های Job خوب:</strong></p>
+        <ul>
+          <li><strong>Idempotent:</strong> صف‌ها At-least-once هستند؛ Job ممکن است دوبار اجرا شود (Timeout، مرگ Worker، <code>retry_after</code>). پس قبل از اثر جانبی بررسی شود که قبلاً انجام نشده و از Idempotency Key در API خارجی و Unique Constraint استفاده شود.</li>
+          <li><strong>Retry محدود:</strong> <code>$tries</code> و <code>$maxExceptions</code> تا Poison Message صف را قفل نکند.</li>
+          <li><strong>Backoff نمایی:</strong> مثلاً <code>[10, 30, 120, 300]</code> تا سرویس آسیب‌دیده زیر Retry خفه نشود.</li>
+          <li><strong>Timeout:</strong> <code>$timeout</code> کمتر از <code>retry_after</code>، وگرنه اجرای هم‌زمان تکراری رخ می‌دهد.</li>
+          <li><strong>Payload کوچک:</strong> فقط ID؛ داده در <code>handle</code> تازه خوانده شود.</li>
+          <li><strong>afterCommit:</strong> Dispatch بعد از Commit تا Worker رکوردی ببیند که وجود دارد.</li>
+          <li><strong>Failed Jobs:</strong> پس از اتمام تلاش‌ها در <code>failed_jobs</code> (معادل DLQ) ذخیره می‌شود؛ متد <code>failed()</code> برای جبران یا اطلاع‌رسانی؛ <code>queue:retry</code> برای اجرای مجدد پس از رفع مشکل.</li>
+          <li><strong>جداسازی صف‌ها:</strong> <code>payments</code> جدا از <code>reports</code> با Supervisor جدا در Horizon.</li>
+        </ul>
+        <pre><code class="language-php">public int $tries = 5;
+public int $timeout = 30;
+public function backoff(): array { return [10, 30, 120, 300]; }
+public function handle(): void {
+    $order = Order::findOrFail($this-&gt;orderId);
+    if ($order-&gt;paid_at) return;   // idempotent guard
+    // ...
+}</code></pre>
+        <p>Horizon برای مانیتورینگ Wait Time، Throughput و Jobهای ناموفق و Auto-balancing Workerها استفاده می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-9">
+      <summary>الگوریتم‌های Rate Limiting (Fixed Window، Sliding Window، Token Bucket و Leaky Bucket) را مقایسه کنید. برای یک API عمومی کدام را پیشنهاد می‌کنید و آن را کجا پیاده‌سازی می‌کنید؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Fixed Window:</strong> یک شمارنده برای هر بازهٔ ثابت؛ ساده و O(1)، ولی در مرز پنجره تا ۲ برابر حد عبور می‌کند.</li>
+          <li><strong>Sliding Window Log:</strong> ذخیرهٔ Timestamp همهٔ درخواست‌ها (مثلاً Sorted Set در Redis)؛ دقیق ولی حافظهٔ O(N).</li>
+          <li><strong>Sliding Window Counter:</strong> ترکیب وزنی شمارندهٔ پنجرهٔ قبل و فعلی؛ تقریباً دقیق با حافظهٔ O(1).</li>
+          <li><strong>Token Bucket:</strong> سطل با ظرفیت B و نرخ پر شدن r؛ Burst تا B مجاز و نرخ میانگین r. انعطاف‌پذیر و رایج‌ترین برای API.</li>
+          <li><strong>Leaky Bucket:</strong> صف با ظرفیت محدود که با نرخ ثابت تخلیه می‌شود؛ خروجی کاملاً صاف (Traffic Shaping)، ولی Burst مشروع هم تأخیر می‌خورد.</li>
+        </ul>
+        <p><strong>پیشنهاد برای API عمومی:</strong> Token Bucket یا Sliding Window Counter، چون کلاینت‌ها رفتار انفجاری طبیعی دارند (باز شدن یک صفحه چند درخواست هم‌زمان می‌زند) و در عین حال نرخ میانگین کنترل می‌شود. Leaky Bucket برای محافظت از سرویسی که نرخ ثابت می‌خواهد (مثلاً ارسال به Gateway پیامک) مناسب است.</p>
+        <p><strong>محل پیاده‌سازی (چندلایه):</strong></p>
+        <ul>
+          <li><strong>Edge/Gateway/Nginx</strong> (<code>limit_req</code>): محدودیت درشت بر اساس IP؛ درخواست اضافه حتی به PHP نمی‌رسد.</li>
+          <li><strong>اپلیکیشن</strong>: <code>RateLimiter::for()</code> و Middleware <code>throttle</code> با کلید کاربر، API Key یا Tenant و حد متفاوت برای هر پلن.</li>
+          <li>Store شمارنده باید <strong>مشترک و اتمیک</strong> باشد (Redis با Lua یا MULTI).</li>
+        </ul>
+        <p>پاسخ <code>429</code> با هدرهای <code>Retry-After</code> و <code>X-RateLimit-Remaining</code> تا کلاینت بتواند Backoff کند. برای مسیرهای حساس (لاگین، OTP) محدودیت ترکیبی بر اساس IP و نام کاربری.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-10">
+      <summary>کد زیر برای ثبت سفارش در یک فروشگاه پرترافیک نوشته شده است. چه مشکلی دارد و چگونه اصلاحش می‌کنید؟</summary>
+      <div class="answer">
+        <pre><code class="language-php">public function store(Request $request)
+{
+    $product = Product::find($request-&gt;product_id);
+    if ($product-&gt;stock &gt; 0) {
+        $product-&gt;stock = $product-&gt;stock - 1;
+        $product-&gt;save();
+        Order::create(['product_id' =&gt; $product-&gt;id, 'user_id' =&gt; auth()-&gt;id()]);
+        Mail::to(auth()-&gt;user())-&gt;send(new OrderPlaced());
+    }
+    return back();
+}</code></pre>
+        <p><strong>مشکلات:</strong></p>
+        <ul>
+          <li><strong>Race Condition (Lost Update):</strong> الگوی Read-Modify-Write؛ دو درخواست هم‌زمان هر دو <code>stock = 1</code> می‌خوانند و هر دو سفارش ثبت می‌کنند ← Oversell.</li>
+          <li><strong>نبود تراکنش:</strong> اگر <code>Order::create</code> شکست بخورد، موجودی کم شده ولی سفارشی وجود ندارد.</li>
+          <li><strong>ارسال ایمیل سنکرون:</strong> Latency بالا و اگر SMTP کند باشد Workerهای FPM قفل می‌شوند.</li>
+          <li><strong>Double Submit:</strong> کلیک دوباره یا Retry شبکه، سفارش تکراری می‌سازد.</li>
+          <li><code>find</code> بدون <code>OrFail</code> و نبود Validation.</li>
+        </ul>
+        <pre><code class="language-php">public function store(StoreOrderRequest $request)
+{
+    $order = DB::transaction(function () use ($request) {
+        $affected = Product::whereKey($request-&gt;product_id)
+            -&gt;where('stock', '&gt;', 0)
+            -&gt;decrement('stock');           // شرط و تغییر اتمیک
+
+        if ($affected === 0) {
+            throw new OutOfStockException();
+        }
+
+        return Order::create([
+            'product_id' =&gt; $request-&gt;product_id,
+            'user_id' =&gt; $request-&gt;user()-&gt;id,
+            'idempotency_key' =&gt; $request-&gt;header('Idempotency-Key'), // Unique Index
+        ]);
+    });
+
+    Mail::to($request-&gt;user())-&gt;queue(new OrderPlaced($order));
+    return to_route('orders.show', $order);
+}</code></pre>
+        <p><strong>جایگزین‌ها:</strong> <code>lockForUpdate()</code> داخل تراکنش اگر منطق چندمرحله‌ای است، یا Optimistic Locking با ستون <code>version</code> وقتی رقابت کم است. برای فروش فوق‌العاده (Flash Sale) می‌توان موجودی را در Redis با <code>DECR</code> اتمیک رزرو و سفارش را از طریق صف ثبت کرد تا DB زیر Lock Contention نرود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-11">
+      <summary>Idempotency Key چیست و چرا برای APIهای پرداخت ضروری است؟ نحوهٔ پیاده‌سازی آن را شرح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> عملیاتی Idempotent است که اجرای چندباره‌اش همان اثر اجرای یک‌باره را داشته باشد. <strong>Idempotency Key</strong> شناسهٔ یکتایی (معمولاً UUID) است که کلاینت برای هر عملیات منطقی تولید و در هدر (مثلاً <code>Idempotency-Key</code>) ارسال می‌کند؛ Retryهای همان عملیات با <strong>همان</strong> کلید فرستاده می‌شوند.</p>
+        <p><strong>چرا:</strong> در سیستم توزیع‌شده، Timeout به معنی شکست نیست؛ ممکن است سرور پرداخت را انجام داده ولی پاسخ در راه گم شده باشد. کلاینت (یا LB یا Queue) دوباره تلاش می‌کند و بدون کلید، کاربر دوبار پرداخت می‌کند. POST ذاتاً Idempotent نیست.</p>
+        <p><strong>پیاده‌سازی:</strong></p>
+        <ol>
+          <li>دریافت کلید و ساختن کلید ذخیره‌سازی در محدودهٔ کاربر (<code>user_id + key</code>).</li>
+          <li>اگر نتیجه قبلاً ذخیره شده، همان پاسخ را برگردان (بدون اجرای مجدد). اگر Payload با دفعهٔ قبل فرق دارد ← 422.</li>
+          <li>اگر درخواستی با همین کلید در حال اجراست (Lock گرفته شده) ← 409.</li>
+          <li>اجرای عملیات و ذخیرهٔ پاسخ (برای پاسخ‌های غیر 5xx) با TTL مثلاً ۲۴ ساعت.</li>
+        </ol>
+        <p><strong>نکات طراحی:</strong></p>
+        <ul>
+          <li>برای عملیات مالی کلید را در <strong>DB با Unique Index</strong> و در همان تراکنش ثبت کنید؛ کش ممکن است Evict شود.</li>
+          <li>در فراخوانی Gateway بیرونی هم کلید را پاس دهید (بسیاری از Gatewayها پشتیبانی می‌کنند) تا Retry در Job هم امن باشد.</li>
+          <li>کلید جایگزین Validation نیست؛ Unique Constraint روی مفهوم کسب‌وکاری (مثلاً یک پرداخت به ازای هر سفارش) آخرین خط دفاع است.</li>
+        </ul>
+        <p>این الگو در کنار صف‌های At-least-once، عملاً «Exactly-once effect» را می‌سازد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-12">
+      <summary>CPU دیتابیس MySQL یک سیستم در ساعات اوج به ۹۵٪ می‌رسد و سایت کند می‌شود. قدم‌به‌قدم چه می‌کنید؟ مسیر مقیاس‌پذیری دیتابیس را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>۱. اندازه‌گیری قبل از اقدام:</strong> Slow Query Log، <code>performance_schema</code> و Digestها برای پیدا کردن Queryهای پرهزینه (مجموع زمان، نه فقط کندترین)، و Laravel Telescope/Pulse یا APM برای یافتن N+1 و Endpoint مقصر.</p>
+        <p><strong>۲. بهینه‌سازی Query (ارزان‌ترین و مؤثرترین):</strong> <code>EXPLAIN</code> و افزودن Composite/Covering Index، حذف N+1 با Eager Loading، حذف <code>SELECT *</code>، تبدیل OFFSET بزرگ به Cursor Pagination، انتقال گزارش‌های سنگین به Replica یا Job شبانه.</p>
+        <p><strong>۳. مدیریت اتصال:</strong> بررسی تعداد اتصال‌ها؛ Pooling با ProxySQL.</p>
+        <p><strong>۴. کش:</strong> Cache-Aside در Redis برای Queryهای پرتکرار با Hit Ratio بالا؛ محافظت از Stampede.</p>
+        <p><strong>۵. Vertical Scaling:</strong> RAM بیشتر تا Working Set در Buffer Pool جا شود؛ دیسک سریع‌تر.</p>
+        <p><strong>۶. Read Replica:</strong> اگر Read-heavy است، تنظیم <code>read</code>/<code>write</code> و <code>sticky</code> در Laravel؛ مدیریت Replication Lag و Read-Your-Writes.</p>
+        <p><strong>۷. Partitioning:</strong> برای جداول عظیم زمانی (لاگ، سفارش‌ها) بر اساس Range تاریخ؛ آرشیو دادهٔ قدیمی.</p>
+        <p><strong>۸. Functional Split و Sharding:</strong> جدا کردن دیتابیس دامنه‌ها، و در نهایت Sharding بر اساس کلیدی مثل <code>tenant_id</code> وقتی ظرفیت نوشتن یک سرور کافی نیست.</p>
+        <div class="callout exam"><p>اصل کلیدی: از ارزان و برگشت‌پذیر به گران و برگشت‌ناپذیر. Sharding پیچیدگی دائمی (Join و تراکنش بین Shard، Resharding) می‌آورد و فقط وقتی توجیه دارد که بقیهٔ راه‌ها تمام شده باشند.</p></div>
+        <p><strong>کوتاه‌مدت در بحران:</strong> فعال کردن Micro-cache، Rate Limit روی Endpointهای سنگین، و خاموش کردن قابلیت‌های غیرحیاتی با Feature Flag (Graceful Degradation).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-13">
+      <summary>Replication Lag چیست و چه مشکلی برای اپلیکیشن ایجاد می‌کند؟ گزینهٔ <code>sticky</code> در تنظیمات دیتابیس Laravel چه کاری انجام می‌دهد و آیا کافی است؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> در Replication آسنکرون (پیش‌فرض MySQL)، Primary تراکنش را Commit و به کلاینت پاسخ می‌دهد و تغییرات بعداً (از طریق Binlog) روی Replica اعمال می‌شوند. فاصلهٔ زمانی بین Commit روی Primary و اعمال روی Replica را <strong>Replication Lag</strong> می‌گویند؛ معمولاً میلی‌ثانیه‌ها، ولی زیر بار نوشتن سنگین یا Query طولانی روی Replica می‌تواند به ثانیه‌ها یا دقیقه‌ها برسد.</p>
+        <p><strong>مشکل:</strong> نقض <strong>Read-Your-Writes</strong>: کاربر آدرسش را تغییر می‌دهد، Redirect می‌شود و صفحهٔ بعد از Replica دادهٔ قدیمی نشان می‌دهد. یا Jobی که بلافاصله بعد از ایجاد رکورد اجرا می‌شود آن را روی Replica پیدا نمی‌کند (<code>ModelNotFoundException</code>).</p>
+        <p><strong><code>sticky</code>:</strong> با <code>'sticky' =&gt; true</code> اگر در طول <strong>همان چرخهٔ درخواست</strong> عملیات نوشتنی روی Write Connection انجام شده باشد، خواندن‌های بعدی همان درخواست هم از Write Connection انجام می‌شوند.</p>
+        <p><strong>کافی نیست، چون:</strong> درخواست بعدی کاربر (پس از Redirect) و Jobهای صف چرخهٔ جدیدی هستند و دوباره از Replica می‌خوانند.</p>
+        <p><strong>راه‌حل‌های تکمیلی:</strong></p>
+        <ul>
+          <li>پس از نوشتن، یک Flag در Session (مثلاً تا ۵ ثانیه) و در آن مدت خواندن از Primary با <code>useWritePdo()</code>.</li>
+          <li>خواندن داده‌های حساس (موجودی، وضعیت پرداخت) همیشه از Primary.</li>
+          <li>در Job، خواندن از Write Connection یا Dispatch با تأخیر کوتاه.</li>
+          <li>مانیتورینگ Lag و خارج کردن Replica عقب‌مانده از Pool خواندن.</li>
+          <li>Semi-synchronous Replication برای کاهش ریسک از دست رفتن داده هنگام Failover (به قیمت Latency نوشتن).</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-14">
+      <summary>Laravel Octane چه تفاوتی با مدل PHP-FPM دارد؟ مزایا، معایب و دام‌های رایج آن را توضیح دهید. کد زیر تحت Octane چه مشکلی دارد؟</summary>
+      <div class="answer">
+        <pre><code class="language-php">$this-&gt;app-&gt;singleton(CurrentLocale::class, function ($app) {
+    return new CurrentLocale($app['request']-&gt;header('Accept-Language'));
+});</code></pre>
+        <p><strong>تفاوت:</strong> PHP-FPM مدل Shared-Nothing دارد؛ هر درخواست فریم‌ورک را از صفر بوت و در پایان همه چیز را دور می‌ریزد. Octane اپلیکیشن را <strong>یک‌بار</strong> در Workerهای طولانی‌مدت (Swoole، RoadRunner یا FrankenPHP) بوت می‌کند و درخواست‌ها را روی همان نمونه Handle می‌کند.</p>
+        <p><strong>مزایا:</strong> حذف سربار Bootstrap، Latency کمتر و Throughput بیشتر با سخت‌افزار یکسان؛ امکان اتصال‌های پایدار و در Swoole قابلیت‌هایی مثل <code>Octane::concurrently</code>.</p>
+        <p><strong>معایب و دام‌ها:</strong></p>
+        <ul>
+          <li><strong>State Leakage:</strong> Singleton و Static بین درخواست‌ها و کاربران مختلف باقی می‌مانند.</li>
+          <li><strong>Memory Leak:</strong> آرایه‌های Static یا Listenerهایی که هر درخواست اضافه می‌شوند؛ با <code>--max-requests</code> کنترل می‌شود.</li>
+          <li>نیاز به <code>octane:reload</code> پس از Deploy؛ ناسازگاری بعضی پکیج‌ها؛ <code>exit()</code> و <code>header()</code> خام.</li>
+          <li>Queryهای کند یا I/O را سریع نمی‌کند؛ اگر گلوگاه DB است اثرش ناچیز است.</li>
+        </ul>
+        <p><strong>مشکل کد:</strong> Singleton فقط یک‌بار در هر Worker ساخته می‌شود؛ زبان <strong>اولین</strong> درخواست برای همهٔ درخواست‌های بعدی آن Worker استفاده می‌شود. در موارد مشابه (Tenant، کاربر جاری) این یک <strong>باگ امنیتی</strong> و نشت داده بین کاربران است.</p>
+        <pre><code class="language-php">$this-&gt;app-&gt;scoped(CurrentLocale::class, function ($app) {
+    return new CurrentLocale($app['request']-&gt;header('Accept-Language'));
+});</code></pre>
+        <p><code>scoped</code> در هر درخواست یا Job نمونهٔ جدید می‌سازد. قاعدهٔ کلی: Request، Container یا Config را در Constructor سرویس‌های Singleton تزریق نکنید؛ در زمان استفاده Resolve کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-15">
+      <summary>اصول 12-Factor App را نام ببرید و توضیح دهید کدام اصول مستقیماً به مقیاس‌پذیری افقی کمک می‌کنند.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> مجموعه‌ای از ۱۲ اصل برای ساخت اپلیکیشن‌های Cloud-native که قابل‌حمل، قابل‌استقرار مداوم و مقیاس‌پذیر باشند.</p>
+        <ol>
+          <li><strong>Codebase:</strong> یک Repo، چند Deploy.</li>
+          <li><strong>Dependencies:</strong> صریح و قفل‌شده (<code>composer.lock</code>).</li>
+          <li><strong>Config:</strong> در Environment، نه کد.</li>
+          <li><strong>Backing Services:</strong> DB، Redis و صف به‌عنوان منابع متصل‌شدنی.</li>
+          <li><strong>Build, Release, Run:</strong> مراحل جدا؛ Release غیرقابل‌تغییر و قابل Rollback.</li>
+          <li><strong>Processes:</strong> Stateless و Shared-Nothing.</li>
+          <li><strong>Port Binding:</strong> سرویس خودکفا روی Port.</li>
+          <li><strong>Concurrency:</strong> مقیاس با افزودن پروسس از انواع مختلف (web، worker).</li>
+          <li><strong>Disposability:</strong> شروع سریع و خاموشی Graceful.</li>
+          <li><strong>Dev/Prod Parity:</strong> محیط‌های مشابه.</li>
+          <li><strong>Logs:</strong> Event Stream روی stdout.</li>
+          <li><strong>Admin Processes:</strong> کارهای One-off (Migration) با همان کد و محیط.</li>
+        </ol>
+        <p><strong>اصول کلیدی برای Horizontal Scaling:</strong></p>
+        <ul>
+          <li><strong>Processes (6):</strong> بدون State محلی، هر تعداد نمونه قابل اجراست.</li>
+          <li><strong>Concurrency (8):</strong> Web و Workerها مستقل مقیاس می‌گیرند.</li>
+          <li><strong>Disposability (9):</strong> Autoscaler و Orchestrator می‌توانند نمونه‌ها را بی‌خطر بکشند و بسازند؛ Worker لاراول با SIGTERM کار فعلی را تمام می‌کند.</li>
+          <li><strong>Config (3) و Backing Services (4):</strong> همان Image در همه جا با تنظیمات متفاوت اجرا می‌شود.</li>
+          <li><strong>Logs (11):</strong> با ده‌ها نمونهٔ موقت، لاگ روی دیسک محلی بی‌معناست.</li>
+        </ul>
+        <p><strong>نکتهٔ Laravel:</strong> بعد از <code>config:cache</code> تابع <code>env()</code> بیرون از فایل‌های Config مقدار null می‌دهد؛ پس فقط از <code>config()</code> استفاده کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-16">
+      <summary>برای یک شبکهٔ اجتماعی با ۱۰ میلیون کاربر فعال روزانه، QPS، فضای ذخیره‌سازی و تعداد سرور لازم را به‌صورت سرانگشتی تخمین بزنید و نتیجهٔ معماری بگیرید.</summary>
+      <div class="answer">
+        <p><strong>فرض‌ها (صریح بیان شوند):</strong> هر کاربر روزانه ۵۰ خواندن (Feed، پروفایل) و ۲ نوشتن (پست، کامنت)؛ هر پست ~۱KB متن (مدیا جدا در Object Storage)؛ Peak سه برابر میانگین؛ زمان پاسخ میانگین ۱۰۰ms.</p>
+        <pre><code class="language-plaintext">Read QPS  = 10M × 50 / ~10^5 s ≈ 5,000 avg  → ~15,000 peak
+Write QPS = 10M × 2  / ~10^5 s ≈ 200 avg    → ~600 peak
+Read:Write ≈ 25:1
+
+Storage/day  = 20M writes × 1 KB = 20 GB/day → ~7 TB/year (text only)
+Media: if 10% of posts have a 500 KB image → 2M × 0.5 MB = 1 TB/day → Object Storage + CDN
+
+Concurrency (Little's Law) = 15,000 × 0.1 s = 1,500 in-flight requests
+App servers: ~60 workers each → ~25 servers + ~30% headroom + N+2 → ~35</code></pre>
+        <p><strong>نتیجه‌گیری معماری:</strong></p>
+        <ul>
+          <li>نسبت ۲۵ به ۱ ← سیستم <strong>Read-heavy</strong>؛ کش لایه‌ای (Feed در Redis، CDN برای مدیا) و Read Replica اولویت دارند.</li>
+          <li>۷ ترابایت در سال متن ← Partitioning بر اساس زمان و آرشیو؛ در افق چندساله Sharding بر اساس <code>user_id</code>.</li>
+          <li>۱ ترابایت مدیا در روز ← حتماً S3 و CDN با آپلود مستقیم Presigned.</li>
+          <li>۶۰۰ نوشتن در ثانیه در Peak برای یک Primary خوب قابل‌تحمل است؛ ولی کارهای جانبی (Fan-out Feed، نوتیفیکیشن) باید به صف بروند.</li>
+          <li>Working Set کش: اگر ۲۰٪ داده‌های داغ روزانه کش شوند، چند گیگابایت RAM در Redis Cluster.</li>
+        </ul>
+        <p>هدف این تخمین دقت نیست؛ <strong>مرتبهٔ بزرگی</strong> و گلوگاه‌ها را مشخص می‌کند و باید با Load Test تأیید شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-17">
+      <summary>Back-pressure و Graceful Degradation را تعریف کنید. در یک سیستم با وابستگی به سرویس‌های خارجی کند، چگونه از Cascading Failure جلوگیری می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>Back-pressure:</strong> سازوکاری که جزء پایین‌دستی هنگام پر شدن ظرفیت به بالادستی علامت «کندتر بفرست» یا «رد شد» می‌دهد، به‌جای انباشت بی‌پایان درخواست‌ها در حافظه. نمونه‌ها: صف محدود، پاسخ <code>429</code>/<code>503</code> با <code>Retry-After</code>، سقف هم‌زمانی.</p>
+        <p><strong>Graceful Degradation:</strong> ارائهٔ سرویس با قابلیت کمتر به‌جای قطع کامل؛ مثل سرو دادهٔ Stale از کش، خاموش کردن Recommendation با Feature Flag یا حالت Read-only.</p>
+        <p><strong>Cascading Failure چگونه رخ می‌دهد:</strong> سرویس پرداخت کند می‌شود (۳۰ ثانیه)، Workerهای PHP-FPM منتظر می‌مانند، همهٔ <code>max_children</code> اشغال می‌شوند و حتی صفحاتی که به پرداخت ربطی ندارند هم جواب نمی‌دهند.</p>
+        <p><strong>راهکارها:</strong></p>
+        <ul>
+          <li><strong>Timeout کوتاه و صریح:</strong> <code>Http::connectTimeout(1)-&gt;timeout(3)</code>؛ هیچ فراخوانی بدون Timeout.</li>
+          <li><strong>Async کردن:</strong> فراخوانی‌های غیرضروری مسیر درخواست به صف بروند.</li>
+          <li><strong>Retry محدود با Exponential Backoff و Jitter:</strong> Retry بی‌حساب، حملهٔ DDoS به سرویس بیمار است.</li>
+          <li><strong>Circuit Breaker:</strong> پس از N خطا، مدتی مستقیماً Fallback بده و سرویس را صدا نزن؛ سپس با Half-open تست کن.</li>
+          <li><strong>Bulkhead:</strong> صف و Worker جدا برای هر وابستگی تا کندی یکی همه را از کار نیندازد.</li>
+          <li><strong>Load Shedding:</strong> در اوج فشار درخواست‌های کم‌اولویت زودتر رد شوند.</li>
+          <li><strong>Fallback:</strong> دادهٔ کش‌شده، پاسخ پیش‌فرض یا پیام «بعداً تلاش کنید».</li>
+        </ul>
+        <p><strong>Trade-off:</strong> این الگوها پیچیدگی و گاهی دادهٔ کمتر تازه به همراه دارند، ولی Availability کل سیستم را حفظ می‌کنند. باید برای هر قابلیت مشخص کرد «حیاتی» است یا «قابل حذف موقت».</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-scaled-applications-18">
+      <summary>SPOF چیست؟ اگر LB با Availability ۹۹٫۹۹٪، اپلیکیشن ۹۹٫۹٪ و دیتابیس ۹۹٫۹٪ داشته باشیم، Availability کل چقدر است و چگونه آن را بهبود می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Single Point of Failure جزئی است که خرابی‌اش به تنهایی کل سیستم را از کار می‌اندازد (یک LB، یک دیتابیس، یک Redis، یک سرور Cron، حتی یک نفر که تنها دسترسی Deploy را دارد).</p>
+        <p><strong>محاسبه:</strong> اجزای سری در هم ضرب می‌شوند:</p>
+        <pre><code class="language-plaintext">0.9999 × 0.999 × 0.999 ≈ 0.9979  → ~99.79%
+≈ 18.4 hours of downtime per year (vs 8.76 h for a single 99.9% component)</code></pre>
+        <p>Availability کل از ضعیف‌ترین جزء هم <strong>کمتر</strong> است.</p>
+        <p><strong>بهبود با Redundancy (اجزای موازی):</strong> <code>A = 1 − (1 − A1)(1 − A2)</code>. دو نود App مستقل با ۹۹٫۹٪ ← <code>1 − 0.001² = 99.9999%</code> (با فرض خرابی مستقل و Failover سریع).</p>
+        <ul>
+          <li><strong>App:</strong> حداقل دو نود در Zoneهای مختلف + Health Check در LB.</li>
+          <li><strong>DB:</strong> Primary + Replica با Failover خودکار؛ RPO و RTO مشخص.</li>
+          <li><strong>LB:</strong> جفت با Floating IP یا LB مدیریت‌شده.</li>
+          <li><strong>Redis:</strong> Sentinel یا Cluster.</li>
+          <li><strong>Cron:</strong> روی همهٔ نودها با <code>onOneServer()</code>.</li>
+          <li><strong>کاهش وابستگی‌های سری:</strong> کارهای غیرضروری را Async کنید تا خرابی‌شان مسیر اصلی را قطع نکند.</li>
+          <li><strong>فرایند:</strong> Deploy خودکار و Rollback، Runbook، تست منظم Failover.</li>
+        </ul>
+        <p><strong>Trade-off:</strong> هر ۹ اضافه تقریباً هزینه و پیچیدگی را چند برابر می‌کند؛ هدف Availability باید از نیاز کسب‌وکار (SLA) و هزینهٔ Downtime به دست بیاید، نه «هرچه بیشتر بهتر».</p>
+      </div>
+    </details>
+
+  </section>
+
+  <!-- ============ CHEATSHEET ============ -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>مفاهیم پایه</h3>
+      <ul>
+        <li><strong>Performance</strong> = سرعت یک درخواست (Latency)؛ <strong>Scalability</strong> = حفظ کارایی با بار بیشتر (Throughput)؛ <strong>Availability</strong> = درصد زمان در دسترس.</li>
+        <li><strong>Vertical:</strong> ساده، سقف‌دار، SPOF. <strong>Horizontal:</strong> بی‌سقف، Redundant، نیازمند Stateless.</li>
+        <li><strong>Stateless:</strong> Session/Cache/Lock ← Redis؛ فایل ← S3؛ لاگ ← stderr؛ Cron ← <code>onOneServer()</code>؛ <code>APP_KEY</code> یکسان؛ <code>trustProxies</code>.</li>
+      </ul>
+      <h3>Load Balancing</h3>
+      <ul>
+        <li><strong>L4:</strong> IP/Port، سریع. <strong>L7:</strong> HTTP-aware، TLS Termination، مسیریابی Path/Header.</li>
+        <li>الگوریتم‌ها: Round Robin، Weighted، Least Connections، IP Hash، Consistent Hashing.</li>
+        <li>Health Check: Active (<code>/up</code>) و Passive؛ Liveness ≠ Readiness.</li>
+        <li>Sticky Session = راه موقت؛ توزیع نامتوازن و از دست رفتن Session.</li>
+      </ul>
+      <h3>کش</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>الگو</th><th>یک خط</th></tr></thead>
+        <tbody>
+          <tr><td>Cache-Aside</td><td>App: Miss ← DB ← کش؛ نوشتن ← DB + حذف کلید (<code>Cache::remember</code>)</td></tr>
+          <tr><td>Read-Through</td><td>خود کش از DB بارگذاری می‌کند</td></tr>
+          <tr><td>Write-Through</td><td>نوشتن سنکرون در کش و DB</td></tr>
+          <tr><td>Write-Behind</td><td>نوشتن در کش، Async به DB؛ ریسک از دست رفتن داده</td></tr>
+        </tbody>
+      </table></div>
+      <ul>
+        <li>Invalidation: TTL + Jitter، حذف صریح <strong>بعد از Commit</strong>، Versioned Key، Tags (فقط Redis/Memcached).</li>
+        <li><strong>Stampede:</strong> Lock (<code>Cache::lock()-&gt;block()</code> + Double-check)، SWR (<code>Cache::flexible</code>)، Early Recompute، Pre-warm.</li>
+        <li>Penetration ← کش نتیجهٔ خالی/Bloom Filter؛ Avalanche ← Jitter؛ Hot Key ← کش محلی.</li>
+        <li>HTTP: <code>immutable</code> برای Asset هش‌دار؛ <code>s-maxage</code> برای CDN؛ <code>no-store</code> برای شخصی؛ <code>no-cache</code> = Revalidate.</li>
+      </ul>
+      <h3>صف</h3>
+      <ul>
+        <li>چرا: Latency کمتر، Load Leveling، Decoupling، Retry.</li>
+        <li>At-least-once ← Job باید <strong>Idempotent</strong> باشد.</li>
+        <li><code>$tries</code>، <code>backoff()</code> نمایی، <code>$timeout</code> &lt; <code>retry_after</code>، <code>afterCommit()</code>، فقط ID در Payload، <code>failed()</code> + <code>failed_jobs</code> (DLQ).</li>
+        <li>Horizon: Supervisorها، <code>balance=auto</code>، متریک Wait Time؛ بعد از Deploy <code>horizon:terminate</code>.</li>
+      </ul>
+      <h3>Rate Limiting</h3>
+      <ul>
+        <li>Fixed Window (مشکل مرز ۲×)، Sliding Log (دقیق، حافظه زیاد)، Sliding Counter (تقریبی، O(1))، <strong>Token Bucket</strong> (Burst مجاز، رایج‌ترین)، <strong>Leaky Bucket</strong> (خروجی ثابت).</li>
+        <li>Laravel: <code>RateLimiter::for()</code> + <code>throttle:name</code>؛ Store مشترک و اتمیک؛ پاسخ 429 + <code>Retry-After</code>.</li>
+      </ul>
+      <h3>دیتابیس</h3>
+      <ul>
+        <li>مسیر: Query/Index ← Pooling ← کش ← Vertical ← Read Replica ← Partitioning ← Functional Split ← Sharding.</li>
+        <li><code>sticky =&gt; true</code> فقط در همان درخواست؛ Read-Your-Writes در درخواست بعد = خواندن از Primary.</li>
+        <li>Shard Key: Cardinality بالا، توزیع یکنواخت، Query تک‌Shard (مثلاً <code>tenant_id</code>).</li>
+        <li>اتصال‌ها = سرورها × Workerها ← PgBouncer/ProxySQL.</li>
+      </ul>
+      <h3>همزمانی</h3>
+      <ul>
+        <li>Race Condition = Read-Modify-Write. راه‌حل: UPDATE اتمیک با شرط ← <code>lockForUpdate</code> ← Optimistic <code>version</code> ← <code>Cache::lock</code> ← Unique Constraint.</li>
+        <li>Idempotency Key: کلید یکتا از کلاینت، ذخیرهٔ پاسخ، 409 برای در حال اجرا، 422 برای Payload متفاوت، ذخیره در DB برای پول.</li>
+      </ul>
+      <h3>Octane</h3>
+      <ul>
+        <li>یک‌بار Boot، Workerهای ماندگار (Swoole / RoadRunner / FrankenPHP).</li>
+        <li>دام‌ها: Singleton با Request ← <code>scoped</code>؛ Static State؛ Memory Leak ← <code>--max-requests</code>؛ <code>octane:reload</code> بعد از Deploy.</li>
+      </ul>
+      <h3>عملیات و ظرفیت</h3>
+      <ul>
+        <li>12-Factor برای Scale: Processes (Stateless)، Concurrency، Disposability، Config در Env، Logs روی stdout.</li>
+        <li>Autoscaling: CPU/RPS برای Web، <strong>طول صف</strong> برای Worker؛ Cooldown؛ سقف هماهنگ با DB.</li>
+        <li>Back-pressure: صف محدود، 429/503، Timeout همه جا، Bulkhead، Circuit Breaker. Degradation: Stale Cache، Feature Flag، Read-only.</li>
+        <li>۹ها: 99.9% ≈ 8.76h/سال، 43m/ماه؛ 99.99% ≈ 52.6m/سال؛ 99.999% ≈ 5.26m/سال.</li>
+        <li>سری: ضرب؛ موازی: <code>1 − Π(1 − Ai)</code>.</li>
+        <li>تخمین: روز ≈ 10<sup>5</sup> ثانیه؛ 1M/روز ≈ 12 RPS؛ Peak = ۲–۵× میانگین؛ Little: <code>L = λ × W</code>.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

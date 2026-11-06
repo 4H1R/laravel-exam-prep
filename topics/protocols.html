@@ -1,0 +1,1107 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protocols — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="protocols">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Protocols</h1>
+    <p class="lead">مدل‌های لایه‌ای شبکه، IP، TCP و UDP، DNS، تکامل HTTP از نسخه ۱ تا ۳، TLS، WebSocket، gRPC و پروتکل‌های پیام‌رسانی؛ همراه با سناریوی کامل «وقتی آدرسی را در مرورگر تایپ می‌کنید چه اتفاقی می‌افتد».</p>
+  </header>
+
+  <section class="lesson" id="layered-models" data-title="مدل OSI و TCP/IP">
+    <h2>مدل OSI و TCP/IP</h2>
+    <p>شبکه را به <strong>لایه‌ها</strong> تقسیم می‌کنیم تا هر لایه فقط یک مسئولیت داشته باشد و از طریق یک رابط مشخص به لایهٔ بالاتر سرویس بدهد. این جداسازی باعث می‌شود بتوان مثلاً Wi-Fi را با Ethernet عوض کرد بدون اینکه HTTP متوجه شود. به فرایند اضافه شدن هدر هر لایه به داده هنگام ارسال <strong>Encapsulation</strong> و به برداشتن آن‌ها در مقصد <strong>Decapsulation</strong> می‌گویند.</p>
+
+    <h3>مدل هفت‌لایهٔ OSI (مرجع مفهومی)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>لایه</th><th>مسئولیت</th><th>واحد داده (PDU)</th><th>نمونه‌ها</th></tr></thead>
+      <tbody>
+        <tr><td>7</td><td>Application</td><td>سرویس به برنامهٔ کاربر</td><td>Data / Message</td><td>HTTP، DNS، SMTP، SSH، FTP</td></tr>
+        <tr><td>6</td><td>Presentation</td><td>قالب‌بندی، رمزنگاری، فشرده‌سازی</td><td>Data</td><td>TLS (به‌طور مفهومی)، JPEG، UTF-8</td></tr>
+        <tr><td>5</td><td>Session</td><td>برقراری و مدیریت نشست</td><td>Data</td><td>RPC sessions، NetBIOS</td></tr>
+        <tr><td>4</td><td>Transport</td><td>ارتباط end-to-end بین پروسه‌ها، پورت‌ها، اطمینان</td><td>Segment / Datagram</td><td>TCP، UDP، QUIC (روی UDP)</td></tr>
+        <tr><td>3</td><td>Network</td><td>آدرس‌دهی منطقی و مسیریابی بین شبکه‌ها</td><td>Packet</td><td>IP، ICMP، Router</td></tr>
+        <tr><td>2</td><td>Data Link</td><td>انتقال frame در یک لینک محلی، آدرس MAC</td><td>Frame</td><td>Ethernet، Wi-Fi (802.11)، ARP*، Switch</td></tr>
+        <tr><td>1</td><td>Physical</td><td>بیت‌ها روی رسانهٔ فیزیکی</td><td>Bit</td><td>کابل، فیبر، امواج رادیویی، Hub</td></tr>
+      </tbody>
+    </table></div>
+    <p>* ARP بین لایه ۲ و ۳ قرار می‌گیرد: آدرس IP را به MAC ترجمه می‌کند.</p>
+
+    <h3>مدل TCP/IP (مدل عملی اینترنت)</h3>
+    <pre class="diagram">     OSI                         TCP/IP
+┌──────────────────┐
+│ 7 Application    │       ┌──────────────────────┐
+│ 6 Presentation   │  ───► │ Application          │  HTTP, DNS, TLS, SSH
+│ 5 Session        │       │                      │
+├──────────────────┤       ├──────────────────────┤
+│ 4 Transport      │  ───► │ Transport            │  TCP, UDP
+├──────────────────┤       ├──────────────────────┤
+│ 3 Network        │  ───► │ Internet             │  IP, ICMP
+├──────────────────┤       ├──────────────────────┤
+│ 2 Data Link      │  ───► │ Link (Network Access)│  Ethernet, Wi-Fi, ARP
+│ 1 Physical       │       │                      │
+└──────────────────┘       └──────────────────────┘</pre>
+
+    <pre class="diagram">Encapsulation (فرستنده):
+[ HTTP data ]
+[ TCP hdr | HTTP data ]                         ← Segment
+[ IP hdr | TCP hdr | HTTP data ]                ← Packet
+[ Eth hdr | IP hdr | TCP hdr | HTTP data | FCS ] ← Frame
+  → bits on the wire</pre>
+
+    <div class="callout exam"><p>تفاوت کلیدی: <strong>OSI</strong> یک مدل مرجع و آموزشی با ۷ لایه است؛ <strong>TCP/IP</strong> مدل پیاده‌سازی‌شدهٔ واقعی اینترنت با ۴ لایه است که لایه‌های ۵ تا ۷ را در یک لایهٔ Application ادغام کرده است. Router در لایه ۳، Switch در لایه ۲ و Load Balancer بسته به نوع در لایه ۴ (L4 / TCP) یا لایه ۷ (L7 / HTTP) کار می‌کند.</p></div>
+
+    <div class="callout tip"><p>تفاوت L4 و L7 Load Balancer سوال رایجی است: L4 فقط IP و پورت را می‌بیند و اتصال‌ها را توزیع می‌کند (سریع، بی‌خبر از محتوا)؛ L7 درخواست HTTP را می‌خواند و می‌تواند بر اساس path، header یا cookie مسیریابی کند، TLS را terminate کند و cache داشته باشد.</p></div>
+  </section>
+
+  <section class="lesson" id="ip" data-title="IP، آدرس‌دهی و NAT">
+    <h2>IP، آدرس‌دهی و NAT</h2>
+    <p><strong>IP (Internet Protocol)</strong> پروتکل لایهٔ شبکه است که بسته‌ها را از مبدأ به مقصد از میان چند شبکه مسیریابی می‌کند. IP <strong>best-effort</strong> و <strong>connectionless</strong> است: تضمینی برای رسیدن، ترتیب یا عدم تکرار بسته‌ها نمی‌دهد؛ این وظیفه به لایهٔ بالاتر (TCP) سپرده شده است. هر بسته یک فیلد <strong>TTL</strong> (در IPv6 با نام Hop Limit) دارد که در هر router یکی کم می‌شود تا بسته‌ها در حلقه برای همیشه نچرخند؛ ابزار <code>traceroute</code> از همین رفتار استفاده می‌کند.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>IPv4</h4><ul>
+        <li>آدرس ۳۲ بیتی، حدود ۴٫۳ میلیارد آدرس</li>
+        <li>نمایش dotted-decimal: <code>192.168.1.10</code></li>
+        <li>کمبود آدرس ← وابستگی شدید به NAT</li>
+        <li>هدر با طول متغیر و checksum</li>
+        <li>fragmentation هم در مبدأ و هم در router ممکن است</li>
+      </ul></div>
+      <div class="card"><h4>IPv6</h4><ul>
+        <li>آدرس ۱۲۸ بیتی، فضای آدرس عملاً نامحدود</li>
+        <li>نمایش hex: <code>2001:db8::1</code> (صفرهای متوالی با <code>::</code> خلاصه می‌شوند)</li>
+        <li>نیاز به NAT ندارد؛ هر دستگاه می‌تواند آدرس عمومی داشته باشد</li>
+        <li>هدر ثابت و ساده‌تر، بدون checksum</li>
+        <li>fragmentation فقط در مبدأ؛ SLAAC برای پیکربندی خودکار</li>
+      </ul></div>
+    </div>
+
+    <h3>رنج‌های خصوصی و ویژه (RFC 1918 و …)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>رنج</th><th>CIDR</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td>10.0.0.0 – 10.255.255.255</td><td><code>10.0.0.0/8</code></td><td>شبکهٔ خصوصی بزرگ (VPC ابری، شرکت‌ها)</td></tr>
+        <tr><td>172.16.0.0 – 172.31.255.255</td><td><code>172.16.0.0/12</code></td><td>خصوصی (شبکهٔ پیش‌فرض Docker از این رنج است)</td></tr>
+        <tr><td>192.168.0.0 – 192.168.255.255</td><td><code>192.168.0.0/16</code></td><td>شبکه‌های خانگی و کوچک</td></tr>
+        <tr><td>127.0.0.0/8</td><td><code>127.0.0.1</code></td><td>loopback (localhost)؛ در IPv6: <code>::1</code></td></tr>
+        <tr><td>169.254.0.0/16</td><td>—</td><td>link-local (وقتی DHCP جواب نمی‌دهد)</td></tr>
+        <tr><td>0.0.0.0</td><td>—</td><td>در bind سرور یعنی «همهٔ interfaceها»</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>CIDR</h3>
+    <p><strong>CIDR (Classless Inter-Domain Routing)</strong> با نماد <code>/n</code> می‌گوید چند بیت اول آدرس، بخش شبکه است. بقیهٔ بیت‌ها مربوط به host هستند. تعداد آدرس‌های یک بلوک <code>2^(32-n)</code> است.</p>
+    <ul>
+      <li><code>/32</code> = یک آدرس منفرد؛ <code>/24</code> = ۲۵۶ آدرس (۲۵۴ قابل‌استفاده برای host، چون آدرس network و broadcast کنار می‌روند)؛ <code>/16</code> = ۶۵۵۳۶ آدرس.</li>
+      <li>مثال: <code>192.168.1.0/24</code> یعنی <code>192.168.1.0</code> تا <code>192.168.1.255</code> با subnet mask <code>255.255.255.0</code>.</li>
+      <li><code>0.0.0.0/0</code> یعنی «همهٔ آدرس‌ها» (مثلاً در قوانین firewall یا default route).</li>
+    </ul>
+
+    <h3>NAT</h3>
+    <p><strong>NAT (Network Address Translation)</strong> در router، آدرس IP خصوصی (و معمولاً پورت مبدأ) بستهٔ خروجی را با IP عمومی خودش جایگزین می‌کند و این نگاشت را در جدولی نگه می‌دارد تا پاسخ را به دستگاه درست برگرداند. رایج‌ترین نوع آن <strong>PAT / NAT overload</strong> است که هزاران دستگاه را پشت یک IP عمومی قرار می‌دهد.</p>
+    <pre class="diagram">Laptop 192.168.1.10:51000 ──►  Router (NAT)  ──► 203.0.113.5:62001 ──► Server 93.184.216.34:443
+                               table: 62001 ⇄ 192.168.1.10:51000</pre>
+    <ul>
+      <li><strong>مزیت:</strong> صرفه‌جویی در آدرس IPv4 و پنهان ماندن ساختار شبکهٔ داخلی.</li>
+      <li><strong>عیب:</strong> اتصال ورودی به دستگاه داخلی بدون port forwarding ممکن نیست؛ peer-to-peer را سخت می‌کند (به همین دلیل WebRTC از STUN/TURN استفاده می‌کند). NAT به‌خودی‌خود ابزار امنیتی نیست و جای firewall را نمی‌گیرد.</li>
+    </ul>
+    <div class="callout note"><p>در لاگ‌های Laravel پشت reverse proxy یا load balancer، <code>$request-&gt;ip()</code> ممکن است IP پراکسی را برگرداند. برای دیدن IP واقعی کاربر باید پراکسی‌ها را trusted کنید تا هدر <code>X-Forwarded-For</code> خوانده شود (در Laravel 11+ با <code>trustProxies</code> در <code>bootstrap/app.php</code>).</p></div>
+  </section>
+
+  <section class="lesson" id="ports-sockets" data-title="پورت و سوکت">
+    <h2>پورت و سوکت</h2>
+    <p>IP فقط تا <strong>ماشین</strong> مقصد می‌رساند؛ <strong>پورت</strong> (عدد ۱۶ بیتی، ۰ تا ۶۵۵۳۵) مشخص می‌کند داده به کدام <strong>پروسه</strong> روی آن ماشین برسد. لایهٔ Transport با پورت‌ها کار می‌کند.</p>
+    <ul>
+      <li><strong>Well-known ports (0–1023):</strong> برای سرویس‌های استاندارد؛ bind کردن آن‌ها در لینوکس معمولاً دسترسی root (یا capability مناسب) می‌خواهد.</li>
+      <li><strong>Registered (1024–49151):</strong> مثل 3306 (MySQL)، 5432 (PostgreSQL)، 6379 (Redis).</li>
+      <li><strong>Ephemeral (پویا):</strong> پورت موقتی که سیستم‌عامل برای سمت client انتخاب می‌کند.</li>
+    </ul>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>پورت</th><th>سرویس</th><th>پورت</th><th>سرویس</th></tr></thead>
+      <tbody>
+        <tr><td>20/21</td><td>FTP (data/control)</td><td>443</td><td>HTTPS (TCP؛ HTTP/3 روی UDP 443)</td></tr>
+        <tr><td>22</td><td>SSH / SFTP</td><td>587 / 465</td><td>SMTP submission (STARTTLS / implicit TLS)</td></tr>
+        <tr><td>25</td><td>SMTP (بین سرورهای ایمیل)</td><td>993</td><td>IMAPS</td></tr>
+        <tr><td>53</td><td>DNS (UDP و TCP)</td><td>3306</td><td>MySQL</td></tr>
+        <tr><td>80</td><td>HTTP</td><td>5432</td><td>PostgreSQL</td></tr>
+        <tr><td>143</td><td>IMAP</td><td>5672 / 1883</td><td>AMQP (RabbitMQ) / MQTT</td></tr>
+        <tr><td>9000</td><td>PHP-FPM (پیش‌فرض رایج)</td><td>6379 / 27017</td><td>Redis / MongoDB</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>سوکت</h3>
+    <p><strong>Socket</strong> نقطهٔ پایانی ارتباط است: ترکیب <code>IP:Port</code> به‌علاوهٔ پروتکل. یک اتصال TCP به‌طور یکتا با <strong>4-tuple</strong> (یا با احتساب پروتکل 5-tuple) شناسایی می‌شود:</p>
+    <pre class="diagram">(src IP, src port, dst IP, dst port [, protocol])
+(10.0.0.5, 51734, 93.184.216.34, 443, TCP)</pre>
+    <p>به همین دلیل یک سرور روی پورت 443 می‌تواند هم‌زمان میلیون‌ها اتصال داشته باشد: پورت مقصد یکسان است، اما ترکیب آدرس و پورت client‌ها فرق دارد. در سمت سرور، سوکت <em>listening</em> با <code>accept()</code> برای هر اتصال جدید یک سوکت جدید می‌سازد.</p>
+    <pre class="diagram">Server: socket() → bind(0.0.0.0:8080) → listen() → accept() ⟲ → read/write → close()
+Client: socket() → connect(server:8080) ────────────────────────► read/write → close()</pre>
+    <div class="callout tip"><p>PHP-FPM و Nginx می‌توانند از طریق <strong>TCP socket</strong> (<code>127.0.0.1:9000</code>) یا <strong>Unix domain socket</strong> (<code>/run/php/php8.3-fpm.sock</code>) با هم حرف بزنند. Unix socket روی یک ماشین سربار کمتری دارد چون از پشتهٔ شبکه عبور نمی‌کند؛ TCP socket برای وقتی است که دو سرویس روی ماشین/کانتینر جدا هستند.</p></div>
+    <pre><code class="language-bash"># چه پروسه‌ای روی چه پورتی listen می‌کند؟
+ss -tulpn
+# اتصال‌ها بر اساس وضعیت (مثلاً تعداد TIME_WAIT)
+ss -tan state time-wait | wc -l
+# تست باز بودن پورت
+nc -zv db.internal 5432</code></pre>
+  </section>
+
+  <section class="lesson" id="tcp" data-title="TCP در عمق">
+    <h2>TCP در عمق</h2>
+    <p><strong>TCP (Transmission Control Protocol)</strong> پروتکلی <strong>connection-oriented</strong>، <strong>reliable</strong> و <strong>ordered</strong> است که یک <em>جریان بایت</em> (byte stream) دوطرفه بین دو پروسه فراهم می‌کند. TCP مفهوم «پیام» ندارد؛ مرز پیام‌ها را پروتکل لایهٔ بالاتر (مثلاً HTTP با <code>Content-Length</code>) تعیین می‌کند.</p>
+
+    <h3>Three-way handshake (برقراری اتصال)</h3>
+    <pre class="diagram">Client                                   Server (LISTEN)
+  │ ── SYN, seq=x ─────────────────────────► │
+  │                                          │ SYN_RECEIVED
+  │ ◄──────────────── SYN-ACK, seq=y, ack=x+1│
+  │ ── ACK, ack=y+1 ───────────────────────► │
+ESTABLISHED                             ESTABLISHED</pre>
+    <ul>
+      <li>هدف: هر دو طرف <strong>Initial Sequence Number</strong> خود را اعلام و تأیید کنند و پارامترهایی مثل MSS و window scaling را مذاکره کنند.</li>
+      <li>چرا سه مرحله و نه دو؟ چون هر دو طرف باید ISN خود را بفرستند <em>و</em> تأییدش را بگیرند؛ SYN-ACK دو کار را در یک بسته انجام می‌دهد. با دو مرحله، سرور نمی‌داند client شمارهٔ او را دریافت کرده یا SYN قدیمیِ تکراری بوده است.</li>
+      <li>هزینه: یک <strong>RTT</strong> قبل از ارسال داده (و با TLS، RTTهای بیشتر). به همین دلیل keep-alive و connection pooling اهمیت دارند.</li>
+    </ul>
+    <div class="callout warn"><p><strong>SYN flood:</strong> مهاجم SYN‌های زیادی می‌فرستد و ACK نهایی را نمی‌دهد تا صف اتصال‌های نیمه‌باز سرور پر شود. راه‌حل رایج <strong>SYN cookies</strong> است که سرور را از نگه‌داشتن state تا رسیدن ACK بی‌نیاز می‌کند.</p></div>
+
+    <h3>Four-way close (بستن اتصال)</h3>
+    <pre class="diagram">Active closer (A)                         Passive closer (B)
+  │ ── FIN ───────────────────────────────► │  CLOSE_WAIT
+FIN_WAIT_1                                  │  (B ممکن است هنوز داده بفرستد)
+  │ ◄─────────────────────────────── ACK ── │
+FIN_WAIT_2                                  │
+  │ ◄─────────────────────────────── FIN ── │  LAST_ACK
+  │ ── ACK ───────────────────────────────► │  CLOSED
+TIME_WAIT (2 × MSL)
+  │
+CLOSED</pre>
+    <p>چهار مرحله لازم است چون TCP <strong>full-duplex</strong> است و هر جهت جداگانه بسته می‌شود (<strong>half-close</strong>): A می‌گوید «دیگر چیزی نمی‌فرستم» ولی هنوز می‌تواند دریافت کند تا B کارش تمام شود. گاهی ACK و FIN طرف B در یک بسته ترکیب می‌شوند. بستن ناگهانی با <strong>RST</strong> انجام می‌شود (مثلاً وقتی به پورت بسته وصل می‌شوید: «Connection refused»).</p>
+
+    <h3>TIME_WAIT</h3>
+    <p>طرفی که <strong>اول</strong> اتصال را می‌بندد (active closer) به مدت <code>2 × MSL</code> (Maximum Segment Lifetime؛ در لینوکس عملاً حدود ۶۰ ثانیه) در وضعیت TIME_WAIT می‌ماند. دو دلیل دارد:</p>
+    <ol>
+      <li>اگر ACK نهایی گم شود و طرف مقابل FIN را دوباره بفرستد، بتواند دوباره ACK کند.</li>
+      <li>بسته‌های تأخیری اتصال قبلی با اتصال جدیدی که همان 4-tuple را دارد قاطی نشوند.</li>
+    </ol>
+    <div class="callout exam"><p>سناریوی کلاسیک: سرویسی که برای هر درخواست به یک API یا دیتابیس اتصال TCP جدید باز و بسته می‌کند، هزاران سوکت در TIME_WAIT جمع می‌کند و ممکن است <strong>ephemeral port</strong>ها تمام شوند (خطای <code>Cannot assign requested address</code>). راه‌حل درست: <strong>connection reuse</strong> (keep-alive، connection pool، persistent connection) — نه دستکاری کورکورانهٔ پارامترهای kernel. <code>CLOSE_WAIT</code> زیاد هم معمولاً نشانهٔ باگ برنامه است: طرف مقابل بسته ولی برنامهٔ ما سوکت را <code>close</code> نکرده است.</p></div>
+
+    <h3>سازوکارهای اطمینان (Reliability)</h3>
+    <ul>
+      <li><strong>Sequence number:</strong> هر بایت شماره دارد؛ گیرنده داده را مرتب می‌کند و تکراری‌ها را حذف می‌کند.</li>
+      <li><strong>ACK تجمعی:</strong> گیرنده اعلام می‌کند تا کدام بایت را پیوسته دریافت کرده است. SACK (Selective ACK) اجازه می‌دهد بلوک‌های دریافت‌شدهٔ ناپیوسته هم اعلام شوند.</li>
+      <li><strong>Retransmission:</strong> با timeout (RTO که بر اساس RTT اندازه‌گیری‌شده تنظیم می‌شود) یا <strong>fast retransmit</strong> پس از سه duplicate ACK.</li>
+      <li><strong>Checksum:</strong> تشخیص خرابی داده.</li>
+    </ul>
+
+    <h3>Flow control در برابر Congestion control</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Flow Control — محافظت از گیرنده</h4><ul>
+        <li>گیرنده در هر ACK اندازهٔ <strong>receive window</strong> (rwnd) را اعلام می‌کند: «فعلاً فقط این‌قدر بافر خالی دارم».</li>
+        <li>فرستنده بیش از rwnd دادهٔ تأییدنشده در مسیر نمی‌گذارد.</li>
+        <li>rwnd = 0 یعنی صبر کن (zero window).</li>
+        <li>مسئله: گیرندهٔ کند نباید غرق شود.</li>
+      </ul></div>
+      <div class="card"><h4>Congestion Control — محافظت از شبکه</h4><ul>
+        <li>فرستنده یک <strong>congestion window</strong> (cwnd) داخلی دارد؛ نرخ ارسال = min(rwnd, cwnd).</li>
+        <li><strong>Slow start:</strong> cwnd از مقدار کوچک شروع و در هر RTT تقریباً دو برابر می‌شود.</li>
+        <li><strong>Congestion avoidance (AIMD):</strong> بعد از آستانه رشد خطی؛ با مشاهدهٔ packet loss کاهش ضربی.</li>
+        <li>الگوریتم‌ها: Reno، CUBIC (پیش‌فرض لینوکس)، BBR (مدل‌محور).</li>
+      </ul></div>
+    </div>
+    <div class="callout exam"><p>جملهٔ طلایی: <strong>Flow control</strong> از سرریز شدن <em>گیرنده</em> جلوگیری می‌کند (rwnd را گیرنده تعیین می‌کند)؛ <strong>Congestion control</strong> از سرریز شدن <em>شبکه</em> جلوگیری می‌کند (cwnd را فرستنده با حدس زدن ظرفیت شبکه تعیین می‌کند). Slow start دلیل این است که اتصال تازه نمی‌تواند از همان ابتدا با حداکثر سرعت بفرستد؛ یکی دیگر از دلایل ارزشمند بودن reuse اتصال.</p></div>
+
+    <h3>Nagle و Delayed ACK</h3>
+    <p>الگوریتم <strong>Nagle</strong> بسته‌های کوچک را تجمیع می‌کند تا سربار هدر کم شود؛ در ترکیب با <strong>delayed ACK</strong> گیرنده می‌تواند تأخیرهای محسوس ایجاد کند. برنامه‌های تعاملی و کم‌تأخیر (بازی، SSH، برخی درایورهای دیتابیس) گزینهٔ <code>TCP_NODELAY</code> را فعال می‌کنند.</p>
+  </section>
+
+  <section class="lesson" id="udp" data-title="UDP و انتخاب بین TCP و UDP">
+    <h2>UDP و انتخاب بین TCP و UDP</h2>
+    <p><strong>UDP (User Datagram Protocol)</strong> پروتکلی <strong>connectionless</strong> و پیام‌محور (datagram) است: هدر ۸ بایتی (src port، dst port، length، checksum)، بدون handshake، بدون ACK، بدون ترتیب و بدون congestion control. هر datagram مستقل است و مرز پیام حفظ می‌شود.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>TCP</th><th>UDP</th></tr></thead>
+      <tbody>
+        <tr><td>اتصال</td><td>connection-oriented (handshake)</td><td>connectionless</td></tr>
+        <tr><td>اطمینان</td><td>تضمین تحویل و retransmission</td><td>بدون تضمین؛ ممکن است گم شود</td></tr>
+        <tr><td>ترتیب</td><td>حفظ می‌شود</td><td>تضمین نمی‌شود</td></tr>
+        <tr><td>مدل داده</td><td>byte stream (بدون مرز پیام)</td><td>datagram (مرز پیام حفظ می‌شود)</td></tr>
+        <tr><td>کنترل جریان/ازدحام</td><td>دارد</td><td>ندارد (برعهدهٔ برنامه)</td></tr>
+        <tr><td>هدر</td><td>۲۰ تا ۶۰ بایت</td><td>۸ بایت</td></tr>
+        <tr><td>Broadcast/Multicast</td><td>خیر</td><td>بله</td></tr>
+        <tr><td>Head-of-line blocking</td><td>دارد (یک بستهٔ گم‌شده بقیه را نگه می‌دارد)</td><td>ندارد</td></tr>
+        <tr><td>نمونه</td><td>HTTP/1.1، HTTP/2، SSH، SMTP، دیتابیس‌ها</td><td>DNS، VoIP، بازی آنلاین، استریم زنده، QUIC/HTTP/3، DHCP، syslog، StatsD</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>چه زمانی کدام؟</h3>
+    <ul>
+      <li><strong>TCP:</strong> وقتی صحت و کامل بودن داده حیاتی است: تراکنش مالی، API، انتقال فایل، ایمیل، کوئری دیتابیس.</li>
+      <li><strong>UDP:</strong> وقتی <em>تازگی</em> داده از <em>کامل بودن</em> مهم‌تر است (فریم صوتی که دیر برسد بی‌ارزش است)، وقتی پیام‌ها کوچک و مستقل‌اند (DNS: یک سوال، یک جواب)، یا وقتی می‌خواهید پروتکل اطمینان اختصاصی خودتان را در فضای کاربر بسازید (QUIC).</li>
+    </ul>
+    <div class="callout note"><p>DNS به‌طور پیش‌فرض از UDP استفاده می‌کند، اما برای پاسخ‌های بزرگ (truncate شده) و zone transfer به TCP سوییچ می‌کند. پس «DNS فقط UDP است» پاسخ کاملی نیست.</p></div>
+    <div class="callout tip"><p>مثال بک‌اندی: ارسال metric به StatsD روی UDP انجام می‌شود تا اگر سرور metric در دسترس نبود، درخواست کاربر کند نشود (fire-and-forget). از دست رفتن چند metric قابل‌قبول است؛ کند شدن API نه.</p></div>
+  </section>
+
+  <section class="lesson" id="dns" data-title="DNS">
+    <h2>DNS</h2>
+    <p><strong>DNS (Domain Name System)</strong> یک پایگاه‌دادهٔ <strong>توزیع‌شده، سلسله‌مراتبی و cache‌شونده</strong> است که نام‌های قابل‌خواندن (مثل <code>api.example.com</code>) را به رکوردهایی مثل آدرس IP ترجمه می‌کند. سلسله‌مراتب: Root (<code>.</code>) ← TLD (<code>com</code>) ← دامنهٔ دوم (<code>example.com</code>) ← زیردامنه‌ها.</p>
+
+    <h3>مراحل resolve شدن یک نام</h3>
+    <pre class="diagram">Browser cache → OS cache / hosts file → Stub resolver
+        │
+        ▼  (recursive query)
+Recursive Resolver (ISP، 1.1.1.1، 8.8.8.8)   ← اگر در cache داشت، همین‌جا جواب می‌دهد
+        │ iterative queries:
+        ├──► Root server:  "com را از این NSها بپرس"
+        ├──► .com TLD:     "example.com را از ns1.example-dns.net بپرس"
+        └──► Authoritative NS: "api.example.com A 93.184.216.34  TTL=300"
+        │
+        ▼
+پاسخ به client + cache در همهٔ لایه‌ها به اندازهٔ TTL</pre>
+    <ul>
+      <li><strong>Recursive query:</strong> client از resolver می‌خواهد پاسخ نهایی را بیاورد.</li>
+      <li><strong>Iterative query:</strong> resolver قدم‌به‌قدم از root و TLD ارجاع (referral) می‌گیرد.</li>
+      <li><strong>Authoritative server:</strong> منبع اصلی رکوردهای یک zone؛ پاسخ او «authoritative» است و پاسخ resolver از cache «non-authoritative».</li>
+    </ul>
+
+    <h3>انواع رکورد</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>رکورد</th><th>کاربرد</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td><code>A</code></td><td>نام ← IPv4</td><td><code>api.example.com. 300 IN A 93.184.216.34</code></td></tr>
+        <tr><td><code>AAAA</code></td><td>نام ← IPv6</td><td><code>api.example.com. 300 IN AAAA 2001:db8::1</code></td></tr>
+        <tr><td><code>CNAME</code></td><td>نام مستعار به نام دیگر (canonical)</td><td><code>www.example.com. CNAME example.com.</code></td></tr>
+        <tr><td><code>MX</code></td><td>سرور ایمیل دامنه با اولویت (عدد کمتر = اولویت بیشتر)</td><td><code>example.com. MX 10 mail.example.com.</code></td></tr>
+        <tr><td><code>TXT</code></td><td>متن دلخواه: SPF، DKIM، DMARC، تأیید مالکیت دامنه</td><td><code>"v=spf1 include:_spf.google.com ~all"</code></td></tr>
+        <tr><td><code>NS</code></td><td>name serverهای authoritative یک zone</td><td><code>example.com. NS ns1.provider.net.</code></td></tr>
+        <tr><td><code>SOA</code></td><td>اطلاعات مدیریتی zone (serial، refresh، TTL منفی)</td><td>—</td></tr>
+        <tr><td><code>PTR</code></td><td>reverse DNS: IP ← نام (مهم برای اعتبار سرور ایمیل)</td><td>—</td></tr>
+        <tr><td><code>SRV</code> / <code>CAA</code></td><td>محل سرویس با پورت / CAهای مجاز برای صدور گواهی</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>CNAME نمی‌تواند در <strong>apex</strong> دامنه (<code>example.com</code> خالی) کنار رکوردهای دیگری مثل NS و SOA بنشیند و یک نام که CNAME دارد نباید رکورد دیگری داشته باشد. برای همین برخی ارائه‌دهنده‌ها رکوردهای غیراستاندارد ALIAS/ANAME یا «CNAME flattening» ارائه می‌کنند.</p></div>
+
+    <h3>TTL و caching</h3>
+    <p><strong>TTL</strong> (به ثانیه) می‌گوید یک پاسخ چه مدت می‌تواند در cache بماند. TTL بالا یعنی بار کمتر و سرعت بیشتر، ولی تغییرات دیرتر منتشر می‌شوند؛ TTL پایین برعکس. پاسخ‌های منفی (NXDOMAIN) هم cache می‌شوند.</p>
+    <div class="callout exam"><p>سناریوی مهاجرت سرور: چند روز قبل از جابه‌جایی، TTL رکورد را مثلاً از ۸۶۴۰۰ به ۳۰۰ کاهش دهید و صبر کنید تا TTL قدیمی منقضی شود؛ سپس IP را عوض کنید و بعد از پایدار شدن، TTL را دوباره بالا ببرید. «DNS propagation» در واقع منقضی شدن cacheها بر اساس TTL قبلی است، نه انتشار فعالانه.</p></div>
+    <pre><code class="language-bash">dig api.example.com A +short
+dig example.com MX
+dig +trace example.com          # مسیر کامل از root
+dig @8.8.8.8 example.com TXT     # پرسیدن از resolver مشخص
+nslookup example.com</code></pre>
+    <div class="callout note"><p>DNS سنتی رمزنگاری‌نشده است؛ <strong>DoH</strong> (DNS over HTTPS) و <strong>DoT</strong> (DNS over TLS) حریم خصوصی را بهتر می‌کنند و <strong>DNSSEC</strong> با امضای دیجیتال، صحت پاسخ را تضمین می‌کند (نه محرمانگی را). حملهٔ <strong>DNS cache poisoning</strong> هدف DNSSEC است.</p></div>
+  </section>
+
+  <section class="lesson" id="http-evolution" data-title="تکامل HTTP: از 1.0 تا 3">
+    <h2>تکامل HTTP: از 1.0 تا 3</h2>
+    <p><strong>HTTP</strong> پروتکل لایهٔ کاربرد، <strong>stateless</strong> و مبتنی بر request/response است. معنای (semantics) آن — متدها، status codeها، هدرها — در همهٔ نسخه‌ها یکسان است؛ آنچه تغییر کرده <em>نحوهٔ انتقال</em> پیام‌ها روی شبکه است.</p>
+
+    <h3>HTTP/1.0</h3>
+    <ul>
+      <li>به‌طور پیش‌فرض برای <strong>هر درخواست یک اتصال TCP جدید</strong> باز و بعد بسته می‌شد ← هزینهٔ handshake و slow start برای هر تصویر و فایل CSS.</li>
+      <li>هدر <code>Host</code> اجباری نبود، پس virtual hosting (چند سایت روی یک IP) دشوار بود.</li>
+    </ul>
+
+    <h3>HTTP/1.1</h3>
+    <ul>
+      <li><strong>Persistent connection (keep-alive)</strong> پیش‌فرض شد: چند درخواست پشت‌سرهم روی یک اتصال.</li>
+      <li>هدر <code>Host</code> اجباری شد ← name-based virtual hosting.</li>
+      <li><strong>Chunked transfer encoding</strong> برای پاسخ‌هایی که طولشان از قبل معلوم نیست؛ ابزارهای cache مثل <code>ETag</code>، <code>If-None-Match</code> و <code>Cache-Control</code>؛ درخواست بازه با <code>Range</code>.</li>
+      <li><strong>Pipelining</strong> تعریف شد (ارسال چند درخواست بدون انتظار)، اما پاسخ‌ها باید <em>به ترتیب</em> برگردند؛ عملاً مرورگرها آن را غیرفعال کردند.</li>
+      <li>مشکل اصلی: <strong>Head-of-Line (HOL) blocking در سطح application</strong> — روی هر اتصال در هر لحظه فقط یک درخواست/پاسخ؛ یک پاسخ کند بقیه را معطل می‌کند. مرورگرها برای دور زدنش حدود ۶ اتصال موازی به هر origin باز می‌کنند و توسعه‌دهنده‌ها به ترفندهایی مثل domain sharding، sprite و bundle کردن فایل‌ها روی آوردند.</li>
+      <li>هدرها متنی و تکراری‌اند (cookieها در هر درخواست دوباره فرستاده می‌شوند).</li>
+    </ul>
+
+    <h3>HTTP/2</h3>
+    <ul>
+      <li><strong>Binary framing layer:</strong> پیام‌ها به frameهای دودویی (HEADERS، DATA، SETTINGS، …) شکسته می‌شوند؛ parse کردن آن کارآمدتر و کم‌خطاتر از متن است.</li>
+      <li><strong>Multiplexing:</strong> روی <em>یک</em> اتصال TCP، چندین <strong>stream</strong> هم‌زمان؛ frameهای streamهای مختلف درهم ارسال می‌شوند. HOL blocking سطح HTTP حل شد و نیاز به ۶ اتصال و domain sharding از بین رفت.</li>
+      <li><strong>HPACK:</strong> فشرده‌سازی هدرها با جدول static و dynamic و Huffman coding؛ هدرهای تکراری تقریباً رایگان می‌شوند. (فشرده‌سازی عمومی مثل gzip برای هدرها به دلیل حملهٔ CRIME کنار گذاشته شد.)</li>
+      <li><strong>Stream prioritization</strong> و <strong>flow control در سطح stream</strong>.</li>
+      <li><strong>Server Push:</strong> سرور می‌توانست منابع را قبل از درخواست بفرستد؛ ولی عملاً بهره‌وری کمی داشت (cache مرورگر را نادیده می‌گرفت) و <strong>Chrome آن را حذف کرد</strong>. جایگزین پیشنهادی: <code>103 Early Hints</code> و <code>&lt;link rel="preload"&gt;</code>.</li>
+      <li>در عمل مرورگرها HTTP/2 را فقط روی TLS پیاده کرده‌اند (مذاکره با <strong>ALPN</strong>).</li>
+      <li><strong>مشکل باقی‌مانده:</strong> HOL blocking در <em>سطح TCP</em>. چون همه streamها روی یک اتصال TCP هستند، گم شدن یک بسته همهٔ streamها را تا retransmit متوقف می‌کند؛ در شبکه‌های پرخطا (موبایل) گاهی از HTTP/1.1 با چند اتصال هم بدتر است.</li>
+    </ul>
+
+    <h3>HTTP/3 و QUIC</h3>
+    <ul>
+      <li>HTTP/3 روی <strong>QUIC</strong> اجرا می‌شود و QUIC روی <strong>UDP</strong>. QUIC قابلیت‌های reliability، ترتیب، congestion control و رمزنگاری را خودش در فضای کاربر پیاده می‌کند.</li>
+      <li><strong>Streamهای مستقل در لایهٔ transport:</strong> گم شدن بسته فقط همان stream را معطل می‌کند ← HOL blocking سطح TCP هم حذف شد.</li>
+      <li><strong>TLS 1.3 درون QUIC</strong> ادغام شده و رمزنگاری اجباری است؛ handshake ترکیبی transport و رمزنگاری در <strong>1-RTT</strong> و برای اتصال‌های تکراری <strong>0-RTT</strong>.</li>
+      <li><strong>Connection migration:</strong> اتصال با Connection ID شناسایی می‌شود نه 4-tuple؛ با عوض شدن شبکه (Wi-Fi ← 4G) اتصال قطع نمی‌شود.</li>
+      <li>فشرده‌سازی هدر با <strong>QPACK</strong> (نسخهٔ سازگار HPACK با تحویل بی‌ترتیب).</li>
+      <li>کشف: سرور با هدر <code>Alt-Svc: h3=":443"</code> یا رکورد DNS از نوع HTTPS اعلام می‌کند که HTTP/3 را پشتیبانی می‌کند؛ اگر UDP مسدود باشد، به HTTP/2 برمی‌گردد.</li>
+    </ul>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>HTTP/1.1</th><th>HTTP/2</th><th>HTTP/3</th></tr></thead>
+      <tbody>
+        <tr><td>Transport</td><td>TCP</td><td>TCP</td><td>QUIC روی UDP</td></tr>
+        <tr><td>قالب</td><td>متنی</td><td>binary frames</td><td>binary frames</td></tr>
+        <tr><td>هم‌زمانی روی یک اتصال</td><td>خیر (یک درخواست در لحظه)</td><td>multiplexing</td><td>multiplexing با streamهای مستقل</td></tr>
+        <tr><td>HOL blocking</td><td>سطح HTTP و TCP</td><td>فقط سطح TCP</td><td>ندارد (بین streamها)</td></tr>
+        <tr><td>فشرده‌سازی هدر</td><td>ندارد</td><td>HPACK</td><td>QPACK</td></tr>
+        <tr><td>رمزنگاری</td><td>اختیاری</td><td>عملاً اجباری (مرورگرها)</td><td>اجباری (TLS 1.3)</td></tr>
+        <tr><td>Handshake تا اولین داده (با TLS 1.3)</td><td>TCP 1-RTT + TLS 1-RTT</td><td>TCP 1-RTT + TLS 1-RTT</td><td>1-RTT (یا 0-RTT)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>سوال محبوب: «HTTP/2 چه مشکلی از HTTP/1.1 را حل کرد و HTTP/3 چه مشکلی از HTTP/2؟» پاسخ کوتاه: HTTP/2 با <strong>multiplexing</strong> مشکل HOL blocking سطح application را حل کرد؛ HTTP/3 با جایگزین کردن TCP با <strong>QUIC</strong>، HOL blocking سطح transport را حل کرد و زمان handshake را کاهش داد.</p></div>
+    <div class="callout tip"><p>در بک‌اند معمولاً HTTP/2 یا HTTP/3 در لبه (Nginx، CDN، load balancer) terminate می‌شود و ارتباط داخلی تا PHP-FPM با FastCGI یا HTTP/1.1 است. پس فعال‌کردن HTTP/2 معمولاً کاری در سطح وب‌سرور است، نه Laravel.</p></div>
+  </section>
+
+  <section class="lesson" id="tls" data-title="TLS و HTTPS">
+    <h2>TLS و HTTPS</h2>
+    <p><strong>TLS (Transport Layer Security)</strong> پروتکلی بین لایهٔ Transport و Application است که سه تضمین می‌دهد: <strong>محرمانگی</strong> (encryption)، <strong>یکپارچگی</strong> (integrity — داده در مسیر دست‌کاری نشده) و <strong>احراز هویت</strong> (authentication — سرور همانی است که ادعا می‌کند، و در mTLS، client هم). <strong>HTTPS</strong> یعنی HTTP روی TLS. SSL نام نسخه‌های قدیمی و ناامن آن است؛ امروز فقط TLS 1.2 و 1.3 باید فعال باشند.</p>
+
+    <h3>رمزنگاری متقارن و نامتقارن</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Symmetric (متقارن)</h4><ul>
+        <li>یک کلید مشترک برای رمز و رمزگشایی</li>
+        <li>بسیار سریع؛ مناسب حجم زیاد داده</li>
+        <li>مثال: AES-GCM، ChaCha20-Poly1305</li>
+        <li>مشکل: چطور کلید را امن به طرف مقابل برسانیم؟</li>
+      </ul></div>
+      <div class="card"><h4>Asymmetric (نامتقارن)</h4><ul>
+        <li>جفت کلید عمومی/خصوصی</li>
+        <li>کند؛ برای تبادل کلید و امضای دیجیتال</li>
+        <li>مثال: RSA، ECDSA، Ed25519؛ تبادل کلید: (EC)DHE</li>
+        <li>مشکل توزیع کلید را حل می‌کند</li>
+      </ul></div>
+    </div>
+    <p>TLS <strong>ترکیبی (hybrid)</strong> است: در handshake با رمزنگاری نامتقارن، سرور احراز هویت می‌شود و یک کلید نشست مشترک توافق می‌شود؛ سپس همهٔ داده‌ها با رمزنگاری متقارن (سریع) و AEAD منتقل می‌شوند.</p>
+
+    <h3>گواهی و زنجیرهٔ اعتماد (CA chain)</h3>
+    <pre class="diagram">Root CA (self-signed، از قبل در trust store سیستم‌عامل/مرورگر)
+   │ signs
+   ▼
+Intermediate CA
+   │ signs
+   ▼
+Leaf certificate: CN/SAN = api.example.com، public key، اعتبار تا …، امضای Intermediate</pre>
+    <ul>
+      <li>گواهی (X.509) کلید عمومی سرور را به نام دامنه گره می‌زند و توسط یک <strong>CA</strong> امضا می‌شود.</li>
+      <li>client زنجیره را از leaf تا یک root مورد اعتماد بررسی می‌کند: امضای هر حلقه، تاریخ اعتبار، تطابق دامنه با <strong>SAN</strong>، وضعیت ابطال (OCSP/CRL).</li>
+      <li>سرور باید leaf <em>و</em> intermediateها را بفرستد (fullchain)؛ فراموش کردن intermediate خطای رایجی است که در برخی clientها (مثلاً curl یا اپ موبایل) خطا می‌دهد، در حالی که مرورگر ممکن است به‌خاطر cache مشکل را نشان ندهد.</li>
+      <li>Let's Encrypt با پروتکل <strong>ACME</strong> گواهی رایگان و خودکار صادر می‌کند.</li>
+      <li><strong>SNI</strong>: client نام دامنه را در ClientHello می‌فرستد تا سرور با یک IP بتواند گواهی سایت درست را ارائه کند.</li>
+    </ul>
+
+    <h3>Handshake در TLS 1.3 (ساده‌شده)</h3>
+    <pre class="diagram">Client                                              Server
+  │ ClientHello: نسخه‌ها، cipher suiteها، key_share (DH public)، SNI، ALPN ─► │
+  │ ◄─ ServerHello: key_share سرور                                          │
+  │ ◄─ {EncryptedExtensions, Certificate, CertificateVerify, Finished}      │
+  │    (از این‌جا همه‌چیز رمز شده است)                                      │
+  │ {Finished} + اولین درخواست HTTP ──────────────────────────────────────► │
+  ◄═══════════ Application data (AES-GCM / ChaCha20) ═══════════════════════►
+  مجموعاً 1-RTT</pre>
+    <ul>
+      <li>هر دو طرف با <strong>ECDHE</strong> یک secret مشترک می‌سازند بدون اینکه آن را روی شبکه بفرستند.</li>
+      <li>سرور با <strong>CertificateVerify</strong> (امضای transcript با کلید خصوصی) ثابت می‌کند صاحب کلید خصوصی گواهی است.</li>
+      <li><strong>Finished</strong> یک MAC روی کل handshake است تا دست‌کاری مذاکره (downgrade) شناسایی شود.</li>
+    </ul>
+
+    <h3>بهبودهای TLS 1.3 نسبت به 1.2</h3>
+    <ul>
+      <li>handshake کامل در <strong>1-RTT</strong> (به‌جای 2-RTT) و امکان <strong>0-RTT</strong> برای resumption.</li>
+      <li>حذف الگوریتم‌های قدیمی و ناامن: RSA key exchange، CBC، RC4، SHA-1، MD5، فشرده‌سازی و renegotiation.</li>
+      <li><strong>Forward secrecy اجباری</strong>: فقط (EC)DHE موقت؛ اگر کلید خصوصی سرور بعداً لو برود، ترافیک ضبط‌شدهٔ قبلی قابل رمزگشایی نیست.</li>
+      <li>رمزنگاری بخش بیشتری از handshake (از جمله گواهی سرور).</li>
+      <li>فقط چند cipher suite امن AEAD.</li>
+    </ul>
+    <div class="callout warn"><p>دادهٔ <strong>0-RTT</strong> در برابر <strong>replay attack</strong> محافظت ندارد؛ فقط برای درخواست‌های idempotent (مثل GET) مناسب است، نه POST پرداخت.</p></div>
+    <div class="callout exam"><p>اگر پرسیدند «HTTPS چطور از حملهٔ Man-in-the-Middle جلوگیری می‌کند؟»: مهاجم می‌تواند ترافیک را رهگیری کند، اما نمی‌تواند گواهی معتبری برای دامنه ارائه دهد که توسط CA مورد اعتماد امضا شده باشد و کلید خصوصی‌اش را ندارد؛ پس CertificateVerify را نمی‌تواند بسازد. یکپارچگی AEAD هم جلوی تغییر داده را می‌گیرد. <strong>HSTS</strong> (<code>Strict-Transport-Security</code>) نیز مانع downgrade به HTTP (SSL stripping) می‌شود.</p></div>
+    <div class="callout note"><p><strong>mTLS</strong> (mutual TLS): client هم گواهی ارائه می‌دهد. در ارتباط سرویس‌به‌سرویس (service mesh، اتصال به بانک یا درگاه پرداخت) کاربرد دارد.</p></div>
+  </section>
+
+  <section class="lesson" id="realtime" data-title="WebSocket، SSE و Long Polling">
+    <h2>WebSocket، SSE و Long Polling</h2>
+    <p>HTTP کلاسیک فقط از client شروع می‌شود. برای اینکه سرور بتواند داده را به‌محض آماده شدن <strong>push</strong> کند، چند روش داریم.</p>
+
+    <h3>WebSocket</h3>
+    <p><strong>WebSocket</strong> یک کانال <strong>full-duplex و پایدار</strong> روی یک اتصال TCP است که با یک درخواست HTTP/1.1 و مکانیزم <strong>Upgrade</strong> شروع می‌شود و بعد پروتکل از HTTP به frameهای WebSocket تغییر می‌کند.</p>
+    <pre><code class="language-http">GET /chat HTTP/1.1
+Host: ws.example.com
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+Sec-WebSocket-Version: 13
+Origin: https://app.example.com
+
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=</code></pre>
+    <ul>
+      <li><code>Sec-WebSocket-Accept</code> = هش SHA-1 کلید client به‌علاوهٔ یک GUID ثابت، به‌صورت base64؛ هدفش اثبات این است که سرور واقعاً WebSocket می‌فهمد (نه امنیت).</li>
+      <li>آدرس‌ها: <code>ws://</code> و نسخهٔ امن <code>wss://</code> (روی TLS؛ در production همیشه wss).</li>
+      <li>frameهای متنی/باینری، ping/pong برای زنده نگه داشتن، frame بستن.</li>
+      <li>کاربرد: چت، بازی چندنفره، ویرایش هم‌زمان، داشبورد معاملاتی، نوتیفیکیشن دوطرفه.</li>
+    </ul>
+    <div class="callout warn"><p>WebSocket تحت <strong>Same-Origin Policy/CORS</strong> نیست؛ سرور باید خودش هدر <code>Origin</code> را بررسی کند و احراز هویت (توکن یا cookie) انجام دهد، وگرنه در معرض <strong>Cross-Site WebSocket Hijacking</strong> است. همچنین چون اتصال‌ها stateful و طولانی‌اند، load balancer باید از Upgrade پشتیبانی کند (در Nginx هدرهای <code>Upgrade</code> و <code>Connection</code> باید proxy شوند) و scale افقی به یک pub/sub مشترک (مثل Redis) نیاز دارد.</p></div>
+
+    <h3>Server-Sent Events (SSE)</h3>
+    <p>یک پاسخ HTTP معمولی با <code>Content-Type: text/event-stream</code> که باز می‌ماند و سرور رویدادهای متنی را پشت سرهم در آن می‌نویسد. <strong>یک‌طرفه</strong> (سرور ← client) است؛ در مرورگر با <code>EventSource</code> مصرف می‌شود، <strong>reconnect خودکار</strong> و <code>Last-Event-ID</code> دارد و از زیرساخت HTTP معمولی (auth، proxy، HTTP/2) استفاده می‌کند. برای نوتیفیکیشن، فید زنده و استریم خروجی LLM عالی است.</p>
+    <pre><code class="language-plaintext">event: order.updated
+id: 42
+data: {"id":17,"status":"shipped"}
+
+</code></pre>
+
+    <h3>Polling و Long Polling</h3>
+    <ul>
+      <li><strong>Short polling:</strong> client هر N ثانیه درخواست می‌دهد؛ ساده ولی پرهزینه و با تأخیر تا N ثانیه.</li>
+      <li><strong>Long polling:</strong> سرور درخواست را باز نگه می‌دارد تا داده‌ای برسد (یا timeout)، پاسخ می‌دهد و client فوراً درخواست بعدی را می‌فرستد. سازگاری بالا، ولی سربار هدر و نگه‌داشتن worker برای هر client. در PHP-FPM سنتی، نگه داشتن درخواست باز یعنی اشغال یک worker — هزینهٔ سنگینی دارد.</li>
+    </ul>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>Short Polling</th><th>Long Polling</th><th>SSE</th><th>WebSocket</th></tr></thead>
+      <tbody>
+        <tr><td>جهت</td><td>client ← سرور (pull)</td><td>شبه push</td><td>سرور ← client</td><td>دوطرفه</td></tr>
+        <tr><td>پروتکل</td><td>HTTP</td><td>HTTP</td><td>HTTP</td><td>WS روی TCP (پس از Upgrade)</td></tr>
+        <tr><td>تأخیر</td><td>زیاد</td><td>کم</td><td>کم</td><td>خیلی کم</td></tr>
+        <tr><td>سربار</td><td>زیاد</td><td>متوسط</td><td>کم</td><td>خیلی کم (frame کوچک)</td></tr>
+        <tr><td>داده باینری</td><td>بله</td><td>بله</td><td>خیر (فقط متن)</td><td>بله</td></tr>
+        <tr><td>Reconnect خودکار</td><td>—</td><td>دستی</td><td>بله</td><td>دستی</td></tr>
+        <tr><td>مناسب برای</td><td>داده‌ای که به‌ندرت عوض می‌شود</td><td>fallback، محیط محدود</td><td>نوتیفیکیشن، فید، استریم</td><td>چت، بازی، همکاری هم‌زمان</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>در اکوسیستم Laravel، <strong>Broadcasting</strong> رویدادها را به یک سرور WebSocket می‌فرستد؛ <strong>Laravel Reverb</strong> سرور WebSocket رسمی و first-party است (سازگار با پروتکل Pusher) و در frontend با <strong>Laravel Echo</strong> مصرف می‌شود. خود PHP-FPM اتصال پایدار نگه نمی‌دارد؛ Reverb یک پروسهٔ long-running جداگانه است.</p></div>
+  </section>
+
+  <section class="lesson" id="grpc" data-title="gRPC و Protocol Buffers">
+    <h2>gRPC و Protocol Buffers</h2>
+    <p><strong>gRPC</strong> یک فریم‌ورک RPC (Remote Procedure Call) است که روی <strong>HTTP/2</strong> اجرا می‌شود و به‌طور پیش‌فرض از <strong>Protocol Buffers (protobuf)</strong> برای تعریف قرارداد و serialize کردن داده استفاده می‌کند. ایده: فراخوانی متد روی سرویس دیگر، مثل فراخوانی تابع محلی، با قرارداد قوی‌تایپ.</p>
+    <pre><code class="language-plaintext">// user.proto
+syntax = "proto3";
+package user.v1;
+
+service UserService {
+  rpc GetUser (GetUserRequest) returns (User);                 // unary
+  rpc ListUsers (ListUsersRequest) returns (stream User);      // server streaming
+  rpc Chat (stream ChatMessage) returns (stream ChatMessage);  // bidirectional
+}
+
+message GetUserRequest { int64 id = 1; }
+message User {
+  int64  id    = 1;
+  string name  = 2;
+  string email = 3;
+}</code></pre>
+    <ul>
+      <li>از فایل <code>.proto</code> با <code>protoc</code> کد client/server برای زبان‌های مختلف تولید می‌شود ← قرارداد واحد بین تیم‌ها.</li>
+      <li>protobuf <strong>باینری و فشرده</strong> است؛ نام فیلدها منتقل نمی‌شود، فقط <strong>شمارهٔ فیلد</strong> (tag). پس serialize/deserialize سریع‌تر و payload کوچک‌تر از JSON است.</li>
+      <li><strong>سازگاری نسخه:</strong> شمارهٔ فیلدها را هرگز عوض نکنید یا دوباره استفاده نکنید؛ فیلد حذف‌شده را <code>reserved</code> کنید. افزودن فیلد جدید سازگار با نسخهٔ قبل است.</li>
+      <li>چهار نوع RPC: unary، server streaming، client streaming، bidirectional streaming (به لطف streamهای HTTP/2).</li>
+      <li>امکانات داخلی: deadline/timeout، cancellation، metadata (مثل هدر)، status codeهای مخصوص خودش (<code>NOT_FOUND</code>، <code>UNAVAILABLE</code>، …).</li>
+    </ul>
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul>
+        <li>کارایی بالا و تأخیر کم</li>
+        <li>قرارداد strongly-typed و تولید کد</li>
+        <li>streaming دوطرفه</li>
+        <li>عالی برای ارتباط داخلی microserviceها</li>
+      </ul></div>
+      <div class="card"><h4>معایب</h4><ul>
+        <li>مرورگر مستقیم پشتیبانی نمی‌کند (نیاز به gRPC-Web و proxy)</li>
+        <li>باینری؛ دیباگ با curl سخت‌تر (ابزارهایی مثل grpcurl لازم است)</li>
+        <li>cache کردن HTTP مثل REST ساده نیست</li>
+        <li>در PHP-FPM فقط client معمول است؛ سرور gRPC به runtime long-running (مثل RoadRunner) نیاز دارد</li>
+      </ul></div>
+    </div>
+    <div class="callout exam"><p>جمع‌بندی برای مقایسه: <strong>REST/JSON</strong> برای APIهای عمومی و مرورگر (ساده، خوانا، cache‌پذیر)؛ <strong>gRPC</strong> برای ارتباط داخلی سرویس‌به‌سرویس با حجم و کارایی بالا و قرارداد سخت‌گیرانه.</p></div>
+  </section>
+
+  <section class="lesson" id="messaging" data-title="پروتکل‌های پیام‌رسانی: AMQP و MQTT">
+    <h2>پروتکل‌های پیام‌رسانی: AMQP و MQTT</h2>
+    <p>در معماری <strong>asynchronous</strong>، تولیدکننده (producer) پیام را به یک <strong>broker</strong> می‌دهد و مصرف‌کننده (consumer) هر وقت آماده بود آن را برمی‌دارد. این کار باعث <strong>decoupling</strong>، جذب بار ناگهانی (buffering) و تحمل خطا می‌شود.</p>
+
+    <h3>AMQP 0-9-1 (RabbitMQ)</h3>
+    <pre class="diagram">Producer ──publish(routing_key)──► Exchange ──binding──► Queue ──► Consumer (ack)
+                                      │
+                                      └─binding──► Queue ──► Consumer</pre>
+    <ul>
+      <li><strong>Exchange</strong> پیام را بر اساس نوعش به queueها هدایت می‌کند: <code>direct</code> (تطابق دقیق routing key)، <code>fanout</code> (همهٔ queueهای متصل)، <code>topic</code> (الگو مثل <code>order.*</code>، <code>order.#</code>)، <code>headers</code>.</li>
+      <li><strong>Acknowledgement:</strong> consumer بعد از پردازش موفق <code>ack</code> می‌دهد؛ اگر بدون ack قطع شود، پیام دوباره تحویل داده می‌شود ← تحویل <strong>at-least-once</strong>، پس consumer باید <strong>idempotent</strong> باشد.</li>
+      <li>صف و پیام <strong>durable/persistent</strong> برای ماندگاری پس از restart broker؛ <strong>prefetch (QoS)</strong> برای محدود کردن پیام‌های در حال پردازش هر consumer؛ <strong>Dead Letter Exchange</strong> برای پیام‌های رد‌شده یا منقضی.</li>
+      <li>روی TCP، پورت 5672 (و 5671 با TLS)؛ اتصال واحد با چند <strong>channel</strong> سبک.</li>
+    </ul>
+
+    <h3>MQTT</h3>
+    <ul>
+      <li>پروتکل <strong>pub/sub سبک</strong> برای IoT و شبکه‌های کم‌پهنای‌باند و ناپایدار؛ روی TCP (پورت 1883، با TLS 8883) و هدر حداقل ۲ بایت.</li>
+      <li><strong>Topicهای سلسله‌مراتبی</strong>: <code>home/kitchen/temp</code>؛ wildcardها: <code>+</code> (یک سطح) و <code>#</code> (چند سطح).</li>
+      <li><strong>QoS:</strong> 0 = at most once (fire-and-forget)، 1 = at least once (ممکن است تکراری شود)، 2 = exactly once (handshake چهارمرحله‌ای، پرهزینه‌تر).</li>
+      <li><strong>Retained message</strong> (آخرین مقدار برای subscriber جدید)، <strong>Last Will</strong> (پیامی که broker در صورت قطع ناگهانی client منتشر می‌کند)، <strong>keep-alive</strong>.</li>
+    </ul>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>AMQP (RabbitMQ)</th><th>MQTT</th><th>Kafka (پروتکل اختصاصی)</th></tr></thead>
+      <tbody>
+        <tr><td>مدل</td><td>queue + exchange، مسیریابی غنی</td><td>pub/sub روی topic</td><td>log توزیع‌شده و پارتیشن‌بندی‌شده</td></tr>
+        <tr><td>هدف</td><td>صف کار سازمانی، task queue</td><td>IoT، موبایل، دستگاه‌های محدود</td><td>event streaming با throughput بالا و replay</td></tr>
+        <tr><td>نگه‌داری پیام</td><td>تا ack (سپس حذف)</td><td>معمولاً کوتاه (به‌جز retained)</td><td>بر اساس retention (قابل بازخوانی)</td></tr>
+        <tr><td>سنگینی</td><td>متوسط</td><td>بسیار سبک</td><td>سنگین (زیرساخت کلاستری)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>Queueهای Laravel (<code>ShouldQueue</code>) معمولاً روی Redis یا دیتابیس اجرا می‌شوند؛ برای RabbitMQ پکیج‌های جامعه وجود دارد. مفاهیم یکسان‌اند: retry، backoff، failed jobs (معادل DLQ) و ضرورت idempotent بودن jobها.</p></div>
+  </section>
+
+  <section class="lesson" id="other-protocols" data-title="SMTP، IMAP، SSH، FTP و SFTP">
+    <h2>SMTP، IMAP، SSH، FTP و SFTP</h2>
+
+    <h3>ایمیل: SMTP، IMAP، POP3</h3>
+    <pre class="diagram">Laravel App ──SMTP (587, STARTTLS)──► Mail Submission (SES/Mailgun/Postfix)
+                                          │ SMTP (25) — بر اساس رکورد MX دامنهٔ گیرنده
+                                          ▼
+                                    MX server گیرنده ──► Mailbox
+                                                          ▲
+                              Mail client ──IMAP (993)────┘</pre>
+    <ul>
+      <li><strong>SMTP</strong> فقط برای <em>ارسال و انتقال</em> ایمیل است (push). دستورات متنی: <code>EHLO</code>، <code>MAIL FROM</code>، <code>RCPT TO</code>، <code>DATA</code>، <code>QUIT</code>.</li>
+      <li>پورت‌ها: 25 بین سرورها؛ <strong>587</strong> برای submission از برنامه/کاربر با <strong>STARTTLS</strong> (ارتقای اتصال متنی به TLS)؛ <strong>465</strong> با TLS از ابتدا (implicit TLS).</li>
+      <li><strong>IMAP</strong> ایمیل‌ها را روی سرور نگه می‌دارد و بین چند دستگاه همگام می‌کند (پوشه، وضعیت خوانده‌شده). <strong>POP3</strong> معمولاً دانلود و حذف از سرور است — برای چند دستگاه مناسب نیست.</li>
+      <li>تحویل‌پذیری (deliverability): <strong>SPF</strong> (کدام IPها مجاز به ارسال از طرف دامنه‌اند)، <strong>DKIM</strong> (امضای دیجیتال ایمیل با کلید عمومی در DNS)، <strong>DMARC</strong> (سیاست برخورد با شکست SPF/DKIM و گزارش‌دهی). هر سه رکورد TXT در DNS هستند.</li>
+    </ul>
+    <pre><code class="language-ini"># .env در Laravel
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.example.com
+MAIL_PORT=587
+MAIL_USERNAME=app@example.com
+MAIL_PASSWORD=secret
+MAIL_FROM_ADDRESS=no-reply@example.com</code></pre>
+    <div class="callout tip"><p>ارسال ایمیل درون چرخهٔ درخواست کاربر را کند می‌کند (اتصال SMTP چند RTT دارد)؛ در Laravel ایمیل را <code>queue</code> کنید.</p></div>
+
+    <h3>SSH</h3>
+    <ul>
+      <li><strong>SSH</strong> پروتکل امن برای shell از راه دور، اجرای دستور، انتقال فایل و <strong>tunneling</strong> روی TCP پورت 22.</li>
+      <li>مراحل: تبادل کلید (DH) و ایجاد کانال رمزشده ← <strong>احراز هویت سرور</strong> با host key (فایل <code>known_hosts</code>؛ هشدار «host key changed» می‌تواند نشانهٔ MITM باشد) ← <strong>احراز هویت کاربر</strong> با رمز یا ترجیحاً <strong>کلید عمومی</strong>.</li>
+      <li>Hardening: غیرفعال کردن ورود با رمز و root، استفاده از کلید Ed25519، fail2ban یا محدودیت IP.</li>
+    </ul>
+    <pre><code class="language-bash">ssh-keygen -t ed25519 -C "ali@laptop"
+ssh-copy-id deploy@server
+# Local port forwarding: دسترسی به MySQL سرور که فقط روی localhost باز است
+ssh -L 3307:127.0.0.1:3306 deploy@server
+# حالا روی لپ‌تاپ: mysql -h 127.0.0.1 -P 3307</code></pre>
+
+    <h3>FTP، FTPS و SFTP</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>پروتکل</th><th>زیرساخت</th><th>امنیت</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td><strong>FTP</strong></td><td>دو اتصال TCP: control (21) و data (20 یا پورت پویا)</td><td>همه‌چیز plaintext، حتی رمز عبور</td><td>حالت active/passive؛ مشکل با NAT و firewall</td></tr>
+        <tr><td><strong>FTPS</strong></td><td>همان FTP + TLS</td><td>رمزشده</td><td>همچنان دو کانال و پیچیدگی firewall</td></tr>
+        <tr><td><strong>SFTP</strong></td><td>زیرسیستم SSH روی یک اتصال (22)</td><td>رمزشده</td><td>پروتکلی کاملاً متفاوت از FTP؛ ساده‌تر برای firewall</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>دام رایج: <strong>SFTP</strong> «FTP روی SSL» نیست؛ آن <strong>FTPS</strong> است. SFTP یک پروتکل مستقل است که روی SSH اجرا می‌شود. <code>scp</code> و <code>rsync</code> روی SSH نیز برای انتقال فایل رایج‌اند. Laravel Filesystem هر دو درایور <code>ftp</code> و <code>sftp</code> را دارد.</p></div>
+  </section>
+
+  <section class="lesson" id="url-walkthrough" data-title="وقتی URL را تایپ می‌کنید">
+    <h2>وقتی URL را تایپ می‌کنید چه اتفاقی می‌افتد؟</h2>
+    <p>این سوال کلاسیک مصاحبه و آزمون تشریحی است، چون همهٔ لایه‌ها را به هم وصل می‌کند. فرض کنید کاربر <code>https://shop.example.com/products?page=2</code> را وارد می‌کند و بک‌اند Nginx + PHP-FPM + Laravel است.</p>
+
+    <ol>
+      <li><strong>Parse کردن ورودی:</strong> مرورگر تشخیص می‌دهد ورودی URL است یا عبارت جستجو؛ scheme (<code>https</code>)، host، port پیش‌فرض (443)، path و query را جدا می‌کند. اگر دامنه در فهرست <strong>HSTS</strong> باشد، حتی با تایپ <code>http://</code> مستقیم به https می‌رود.</li>
+      <li><strong>DNS resolution:</strong> cache مرورگر ← cache سیستم‌عامل و فایل hosts ← recursive resolver ← (در صورت نبود در cache) root ← TLD ← authoritative. نتیجه یک IP (A یا AAAA) است؛ ممکن است IP یک CDN یا load balancer باشد. مرورگر ممکن است رکورد HTTPS را هم بخواهد تا بداند HTTP/3 پشتیبانی می‌شود.</li>
+      <li><strong>رسیدن بسته‌ها به مقصد:</strong> سیستم‌عامل با جدول routing می‌فهمد مقصد خارج از شبکهٔ محلی است و بسته را به default gateway می‌فرستد (با <strong>ARP</strong> آدرس MAC gateway پیدا می‌شود). router خانگی <strong>NAT</strong> انجام می‌دهد و بسته‌ها از routerهای اینترنت عبور می‌کنند.</li>
+      <li><strong>اتصال TCP:</strong> three-way handshake با پورت 443 (یک RTT). (در HTTP/3 به‌جای آن handshake ترکیبی QUIC روی UDP.)</li>
+      <li><strong>TLS handshake:</strong> ClientHello با SNI و ALPN (پیشنهاد <code>h2</code>)؛ سرور گواهی را ارائه می‌کند؛ مرورگر زنجیره را تا root CA، تاریخ و SAN را بررسی می‌کند؛ کلید نشست با ECDHE ساخته می‌شود؛ پروتکل HTTP/2 انتخاب می‌شود.</li>
+      <li><strong>ارسال درخواست HTTP:</strong> <code>GET /products?page=2</code> با هدرهای <code>Host</code>، <code>User-Agent</code>، <code>Accept</code>، <code>Accept-Encoding</code>، <code>Cookie</code> (session) و …</li>
+      <li><strong>لبهٔ زیرساخت:</strong> CDN/WAF ممکن است از cache پاسخ دهد یا درخواست را به load balancer بفرستد؛ LB (L7) TLS را terminate می‌کند و درخواست را با هدر <code>X-Forwarded-For</code> و <code>X-Forwarded-Proto</code> به یکی از سرورهای سالم می‌دهد.</li>
+      <li><strong>وب‌سرور:</strong> Nginx فایل‌های static را مستقیم سرو می‌کند؛ برای مسیرهای پویا با <strong>FastCGI</strong> درخواست را به PHP-FPM (Unix socket یا TCP 9000) می‌دهد.</li>
+      <li><strong>Laravel:</strong> <code>public/index.php</code> ← autoload کامپوزر ← bootstrap اپلیکیشن و service providerها ← HTTP Kernel ← <strong>global middleware</strong> (trust proxies، maintenance، trim strings) ← <strong>Router</strong> مسیر را پیدا می‌کند ← middlewareهای گروه/مسیر (session، CSRF، auth) ← Controller ← Eloquent کوئری به دیتابیس (اتصال TCP به MySQL و شاید Redis برای cache) ← View/JSON ← Response از middlewareها برمی‌گردد.</li>
+      <li><strong>پاسخ:</strong> <code>HTTP/2 200</code> با <code>Content-Type: text/html</code>، <code>Content-Encoding: br</code> یا gzip، <code>Cache-Control</code>، <code>Set-Cookie</code> و بدنهٔ HTML.</li>
+      <li><strong>رندر در مرورگر:</strong> parse کردن HTML و ساخت DOM؛ کشف CSS/JS/تصاویر و درخواست موازی آن‌ها روی همان اتصال HTTP/2؛ CSSOM؛ اجرای JS؛ render tree ← layout ← paint ← composite.</li>
+      <li><strong>پس از آن:</strong> اتصال برای درخواست‌های بعدی باز می‌ماند (keep-alive)؛ session TLS برای resumption ذخیره می‌شود؛ منابع بر اساس هدرهای cache نگه داشته می‌شوند.</li>
+    </ol>
+    <pre class="diagram">User ─► Browser ─► DNS ─► TCP/QUIC ─► TLS ─► HTTP request
+                                               │
+             CDN/WAF ─► Load Balancer ─► Nginx ─► PHP-FPM ─► Laravel ─► MySQL / Redis
+                                               │
+Browser ◄─ render (DOM, CSSOM, layout, paint) ◄─ HTTP response</pre>
+    <div class="callout exam"><p>در پاسخ تشریحی، ترتیب لایه‌ها را رعایت کنید و هر مرحله را با پروتکل و لایه‌اش نام ببرید (DNS در Application، TCP در Transport، IP/routing در Network، ARP/Ethernet در Link). نشان دادن بخش سمت سرور (LB، وب‌سرور، PHP-FPM، lifecycle لاراول) شما را از یک پاسخ معمولی متمایز می‌کند.</p></div>
+  </section>
+
+  <section class="lesson" id="debugging-tools" data-title="ابزارهای عیب‌یابی شبکه">
+    <h2>ابزارهای عیب‌یابی شبکه</h2>
+    <p>در سوالات سناریویی معمولاً می‌پرسند «چطور مشکل را پیدا می‌کنید؟». رویکرد درست، رفتن <strong>لایه‌به‌لایه از پایین به بالا</strong> است.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>لایه/سوال</th><th>ابزار</th><th>چه چیزی را نشان می‌دهد</th></tr></thead>
+      <tbody>
+        <tr><td>دسترسی‌پذیری IP</td><td><code>ping</code>، <code>traceroute</code> / <code>mtr</code></td><td>ICMP؛ تأخیر و مسیر (ICMP ممکن است مسدود باشد)</td></tr>
+        <tr><td>نام‌ها</td><td><code>dig</code>، <code>nslookup</code></td><td>رکوردها، TTL، authoritative بودن</td></tr>
+        <tr><td>پورت و اتصال</td><td><code>nc -zv</code>، <code>telnet</code>، <code>ss -tanp</code></td><td>باز بودن پورت، وضعیت اتصال‌ها (TIME_WAIT، CLOSE_WAIT)</td></tr>
+        <tr><td>TLS</td><td><code>openssl s_client -connect host:443 -servername host</code></td><td>زنجیرهٔ گواهی، نسخهٔ TLS، تاریخ انقضا</td></tr>
+        <tr><td>HTTP</td><td><code>curl -v</code>، <code>curl -I</code>، DevTools Network</td><td>هدرها، status، redirectها، زمان‌بندی</td></tr>
+        <tr><td>بسته‌ها</td><td><code>tcpdump</code>، Wireshark</td><td>handshakeها، retransmission، RST</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-bash"># زمان‌بندی دقیق هر مرحله با curl
+curl -o /dev/null -s -w 'dns=%{time_namelookup} tcp=%{time_connect} tls=%{time_appconnect} ttfb=%{time_starttransfer} total=%{time_total}\n' https://api.example.com/health
+
+# تست با HTTP/2 و دیدن هدرها
+curl -sv --http2 https://api.example.com/ -o /dev/null
+
+# بررسی تاریخ انقضای گواهی
+echo | openssl s_client -connect api.example.com:443 -servername api.example.com 2&gt;/dev/null | openssl x509 -noout -dates</code></pre>
+    <div class="callout tip"><p>تفسیر خطاها: <strong>Connection refused</strong> (RST) یعنی ماشین در دسترس است ولی کسی روی آن پورت listen نمی‌کند؛ <strong>Connection timed out</strong> یعنی بسته‌ها به جایی نمی‌رسند یا firewall آن‌ها را بی‌صدا drop می‌کند؛ <strong>Name or service not known</strong> یعنی مشکل DNS؛ <strong>certificate verify failed</strong> یعنی گواهی منقضی، دامنهٔ نامطابق یا زنجیرهٔ ناقص.</p></div>
+  </section>
+
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-protocols-1">
+      <summary>مدل OSI و مدل TCP/IP را تعریف و مقایسه کنید. هر یک از پروتکل‌های HTTP، TLS، TCP، IP، Ethernet و ARP در کدام لایه قرار می‌گیرند؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> هر دو مدل، ارتباط شبکه را به لایه‌هایی تقسیم می‌کنند که هر لایه مسئولیت مشخصی دارد و به لایهٔ بالاتر سرویس می‌دهد. <strong>OSI</strong> یک مدل <em>مرجع مفهومی</em> هفت‌لایه (Physical، Data Link، Network، Transport، Session، Presentation، Application) است؛ <strong>TCP/IP</strong> مدل <em>عملی</em> اینترنت با چهار لایه (Link، Internet، Transport، Application) است.</p>
+        <p><strong>تفاوت‌ها:</strong></p>
+        <ul>
+          <li>TCP/IP لایه‌های Session، Presentation و Application را در یک لایهٔ Application ادغام کرده و Physical و Data Link را در لایهٔ Link.</li>
+          <li>OSI ابتدا طراحی و بعد پروتکل‌هایش (که موفق نشدند) ساخته شد؛ TCP/IP از دل پروتکل‌های واقعی بیرون آمد.</li>
+          <li>OSI برای آموزش و عیب‌یابی (اصطلاحاتی مثل L4/L7) هنوز رایج است.</li>
+        </ul>
+        <p><strong>جایگاه پروتکل‌ها:</strong></p>
+        <ul>
+          <li><strong>HTTP:</strong> Application (L7).</li>
+          <li><strong>TLS:</strong> بین Transport و Application؛ در OSI معمولاً به Presentation/Session نسبت داده می‌شود و در TCP/IP جزو Application حساب می‌شود.</li>
+          <li><strong>TCP:</strong> Transport (L4).</li>
+          <li><strong>IP:</strong> Network/Internet (L3).</li>
+          <li><strong>Ethernet:</strong> Data Link (L2) و بخش فیزیکی (L1).</li>
+          <li><strong>ARP:</strong> بین L2 و L3 (ترجمهٔ IP به MAC).</li>
+        </ul>
+        <p><strong>اهمیت عملی:</strong> این تقسیم‌بندی در انتخاب ابزار دیده می‌شود: Load Balancer لایه ۴ فقط IP/Port را می‌بیند، در حالی که لایه ۷ می‌تواند بر اساس URL و هدر مسیریابی کند و TLS را terminate کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-2">
+      <summary>Three-way handshake در TCP را شرح دهید. چرا سه مرحله لازم است و بستن اتصال چرا چهار مرحله دارد؟</summary>
+      <div class="answer">
+        <p><strong>برقراری اتصال:</strong></p>
+        <ol>
+          <li>Client بستهٔ <code>SYN</code> با شمارهٔ ترتیب اولیه (ISN = x) می‌فرستد.</li>
+          <li>Server با <code>SYN-ACK</code> پاسخ می‌دهد: ISN خودش (y) و <code>ack = x+1</code>.</li>
+          <li>Client با <code>ACK</code> (<code>ack = y+1</code>) تأیید می‌کند. هر دو طرف ESTABLISHED می‌شوند.</li>
+        </ol>
+        <p><strong>چرا سه مرحله؟</strong> ارتباط دوطرفه است و هر طرف باید <strong>ISN خود را اعلام کند و از دریافت آن مطمئن شود</strong>. این یعنی چهار پیام منطقی (SYN، ACK، SYN، ACK) که دو پیام وسطی در SYN-ACK ادغام می‌شوند. با دو مرحله، سرور نمی‌دانست client واقعاً ISN او را دریافت کرده یا SYN دریافتی یک بستهٔ قدیمی تکراری بوده است. در همین مرحله پارامترهایی مثل MSS و window scaling هم مذاکره می‌شود.</p>
+        <p><strong>بستن چهارمرحله‌ای:</strong> TCP <strong>full-duplex</strong> است و هر جهت مستقل بسته می‌شود: A می‌فرستد <code>FIN</code> و B با <code>ACK</code> تأیید می‌کند؛ اما B ممکن است هنوز داده برای ارسال داشته باشد (half-close، وضعیت CLOSE_WAIT). وقتی تمام شد، B نیز <code>FIN</code> می‌فرستد و A با <code>ACK</code> پاسخ می‌دهد و وارد <strong>TIME_WAIT</strong> می‌شود.</p>
+        <p><strong>پیامد عملی:</strong> handshake یک RTT (و با TLS بیشتر) هزینه دارد؛ بنابراین برای کارایی، اتصال‌ها را با keep-alive یا connection pool دوباره استفاده می‌کنیم. از نظر امنیتی، حالت نیمه‌باز می‌تواند هدف حملهٔ SYN flood باشد که با SYN cookies مقابله می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-3">
+      <summary>یک سناریو: سرویس Laravel شما برای هر درخواست، به یک API خارجی درخواست HTTP می‌زند. در ساعات اوج، خطای «Cannot assign requested address» می‌بینید و <code>ss</code> هزاران اتصال در وضعیت TIME_WAIT نشان می‌دهد. علت چیست و چه می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تشخیص:</strong> طرفی که اتصال TCP را <em>اول</em> می‌بندد به مدت 2×MSL (در لینوکس حدود ۶۰ ثانیه) در <strong>TIME_WAIT</strong> می‌ماند. چون سرویس ما برای هر فراخوانی یک اتصال جدید باز و بسته می‌کند، هر اتصال یک <strong>ephemeral port</strong> را برای مدتی قفل می‌کند. وقتی نرخ اتصال‌های جدید به یک مقصد (IP و پورت یکسان) از ظرفیت بازهٔ پورت‌ها تقسیم بر ۶۰ ثانیه بیشتر شود، پورت آزاد برای 4-tuple جدید پیدا نمی‌شود.</p>
+        <p><strong>چرا TIME_WAIT وجود دارد؟</strong> برای اینکه اگر ACK نهایی گم شد بتوان دوباره ACK کرد و بسته‌های تأخیری اتصال قدیمی با اتصال جدیدی که همان 4-tuple را دارد اشتباه نشوند. پس حذف آن راه‌حل نیست.</p>
+        <p><strong>راه‌حل‌ها (به ترتیب اولویت):</strong></p>
+        <ul>
+          <li><strong>استفادهٔ مجدد از اتصال:</strong> HTTP keep-alive و connection pooling. در PHP-FPM هر درخواست جدا است، اما در یک درخواست می‌توان از یک client مشترک برای چند فراخوانی استفاده کرد؛ در workerهای long-running (Octane، queue worker) client را نگه دارید.</li>
+          <li><strong>کاهش تعداد فراخوانی‌ها:</strong> cache کردن پاسخ API در Redis، batch کردن درخواست‌ها، انتقال کار به queue.</li>
+          <li><strong>استفاده از یک proxy محلی با اتصال پایدار</strong> به مقصد (مثلاً یک egress proxy یا sidecar) که اتصال‌ها را multiplex کند.</li>
+          <li>در صورت لزوم، تنظیمات kernel مانند گسترش <code>ip_local_port_range</code> یا فعال کردن <code>tcp_tw_reuse</code> برای اتصال‌های خروجی — به‌عنوان مسکن، نه درمان.</li>
+        </ul>
+        <p><strong>نکته:</strong> اگر به‌جای TIME_WAIT، تعداد زیادی <strong>CLOSE_WAIT</strong> دیدید، یعنی طرف مقابل بسته ولی برنامهٔ ما سوکت را close نکرده — نشانهٔ نشت منبع در کد است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-4">
+      <summary>Flow control و Congestion control در TCP را تعریف کنید و تفاوت آن‌ها را بنویسید.</summary>
+      <div class="answer">
+        <p><strong>Flow control:</strong> سازوکاری برای جلوگیری از سرریز شدن <strong>گیرنده</strong>. گیرنده در هر ACK اندازهٔ فضای خالی بافرش را با <strong>receive window (rwnd)</strong> اعلام می‌کند و فرستنده بیش از این مقدار دادهٔ تأییدنشده در مسیر نمی‌گذارد. اگر rwnd صفر شود، فرستنده صبر می‌کند (با window probe).</p>
+        <p><strong>Congestion control:</strong> سازوکاری برای جلوگیری از سرریز شدن <strong>شبکه</strong> (routerها و لینک‌های بین راه). فرستنده یک <strong>congestion window (cwnd)</strong> داخلی دارد که ظرفیت شبکه را تخمین می‌زند:</p>
+        <ul>
+          <li><strong>Slow start:</strong> شروع با cwnd کوچک و رشد نمایی (تقریباً دوبرابر در هر RTT) تا آستانه (ssthresh).</li>
+          <li><strong>Congestion avoidance:</strong> رشد خطی (Additive Increase).</li>
+          <li>با تشخیص <strong>packet loss</strong> (timeout یا سه duplicate ACK) کاهش ضربی (Multiplicative Decrease) و fast retransmit/recovery.</li>
+          <li>الگوریتم‌های مدرن: CUBIC، BBR.</li>
+        </ul>
+        <p><strong>مقایسه:</strong></p>
+        <ul>
+          <li>تعیین‌کننده: rwnd را <em>گیرنده</em> اعلام می‌کند؛ cwnd را <em>فرستنده</em> حدس می‌زند.</li>
+          <li>هدف: محافظت از end host در برابر محافظت از شبکهٔ مشترک.</li>
+          <li>نرخ واقعی ارسال = <code>min(rwnd, cwnd)</code>.</li>
+        </ul>
+        <p><strong>پیامد عملی:</strong> به دلیل slow start، یک اتصال تازه برای انتقال پاسخ‌های بزرگ کندتر است؛ این یکی از دلایل استفاده از keep-alive، CDN نزدیک به کاربر و HTTP/2 با یک اتصال گرم است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-5">
+      <summary>TCP و UDP را مقایسه کنید. در چه شرایطی UDP انتخاب بهتری است؟ چرا HTTP/3 با وجود نیاز به اطمینان، روی UDP ساخته شده است؟</summary>
+      <div class="answer">
+        <p><strong>TCP:</strong> connection-oriented، reliable، ترتیب‌دار، byte stream، دارای flow و congestion control، هدر ۲۰+ بایت. <strong>UDP:</strong> connectionless، بدون تضمین تحویل و ترتیب، datagram با حفظ مرز پیام، هدر ۸ بایت، پشتیبانی از broadcast/multicast.</p>
+        <p><strong>چه زمانی UDP؟</strong></p>
+        <ul>
+          <li>وقتی <strong>تازگی</strong> مهم‌تر از کامل بودن است: VoIP، ویدئوکنفرانس، بازی آنلاین — بستهٔ دیررسیده بی‌ارزش است و retransmit فقط تأخیر می‌افزاید.</li>
+          <li>پیام‌های کوچک و مستقل با یک رفت‌وبرگشت: <strong>DNS</strong>، DHCP، NTP.</li>
+          <li>ارسال fire-and-forget مثل metric به StatsD که نباید درخواست کاربر را کند کند.</li>
+          <li>ساختن پروتکل اطمینان سفارشی در فضای کاربر.</li>
+        </ul>
+        <p><strong>چرا HTTP/3 روی UDP؟</strong></p>
+        <ul>
+          <li>TCP در kernel سیستم‌عامل‌ها و middleboxها پیاده شده و تغییر آن عملاً ناممکن است (ossification). UDP یک بستر خنثی است که QUIC می‌تواند روی آن، در <strong>فضای کاربر</strong>، reliability، ترتیب و congestion control را <em>به شیوهٔ بهتر</em> پیاده کند.</li>
+          <li>QUIC ترتیب را <strong>به‌ازای هر stream</strong> حفظ می‌کند، پس گم شدن یک بسته فقط همان stream را معطل می‌کند — حذف HOL blocking سطح TCP که HTTP/2 از آن رنج می‌برد.</li>
+          <li>ادغام TLS 1.3 در handshake ← 1-RTT و 0-RTT.</li>
+          <li>Connection migration با Connection ID هنگام عوض شدن شبکه.</li>
+        </ul>
+        <p>پس HTTP/3 «اطمینان را رها» نکرده؛ آن را از kernel به QUIC منتقل کرده است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-6">
+      <summary>فرایند DNS resolution را از لحظه‌ای که مرورگر نام دامنه را دریافت می‌کند تا رسیدن به IP شرح دهید و نقش TTL را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> DNS پایگاه‌دادهٔ توزیع‌شده، سلسله‌مراتبی و cache‌شونده‌ای است که نام دامنه را به رکوردهایی مثل IP ترجمه می‌کند.</p>
+        <p><strong>مراحل:</strong></p>
+        <ol>
+          <li><strong>cache مرورگر</strong> و سپس <strong>cache سیستم‌عامل</strong> و فایل <code>hosts</code> بررسی می‌شود.</li>
+          <li><strong>Stub resolver</strong> سیستم‌عامل یک <em>recursive query</em> به <strong>recursive resolver</strong> (ISP یا عمومی مثل 1.1.1.1) می‌فرستد.</li>
+          <li>اگر resolver پاسخ را در cache داشت، برمی‌گرداند (non-authoritative).</li>
+          <li>در غیر این صورت <em>iterative</em> عمل می‌کند: از <strong>Root server</strong> می‌پرسد ← ارجاع به سرورهای <strong>TLD</strong> (مثلاً <code>.com</code>) ← ارجاع به <strong>authoritative name server</strong> دامنه (از رکورد NS) ← دریافت رکورد A/AAAA (یا CNAME که باید دوباره دنبال شود).</li>
+          <li>پاسخ به client برمی‌گردد و در هر لایه cache می‌شود.</li>
+        </ol>
+        <p><strong>TTL:</strong> عددی (ثانیه) که مالک رکورد تعیین می‌کند و می‌گوید پاسخ چه مدت می‌تواند در cache بماند.</p>
+        <ul>
+          <li>TTL بالا: سرعت بیشتر و بار کمتر روی DNS، اما تغییر IP دیر به کاربران می‌رسد.</li>
+          <li>TTL پایین: انعطاف بیشتر برای failover و مهاجرت، اما کوئری بیشتر.</li>
+          <li>روش درست مهاجرت: ابتدا TTL را کاهش دهید، به اندازهٔ TTL قبلی صبر کنید، سپس IP را تغییر دهید.</li>
+        </ul>
+        <p><strong>نکته‌های تکمیلی:</strong> DNS به‌طور پیش‌فرض روی UDP/53 است و برای پاسخ‌های بزرگ به TCP می‌رود؛ پاسخ منفی (NXDOMAIN) هم cache می‌شود؛ DNSSEC صحت و DoH/DoT محرمانگی را اضافه می‌کنند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-7">
+      <summary>رکوردهای A، AAAA، CNAME، MX، TXT و NS را تعریف کنید. برای راه‌اندازی ایمیل سازمانی یک دامنه چه رکوردهایی لازم است؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>A:</strong> نگاشت نام به آدرس IPv4.</li>
+          <li><strong>AAAA:</strong> نگاشت نام به آدرس IPv6.</li>
+          <li><strong>CNAME:</strong> نام مستعار؛ می‌گوید این نام در واقع نام دیگری است و resolver باید آن را دنبال کند (مثلاً <code>www</code> ← <code>example.com</code> یا زیردامنه ← آدرس CDN). روی apex دامنه نمی‌توان CNAME گذاشت و نامی که CNAME دارد رکورد دیگری نمی‌تواند داشته باشد.</li>
+          <li><strong>MX:</strong> سرورهای دریافت ایمیل دامنه با عدد اولویت (کمتر = ترجیح بیشتر)؛ مقدارش باید یک نام میزبان باشد نه IP یا CNAME.</li>
+          <li><strong>TXT:</strong> متن دلخواه؛ برای SPF، DKIM، DMARC و تأیید مالکیت دامنه (مثلاً برای Google یا صدور گواهی).</li>
+          <li><strong>NS:</strong> name serverهای authoritative یک zone؛ در TLD، دامنه را به این سرورها delegate می‌کند.</li>
+        </ul>
+        <p><strong>راه‌اندازی ایمیل:</strong></p>
+        <ul>
+          <li><strong>MX</strong> به سرور ایمیل (مثلاً <code>example.com MX 10 mx1.provider.com</code>) — برای <em>دریافت</em>.</li>
+          <li><strong>SPF</strong> (TXT): <code>v=spf1 include:provider.com -all</code> — مشخص می‌کند چه سرورهایی مجازند از طرف دامنه ارسال کنند.</li>
+          <li><strong>DKIM</strong> (TXT روی <code>selector._domainkey.example.com</code>): کلید عمومی برای اعتبارسنجی امضای ایمیل‌ها.</li>
+          <li><strong>DMARC</strong> (TXT روی <code>_dmarc.example.com</code>): سیاست برخورد با ایمیل‌هایی که SPF/DKIM را پاس نمی‌کنند (<code>p=none|quarantine|reject</code>) و آدرس گزارش.</li>
+          <li>رکورد <strong>PTR</strong> (reverse DNS) برای IP سرور ارسال‌کننده، اگر خودتان سرور SMTP دارید.</li>
+        </ul>
+        <p>بدون SPF/DKIM/DMARC ایمیل‌های اپلیکیشن (مثل بازیابی رمز) احتمالاً در spam می‌افتند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-8">
+      <summary>تکامل HTTP را از نسخهٔ 1.0 تا 3 شرح دهید. هر نسخه چه مشکلی را حل کرد و چه مشکلی باقی گذاشت؟</summary>
+      <div class="answer">
+        <p><strong>HTTP/1.0:</strong> برای هر درخواست یک اتصال TCP جدید ← هزینهٔ handshake و slow start برای هر منبع؛ هدر Host اجباری نبود.</p>
+        <p><strong>HTTP/1.1:</strong></p>
+        <ul>
+          <li><strong>Persistent connection</strong> پیش‌فرض (keep-alive)، هدر <code>Host</code> اجباری (virtual hosting)، chunked encoding، cache validation (ETag)، Range.</li>
+          <li>مشکل: روی هر اتصال در هر لحظه یک درخواست (<strong>HOL blocking</strong> سطح application)؛ pipelining به دلیل ترتیب اجباری پاسخ‌ها عملاً استفاده نشد. مرورگرها ~۶ اتصال موازی باز می‌کردند؛ هدرهای متنی و تکراری.</li>
+        </ul>
+        <p><strong>HTTP/2:</strong></p>
+        <ul>
+          <li><strong>Binary framing</strong> و <strong>multiplexing</strong> چند stream روی یک اتصال ← HOL سطح HTTP حل شد.</li>
+          <li><strong>HPACK</strong> برای فشرده‌سازی هدرها؛ prioritization؛ flow control هر stream.</li>
+          <li>Server push که در عمل ناکارآمد بود و مرورگرها کنارش گذاشتند (جایگزین: 103 Early Hints و preload).</li>
+          <li>مشکل باقی‌مانده: <strong>HOL blocking سطح TCP</strong> — گم شدن یک بسته همهٔ streamها را متوقف می‌کند.</li>
+        </ul>
+        <p><strong>HTTP/3:</strong></p>
+        <ul>
+          <li>روی <strong>QUIC/UDP</strong>؛ streamهای مستقل در لایهٔ transport ← حذف HOL سطح TCP.</li>
+          <li>TLS 1.3 یکپارچه، handshake 1-RTT و 0-RTT؛ connection migration؛ QPACK.</li>
+          <li>چالش: UDP در برخی شبکه‌ها مسدود یا محدود است (fallback به HTTP/2)، مصرف CPU بیشتر به دلیل پیاده‌سازی در user space.</li>
+        </ul>
+        <p><strong>نکتهٔ کلیدی:</strong> semantics (متدها، status codeها، هدرها) در همهٔ نسخه‌ها یکسان است؛ بنابراین اپلیکیشن Laravel تغییری نمی‌کند و ارتقا در لایهٔ وب‌سرور/CDN انجام می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-9">
+      <summary>Multiplexing در HTTP/2 چیست و چرا با وجود آن، Head-of-Line blocking همچنان در HTTP/2 وجود دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> در HTTP/2 هر درخواست/پاسخ یک <strong>stream</strong> با شناسهٔ یکتا است و پیام‌ها به <strong>frame</strong>های دودویی کوچک شکسته می‌شوند. frameهای streamهای مختلف می‌توانند روی <strong>یک اتصال TCP</strong> درهم (interleave) ارسال شوند و گیرنده با شناسهٔ stream آن‌ها را دوباره کنار هم می‌گذارد. بنابراین یک پاسخ کند (مثلاً گزارش سنگین) دیگر جلوی پاسخ‌های سریع را نمی‌گیرد.</p>
+        <p><strong>چرا HOL blocking باقی است؟</strong> HTTP/2 مشکل را در لایهٔ <em>application</em> حل کرد، اما همهٔ streamها روی یک اتصال TCP هستند و TCP یک <strong>byte stream ترتیب‌دار واحد</strong> ارائه می‌دهد. اگر یک بستهٔ TCP گم شود، kernel تحویل همهٔ بایت‌های بعدی را به برنامه متوقف می‌کند تا آن بسته retransmit شود — حتی اگر بایت‌های بعدی متعلق به streamهای کاملاً دیگری باشند. TCP از مفهوم stream در HTTP/2 خبر ندارد.</p>
+        <p><strong>پیامد:</strong> در شبکه‌های پرخطا (موبایل، Wi-Fi شلوغ) یک اتصال HTTP/2 ممکن است از چند اتصال HTTP/1.1 کندتر عمل کند، چون یک loss کل اتصال را معطل می‌کند و cwnd تنها اتصال هم کاهش می‌یابد.</p>
+        <p><strong>راه‌حل:</strong> HTTP/3 روی <strong>QUIC</strong> که streamها را در خود لایهٔ transport می‌شناسد؛ گم شدن بسته فقط stream مربوط را معطل می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-10">
+      <summary>TLS handshake را شرح دهید. چرا در TLS هم رمزنگاری نامتقارن و هم متقارن استفاده می‌شود؟ TLS 1.3 چه بهبودهایی دارد؟</summary>
+      <div class="answer">
+        <p><strong>هدف TLS:</strong> محرمانگی، یکپارچگی و احراز هویت سرور (و اختیاری client) روی یک کانال ناامن.</p>
+        <p><strong>Handshake در TLS 1.3:</strong></p>
+        <ol>
+          <li><strong>ClientHello:</strong> نسخه‌ها و cipher suiteهای پشتیبانی‌شده، <code>key_share</code> (کلید عمومی موقت ECDHE)، <strong>SNI</strong> (نام دامنه) و <strong>ALPN</strong> (مثلاً h2).</li>
+          <li><strong>ServerHello:</strong> انتخاب cipher و key_share سرور. اکنون هر دو طرف با Diffie-Hellman یک <strong>secret مشترک</strong> دارند که هرگز روی شبکه نرفته است.</li>
+          <li>سرور (رمزشده) <strong>Certificate</strong>، <strong>CertificateVerify</strong> (امضای transcript با کلید خصوصی) و <strong>Finished</strong> را می‌فرستد.</li>
+          <li>Client زنجیرهٔ گواهی را تا یک root CA مورد اعتماد، تاریخ و تطابق دامنه با SAN بررسی می‌کند، Finished خود را می‌فرستد و داده‌های application شروع می‌شوند — مجموعاً <strong>1-RTT</strong>.</li>
+        </ol>
+        <p><strong>چرا هر دو نوع رمزنگاری؟</strong> رمزنگاری نامتقارن مشکل <em>توزیع کلید</em> و <em>احراز هویت</em> را حل می‌کند ولی کند است؛ رمزنگاری متقارن (AES-GCM، ChaCha20) بسیار سریع است ولی به کلید مشترک نیاز دارد. پس از نامتقارن برای توافق امن روی کلید و امضا، و از متقارن برای رمزنگاری حجم داده استفاده می‌شود (رمزنگاری ترکیبی).</p>
+        <p><strong>بهبودهای TLS 1.3:</strong></p>
+        <ul>
+          <li>handshake کامل 1-RTT (در 1.2 دو RTT) و <strong>0-RTT</strong> برای resumption (با ریسک replay، فقط برای درخواست‌های idempotent).</li>
+          <li>حذف الگوریتم‌های ضعیف: RSA key exchange، CBC، RC4، SHA-1، compression، renegotiation.</li>
+          <li><strong>Forward secrecy</strong> اجباری با ECDHE موقت.</li>
+          <li>رمزنگاری بیشتر handshake (گواهی سرور دیگر plaintext نیست).</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-11">
+      <summary>گواهی دیجیتال و زنجیرهٔ اعتماد (Certificate chain) را توضیح دهید. یک سناریو: سایت در مرورگر درست باز می‌شود اما curl و اپ موبایل خطای «unable to get local issuer certificate» می‌دهند. مشکل چیست؟</summary>
+      <div class="answer">
+        <p><strong>گواهی X.509:</strong> سندی که <strong>کلید عمومی</strong> سرور را به هویت آن (نام دامنه در <strong>SAN</strong>) گره می‌زند، دارای بازهٔ اعتبار است و توسط یک <strong>Certificate Authority</strong> امضا شده است.</p>
+        <p><strong>زنجیرهٔ اعتماد:</strong></p>
+        <ul>
+          <li><strong>Root CA:</strong> گواهی self-signed که از قبل در trust store سیستم‌عامل/مرورگر وجود دارد. کلید آن معمولاً offline نگه‌داری می‌شود.</li>
+          <li><strong>Intermediate CA:</strong> توسط root امضا شده و گواهی‌های نهایی را امضا می‌کند (برای محدود کردن ریسک لو رفتن کلید root).</li>
+          <li><strong>Leaf:</strong> گواهی سایت شما.</li>
+        </ul>
+        <p>client از leaf شروع می‌کند، امضای هر گواهی را با کلید عمومی صادرکننده‌اش بررسی می‌کند تا به یک root مورد اعتماد برسد؛ همچنین تاریخ، دامنه، وضعیت ابطال و محدودیت‌ها را چک می‌کند.</p>
+        <p><strong>تشخیص سناریو:</strong> سرور فقط گواهی leaf را ارسال می‌کند و <strong>intermediate</strong> را نمی‌فرستد. مرورگرها گاهی intermediate را از cache یا با دانلود خودکار (AIA fetching) پیدا می‌کنند، اما curl، OpenSSL و بسیاری از کتابخانه‌های موبایل این کار را نمی‌کنند و زنجیره را ناقص می‌بینند.</p>
+        <p><strong>بررسی و رفع:</strong></p>
+        <pre><code class="language-bash">openssl s_client -connect api.example.com:443 -servername api.example.com -showcerts</code></pre>
+        <ul>
+          <li>اگر فقط یک گواهی (depth 0) دیده شد، مشکل تأیید می‌شود.</li>
+          <li>در Nginx به‌جای <code>cert.pem</code> از <strong><code>fullchain.pem</code></strong> در <code>ssl_certificate</code> استفاده کنید (leaf + intermediate).</li>
+          <li>هرگز برای «رفع» مشکل، verify را در client خاموش نکنید (<code>curl -k</code> یا <code>verify =&gt; false</code> در Guzzle)؛ این کار MITM را ممکن می‌کند.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-12">
+      <summary>WebSocket، Server-Sent Events و Long Polling را مقایسه کنید. برای سیستم نوتیفیکیشن یک فروشگاه و برای یک چت گروهی کدام را انتخاب می‌کنید و چرا؟</summary>
+      <div class="answer">
+        <p><strong>Long Polling:</strong> client درخواست HTTP می‌فرستد و سرور تا رسیدن داده یا timeout پاسخ نمی‌دهد؛ سپس client بلافاصله درخواست بعدی را می‌فرستد. سازگاری بالا، اما سربار هدر برای هر پیام و نگه‌داشتن یک worker/اتصال برای هر کاربر (در PHP-FPM بسیار پرهزینه).</p>
+        <p><strong>SSE:</strong> یک پاسخ HTTP با <code>text/event-stream</code> که باز می‌ماند؛ <strong>یک‌طرفه</strong> از سرور به client، فقط متن، با <strong>reconnect خودکار</strong> و <code>Last-Event-ID</code>؛ از زیرساخت HTTP عادی (auth، proxy، HTTP/2) استفاده می‌کند.</p>
+        <p><strong>WebSocket:</strong> با درخواست HTTP و هدر <code>Upgrade: websocket</code> و پاسخ <code>101 Switching Protocols</code> شروع می‌شود و سپس کانال <strong>full-duplex</strong> پایدار با frameهای کوچک متنی/باینری فراهم می‌کند. کمترین تأخیر و سربار، اما stateful است: نیاز به load balancer سازگار با Upgrade، بررسی <code>Origin</code> و احراز هویت سمت سرور، و pub/sub مشترک برای scale افقی.</p>
+        <p><strong>انتخاب:</strong></p>
+        <ul>
+          <li><strong>نوتیفیکیشن فروشگاه</strong> (تغییر وضعیت سفارش): جریان فقط سرور ← client است و فرکانس پایین؛ <strong>SSE</strong> ساده‌ترین و کافی است. اگر زیرساخت WebSocket از قبل وجود دارد (مثلاً Laravel Reverb + Echo)، استفاده از آن هم منطقی است.</li>
+          <li><strong>چت گروهی:</strong> ارتباط دوطرفه، تأخیر پایین، typing indicator و presence ← <strong>WebSocket</strong>. پیام‌ها همچنان باید در دیتابیس ذخیره شوند و پس از reconnect، پیام‌های از دست رفته از API بازیابی شوند.</li>
+          <li><strong>Long polling:</strong> فقط به‌عنوان fallback در محیط‌هایی که WebSocket/SSE مسدود است.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-13">
+      <summary>gRPC چیست و چه تفاوتی با REST دارد؟ در چه شرایطی gRPC را پیشنهاد می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> gRPC یک فریم‌ورک RPC است که روی <strong>HTTP/2</strong> اجرا می‌شود و قرارداد سرویس و پیام‌ها را با <strong>Protocol Buffers</strong> در فایل <code>.proto</code> تعریف می‌کند. از این فایل، کد client و server برای زبان‌های مختلف تولید می‌شود.</p>
+        <p><strong>تفاوت با REST:</strong></p>
+        <ul>
+          <li><strong>مدل:</strong> REST منبع‌محور (resource + متدهای HTTP)؛ gRPC عمل‌محور (فراخوانی متد مثل <code>GetUser</code>).</li>
+          <li><strong>قالب داده:</strong> REST معمولاً JSON متنی و خوانا؛ gRPC باینری، فشرده و سریع (فقط شمارهٔ فیلد منتقل می‌شود).</li>
+          <li><strong>قرارداد:</strong> در REST اختیاری (OpenAPI)؛ در gRPC اجباری و strongly-typed با تولید کد.</li>
+          <li><strong>Streaming:</strong> gRPC چهار حالت unary، server/client streaming و bidirectional دارد.</li>
+          <li><strong>مرورگر و cache:</strong> REST مستقیم در مرورگر کار می‌کند و با HTTP caching و CDN سازگار است؛ gRPC به gRPC-Web و proxy نیاز دارد و cache کردنش ساده نیست.</li>
+          <li><strong>دیباگ:</strong> REST با curl؛ gRPC با ابزارهای خاص (grpcurl).</li>
+        </ul>
+        <p><strong>چه زمانی gRPC؟</strong></p>
+        <ul>
+          <li>ارتباط <strong>داخلی</strong> بین microserviceها با حجم بالا و حساسیت به تأخیر.</li>
+          <li>محیط چندزبانه که قرارداد مشترک و تولید کد ارزشمند است.</li>
+          <li>نیاز به streaming دوطرفه.</li>
+        </ul>
+        <p><strong>چه زمانی REST؟</strong> API عمومی، مصرف‌کنندهٔ مرورگر یا شخص ثالث، نیاز به cache و سادگی. معمولاً ترکیب رایج است: REST در لبه، gRPC در داخل.</p>
+        <p><strong>نکتهٔ سازگاری protobuf:</strong> شمارهٔ فیلدها را هرگز تغییر یا بازاستفاده نکنید و فیلدهای حذف‌شده را <code>reserved</code> کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-14">
+      <summary>AMQP و MQTT را مقایسه کنید. مفهوم QoS در MQTT و Acknowledgement در AMQP چیست و چه پیامدی برای طراحی consumer دارد؟</summary>
+      <div class="answer">
+        <p><strong>AMQP (مثلاً RabbitMQ):</strong> پروتکل پیام‌رسانی سازمانی با مدل <strong>Exchange ← Binding ← Queue</strong>. producer به exchange منتشر می‌کند و exchange بر اساس نوع (direct، fanout، topic، headers) پیام را به queueها مسیریابی می‌کند. امکاناتی مثل durable queue، prefetch، dead-letter exchange و TTL دارد.</p>
+        <p><strong>MQTT:</strong> پروتکل pub/sub <strong>بسیار سبک</strong> برای IoT و شبکه‌های ناپایدار؛ topicهای سلسله‌مراتبی با wildcard (<code>+</code>، <code>#</code>)، retained message، Last Will و هدر بسیار کوچک.</p>
+        <p><strong>QoS در MQTT:</strong></p>
+        <ul>
+          <li><strong>0</strong> — at most once: بدون تأیید؛ ممکن است گم شود.</li>
+          <li><strong>1</strong> — at least once: با تأیید و ارسال مجدد؛ ممکن است <em>تکراری</em> شود.</li>
+          <li><strong>2</strong> — exactly once: handshake چهارمرحله‌ای؛ پرهزینه‌ترین.</li>
+        </ul>
+        <p><strong>Ack در AMQP:</strong> consumer پس از پردازش موفق، <code>ack</code> می‌فرستد و broker پیام را حذف می‌کند. اگر consumer قبل از ack از کار بیفتد، پیام دوباره به consumer دیگری تحویل داده می‌شود؛ با <code>nack</code>/<code>reject</code> می‌توان پیام را به DLX فرستاد.</p>
+        <p><strong>پیامد طراحی:</strong> در عمل تحویل <strong>at-least-once</strong> است، پس consumer باید <strong>idempotent</strong> باشد: مثلاً با ذخیرهٔ شناسهٔ پیام پردازش‌شده در جدولی با unique constraint، یا طراحی عملیات به شکلی که تکرارش اثر اضافه ندارد (upsert به‌جای insert). ack را <em>بعد از</em> commit تراکنش بدهید، نه قبل از آن؛ و prefetch را محدود کنید تا یک consumer تعداد زیادی پیام unacked نگه ندارد.</p>
+        <p><strong>انتخاب:</strong> AMQP برای صف کار و یکپارچه‌سازی سرویس‌ها؛ MQTT برای هزاران دستگاه کم‌توان با اتصال ناپایدار.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-15">
+      <summary>وقتی کاربر آدرس <code>https://shop.example.com</code> را در مرورگر وارد می‌کند، تا نمایش صفحه چه اتفاقاتی می‌افتد؟ (با جزئیات سمت سرور برای یک اپلیکیشن Laravel)</summary>
+      <div class="answer">
+        <ol>
+          <li><strong>Parse و HSTS:</strong> مرورگر URL را تجزیه می‌کند (scheme، host، پورت پیش‌فرض 443، path)؛ اگر دامنه در فهرست HSTS باشد، اتصال حتماً https خواهد بود.</li>
+          <li><strong>DNS:</strong> cache مرورگر و OS ← recursive resolver ← root ← TLD ← authoritative؛ دریافت رکورد A/AAAA (احتمالاً IP یک CDN/LB) و cache بر اساس TTL.</li>
+          <li><strong>Routing:</strong> بسته‌ها با ARP به gateway می‌رسند، NAT روی router انجام می‌شود و از routerهای اینترنت عبور می‌کنند.</li>
+          <li><strong>TCP:</strong> three-way handshake با پورت 443 (یا QUIC در HTTP/3).</li>
+          <li><strong>TLS:</strong> ClientHello با SNI و ALPN؛ بررسی زنجیرهٔ گواهی؛ توافق کلید با ECDHE؛ انتخاب HTTP/2.</li>
+          <li><strong>درخواست HTTP:</strong> <code>GET /</code> با هدرهای Host، Accept، Accept-Encoding و Cookie.</li>
+          <li><strong>زیرساخت:</strong> CDN/WAF ← Load Balancer (terminate کردن TLS، افزودن <code>X-Forwarded-For</code>/<code>Proto</code>) ← Nginx.</li>
+          <li><strong>Nginx:</strong> اگر فایل static بود مستقیم سرو می‌کند؛ وگرنه با FastCGI به <strong>PHP-FPM</strong> می‌فرستد.</li>
+          <li><strong>Laravel:</strong> <code>public/index.php</code> ← autoloader ← ساخت Application و service providerها ← HTTP Kernel ← global middleware ← Router ← middlewareهای مسیر (session از Redis، CSRF، auth) ← Controller ← کوئری‌های Eloquent به MySQL ← Blade view ← Response که از pipeline middleware برمی‌گردد.</li>
+          <li><strong>پاسخ:</strong> <code>200 OK</code> با HTML فشرده (gzip/br)، <code>Set-Cookie</code> و هدرهای cache.</li>
+          <li><strong>رندر:</strong> parse HTML ← DOM؛ دریافت CSS ← CSSOM؛ اجرای JS؛ render tree ← layout ← paint ← composite. منابع اضافی روی همان اتصال HTTP/2 multiplex می‌شوند.</li>
+        </ol>
+        <p><strong>نکات بهینه‌سازی که می‌توان اشاره کرد:</strong> CDN برای کاهش RTT، keep-alive و TLS resumption، HTTP/2 یا 3، cache کردن config و route در Laravel (<code>php artisan optimize</code>)، OPcache، و cache در Redis.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-16">
+      <summary>NAT چیست، چرا به وجود آمده و چه مشکلاتی ایجاد می‌کند؟ CIDR را با یک مثال توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>NAT:</strong> سازوکاری در router که آدرس (و معمولاً پورت) مبدأ بسته‌های خروجی از شبکهٔ خصوصی را با IP عمومی خودش جایگزین می‌کند و نگاشت را در جدول نگه می‌دارد تا پاسخ‌ها را به دستگاه درست برگرداند. رایج‌ترین شکل آن <strong>PAT</strong> است که تعداد زیادی دستگاه را پشت یک IP قرار می‌دهد.</p>
+        <p><strong>چرا؟</strong> کمبود آدرس‌های IPv4 (۳۲ بیت ≈ ۴٫۳ میلیارد). شبکه‌های داخلی از رنج‌های خصوصی RFC 1918 (<code>10/8</code>، <code>172.16/12</code>، <code>192.168/16</code>) استفاده می‌کنند که در اینترنت route نمی‌شوند.</p>
+        <p><strong>مشکلات:</strong></p>
+        <ul>
+          <li>اتصال <strong>ورودی</strong> به دستگاه داخلی بدون port forwarding ممکن نیست ← peer-to-peer و VoIP سخت می‌شود (نیاز به STUN/TURN).</li>
+          <li>نقض اصل end-to-end؛ پروتکل‌هایی مثل FTP active که IP را درون payload می‌فرستند دچار مشکل می‌شوند.</li>
+          <li>جدول NAT state دارد؛ اتصال‌های بیکار طولانی ممکن است از جدول حذف شوند (به همین دلیل WebSocketها ping/keep-alive می‌فرستند).</li>
+          <li>چند کاربر پشت یک IP ← rate limiting بر اساس IP ممکن است کاربران بی‌گناه را محدود کند.</li>
+          <li>NAT جایگزین firewall نیست.</li>
+        </ul>
+        <p>IPv6 با فضای آدرس ۱۲۸ بیتی نیاز به NAT را از بین می‌برد.</p>
+        <p><strong>CIDR:</strong> نماد <code>/n</code> یعنی n بیت اول آدرس، بخش شبکه است. تعداد آدرس‌ها <code>2^(32-n)</code>. مثال: <code>10.0.1.0/24</code> شامل <code>10.0.1.0</code> تا <code>10.0.1.255</code> (۲۵۶ آدرس، ۲۵۴ قابل‌استفاده برای host). در طراحی VPC ابری مثلاً کل VPC را <code>10.0.0.0/16</code> و هر subnet را <code>/24</code> تعریف می‌کنیم. CIDR جایگزین کلاس‌های قدیمی A/B/C شد تا تخصیص آدرس و تجمیع routeها کارآمدتر شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-17">
+      <summary>تفاوت FTP، FTPS و SFTP چیست؟ برای انتقال خودکار فایل‌های گزارش به سرور یک شریک تجاری کدام را پیشنهاد می‌کنید؟ SSH tunneling چه کاربردی دارد؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>FTP:</strong> پروتکل قدیمی با <strong>دو اتصال</strong>: کانال control (پورت 21) و کانال داده (در حالت active از سمت سرور، در passive روی پورت پویای سرور). همه‌چیز از جمله نام کاربری و رمز <strong>plaintext</strong> است. با NAT و firewall مشکل دارد.</li>
+          <li><strong>FTPS:</strong> همان FTP به‌همراه <strong>TLS</strong> (explicit با دستور AUTH TLS یا implicit). رمزشده، اما هنوز دو کانال و پیچیدگی firewall دارد.</li>
+          <li><strong>SFTP:</strong> پروتکلی کاملاً متفاوت که به‌عنوان زیرسیستم <strong>SSH</strong> روی یک اتصال (پورت 22) اجرا می‌شود. رمزنگاری، احراز هویت با کلید و عملیات کامل فایل (لیست، حذف، تغییر نام).</li>
+        </ul>
+        <p><strong>پیشنهاد:</strong> <strong>SFTP با احراز هویت کلید عمومی</strong>: یک پورت (ساده برای firewall و whitelist IP)، بدون رمز عبور در کد، و بررسی host key برای جلوگیری از MITM. در Laravel با دیسک <code>sftp</code> در <code>config/filesystems.php</code> (پکیج <code>league/flysystem-sftp-v3</code>) و یک job زمان‌بندی‌شده در scheduler انجام می‌شود؛ کلید خصوصی را در secret manager یا متغیر محیطی امن نگه دارید.</p>
+        <p><strong>SSH tunneling:</strong> انتقال یک اتصال TCP دلخواه از درون کانال رمزشدهٔ SSH:</p>
+        <ul>
+          <li><strong>Local forwarding</strong> (<code>ssh -L 3307:127.0.0.1:3306 user@server</code>): دسترسی امن به دیتابیسی که فقط روی localhost سرور listen می‌کند، بدون باز کردن پورتش روی اینترنت.</li>
+          <li><strong>Remote forwarding</strong> (<code>-R</code>): در دسترس قرار دادن یک سرویس محلی روی سرور راه دور.</li>
+          <li><strong>Dynamic</strong> (<code>-D</code>): ساخت proxy از نوع SOCKS.</li>
+          <li>Bastion/jump host با <code>ssh -J</code>.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-protocols-18">
+      <summary>یک سناریو: کاربران گزارش می‌دهند API شما «گاهی» کند است یا خطا می‌دهد. با رویکرد لایه‌به‌لایهٔ شبکه، چگونه مشکل را عیب‌یابی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>اصل:</strong> مشکل را به مراحل تجزیه کنید و از پایین به بالا یا با اندازه‌گیری زمان هر مرحله پیش بروید تا گلوگاه مشخص شود.</p>
+        <ol>
+          <li><strong>اندازه‌گیری مراحل با curl:</strong> <code>curl -w</code> با <code>time_namelookup</code>، <code>time_connect</code>، <code>time_appconnect</code>، <code>time_starttransfer</code>. اگر DNS کند است ← resolver یا TTL خیلی پایین؛ اگر connect کند است ← شبکه، packet loss یا صف SYN پر؛ اگر TLS کند است ← نبود session resumption یا OCSP؛ اگر TTFB بالاست ← مشکل در اپلیکیشن.</li>
+          <li><strong>شبکه:</strong> <code>mtr</code> برای دیدن packet loss و تأخیر در مسیر؛ <code>tcpdump</code> برای مشاهدهٔ retransmission و RST.</li>
+          <li><strong>وضعیت اتصال‌ها روی سرور:</strong> <code>ss -s</code> و <code>ss -tan</code>: TIME_WAIT زیاد در اتصال‌های خروجی (نبود reuse)، CLOSE_WAIT زیاد (نشت سوکت)، backlog پر.</li>
+          <li><strong>TLS و گواهی:</strong> <code>openssl s_client</code> برای انقضا یا زنجیرهٔ ناقص (خطای «گاه‌به‌گاه» ممکن است مربوط به یک node پشت LB با گواهی متفاوت باشد).</li>
+          <li><strong>لایهٔ HTTP و زیرساخت:</strong> status codeها در لاگ LB و Nginx: <code>502</code> (PHP-FPM پاسخ نداد یا crash کرد)، <code>504</code> (timeout upstream)، <code>499</code> در Nginx (client قبل از پاسخ قطع کرد). بررسی health check و سالم بودن همهٔ nodeها.</li>
+          <li><strong>اپلیکیشن:</strong> اشباع <code>pm.max_children</code> در PHP-FPM (درخواست‌ها در صف می‌مانند)، کوئری کند (slow query log)، فراخوانی همزمان (blocking) API خارجی بدون timeout، lock در دیتابیس. ابزارهای APM، Laravel Telescope/Pulse و لاگ‌های ساختاریافته با request ID.</li>
+        </ol>
+        <p><strong>جمع‌بندی پاسخ:</strong> فرضیه بسازید، با داده (metric، لاگ، trace) تأیید کنید، تغییر کوچک اعمال کنید و دوباره اندازه بگیرید. «گاهی» بودن معمولاً به یک node خاص، یک وابستگی خارجی، یا اشباع منابع در ساعات اوج اشاره دارد.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>لایه‌ها</h3>
+      <ul>
+        <li>OSI (۷): Physical، Data Link، Network، Transport، Session، Presentation، Application.</li>
+        <li>TCP/IP (۴): Link، Internet، Transport، Application.</li>
+        <li>Router = L3، Switch = L2، LB لایه ۴ (IP/Port) در برابر لایه ۷ (HTTP).</li>
+        <li>PDU: Bit ← Frame ← Packet ← Segment/Datagram ← Data.</li>
+      </ul>
+      <h3>IP</h3>
+      <ul>
+        <li>IPv4 = ۳۲ بیت؛ IPv6 = ۱۲۸ بیت، بدون نیاز به NAT.</li>
+        <li>خصوصی: <code>10/8</code>، <code>172.16/12</code>، <code>192.168/16</code>؛ loopback <code>127.0.0.1</code> و <code>::1</code>.</li>
+        <li><code>/24</code> = ۲۵۶ آدرس؛ تعداد = <code>2^(32-n)</code>.</li>
+        <li>NAT/PAT: صرفه‌جویی IPv4؛ مانع اتصال ورودی؛ firewall نیست.</li>
+        <li>IP: best-effort و connectionless؛ TTL ضد حلقه.</li>
+      </ul>
+      <h3>TCP</h3>
+      <ul>
+        <li>Handshake: SYN ← SYN-ACK ← ACK (۱ RTT).</li>
+        <li>Close: FIN/ACK در هر جهت (full-duplex ⇒ ۴ مرحله).</li>
+        <li>TIME_WAIT = active closer، 2×MSL؛ راه‌حل: reuse اتصال.</li>
+        <li>CLOSE_WAIT زیاد = برنامه سوکت را نمی‌بندد.</li>
+        <li>Flow control = rwnd (گیرنده)؛ Congestion = cwnd (فرستنده)، slow start، AIMD، CUBIC/BBR.</li>
+        <li>Reliability: seq، ACK، retransmit، checksum، SACK.</li>
+      </ul>
+      <h3>UDP</h3>
+      <ul>
+        <li>هدر ۸ بایت، بدون اتصال/ترتیب/تضمین؛ datagram.</li>
+        <li>DNS، VoIP، بازی، استریم زنده، QUIC، DHCP، StatsD.</li>
+      </ul>
+      <h3>پورت‌ها</h3>
+      <ul>
+        <li>22 SSH/SFTP · 25/587/465 SMTP · 53 DNS · 80/443 HTTP(S) · 143/993 IMAP · 3306 MySQL · 5432 Postgres · 6379 Redis · 5672 AMQP · 1883 MQTT · 9000 PHP-FPM.</li>
+        <li>اتصال = 4-tuple (src IP، src port، dst IP، dst port).</li>
+      </ul>
+      <h3>DNS</h3>
+      <ul>
+        <li>Browser ← OS ← Recursive resolver ← Root ← TLD ← Authoritative.</li>
+        <li>A، AAAA، CNAME (نه در apex)، MX (اولویت)، TXT (SPF/DKIM/DMARC)، NS، PTR، CAA.</li>
+        <li>TTL را قبل از مهاجرت کم کنید؛ «propagation» = انقضای cache.</li>
+        <li>UDP/53، پاسخ بزرگ ← TCP.</li>
+      </ul>
+      <h3>HTTP</h3>
+      <ul>
+        <li>1.0: اتصال جدید برای هر درخواست.</li>
+        <li>1.1: keep-alive، Host اجباری، chunked؛ HOL سطح HTTP؛ ~۶ اتصال موازی.</li>
+        <li>2: binary framing، multiplexing، HPACK، push (منسوخ ← 103 Early Hints)؛ HOL سطح TCP.</li>
+        <li>3: QUIC روی UDP، streamهای مستقل، TLS 1.3 داخلی، 0/1-RTT، connection migration، QPACK.</li>
+        <li>Semantics در همهٔ نسخه‌ها یکسان است.</li>
+      </ul>
+      <h3>TLS</h3>
+      <ul>
+        <li>محرمانگی + یکپارچگی + احراز هویت.</li>
+        <li>Hybrid: نامتقارن (ECDHE، امضا) برای کلید؛ متقارن (AES-GCM) برای داده.</li>
+        <li>زنجیره: Root ← Intermediate ← Leaf؛ همیشه fullchain بفرستید.</li>
+        <li>SNI = نام دامنه در ClientHello؛ ALPN = انتخاب h2/h3.</li>
+        <li>1.3: 1-RTT، 0-RTT (ریسک replay)، forward secrecy اجباری، حذف الگوریتم‌های قدیمی.</li>
+        <li>HSTS ضد SSL stripping؛ mTLS برای سرویس‌به‌سرویس.</li>
+      </ul>
+      <h3>Real-time</h3>
+      <ul>
+        <li>WebSocket: Upgrade ← 101، full-duplex، wss، بررسی Origin.</li>
+        <li>SSE: <code>text/event-stream</code>، یک‌طرفه، reconnect خودکار.</li>
+        <li>Long polling: fallback، پرهزینه در PHP-FPM.</li>
+        <li>Laravel: Broadcasting + Reverb + Echo.</li>
+      </ul>
+      <h3>سایر</h3>
+      <ul>
+        <li>gRPC: HTTP/2 + protobuf، ۴ نوع RPC، داخلی؛ شمارهٔ فیلد را تغییر ندهید.</li>
+        <li>AMQP: Exchange (direct/fanout/topic/headers) ← Queue، ack، DLX ⇒ consumer idempotent.</li>
+        <li>MQTT: سبک، IoT، QoS 0/1/2، retained، Last Will.</li>
+        <li>SMTP ارسال؛ IMAP همگام‌سازی؛ POP3 دانلود.</li>
+        <li>SFTP = روی SSH (نه FTP+TLS؛ آن FTPS است).</li>
+        <li>SSH: host key، کلید Ed25519، <code>-L</code> برای tunnel.</li>
+      </ul>
+      <h3>عیب‌یابی</h3>
+      <ul>
+        <li>Refused = پورت بسته (RST)؛ Timeout = drop/firewall؛ Name not known = DNS.</li>
+        <li>502 = upstream خطا داد؛ 504 = upstream timeout.</li>
+        <li><code>dig</code>، <code>ss</code>، <code>nc</code>، <code>curl -v -w</code>، <code>openssl s_client</code>، <code>mtr</code>، <code>tcpdump</code>.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

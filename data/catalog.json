@@ -1,0 +1,95 @@
+{
+  "title": "آمادگی آزمون شایستگی — مسیر Laravel",
+  "exams": [
+    {
+      "id": "e2",
+      "num": 2,
+      "title": "شایستگی‌های تخصصی مشترک حوزه Back — مقدماتی",
+      "short": "Back مقدماتی",
+      "day": "چهارشنبه ۲۰ آبان ۱۴۰۵",
+      "time": "۸:۰۰ تا ۱۰:۰۰",
+      "start": "2026-11-11T08:00:00+03:30",
+      "end": "2026-11-11T10:00:00+03:30",
+      "color": "e2",
+      "topics": [
+        { "slug": "mongodb", "title": "MongoDB" },
+        { "slug": "database-design", "title": "Database Design" },
+        { "slug": "protocols", "title": "Protocols" },
+        { "slug": "rest-api", "title": "REST API" },
+        { "slug": "algorithms", "title": "Algorithms & Problem-Solving" }
+      ]
+    },
+    {
+      "id": "e3",
+      "num": 3,
+      "title": "شایستگی‌های تخصصی مشترک حوزه Back — پیشرفته",
+      "short": "Back پیشرفته",
+      "day": "چهارشنبه ۲۰ آبان ۱۴۰۵",
+      "time": "۱۰:۱۵ تا ۱۲:۱۵",
+      "start": "2026-11-11T10:15:00+03:30",
+      "end": "2026-11-11T12:15:00+03:30",
+      "color": "e3",
+      "topics": [
+        { "slug": "advanced-database", "title": "Advanced Database" },
+        { "slug": "scaled-applications", "title": "Scaled Applications" },
+        { "slug": "code-optimization", "title": "Code Optimization" },
+        { "slug": "os-infrastructure", "title": "OS & Infrastructure" },
+        { "slug": "system-design", "title": "System Design (Microservices)" }
+      ]
+    },
+    {
+      "id": "e5",
+      "num": 5,
+      "title": "شایستگی‌های تخصصی Framework — Laravel",
+      "short": "Laravel Framework",
+      "day": "چهارشنبه ۲۰ آبان ۱۴۰۵",
+      "time": "۱۲:۴۵ تا ۱۴:۴۵",
+      "start": "2026-11-11T12:45:00+03:30",
+      "end": "2026-11-11T14:45:00+03:30",
+      "color": "e5",
+      "topics": [
+        { "slug": "php", "title": "PHP" },
+        { "slug": "laravel-basics", "title": "Laravel — Architecture & Basics" },
+        { "slug": "laravel-deeper", "title": "Laravel Deeper" },
+        { "slug": "eloquent", "title": "Eloquent" },
+        { "slug": "design-patterns", "title": "Design Patterns" }
+      ]
+    },
+    {
+      "id": "e1",
+      "num": 1,
+      "title": "شایستگی‌های تخصصی برنامه‌نویسی",
+      "short": "برنامه‌نویسی (عمومی)",
+      "day": "پنجشنبه ۲۱ آبان ۱۴۰۵",
+      "time": "۸:۰۰ تا ۱۰:۰۰",
+      "start": "2026-11-12T08:00:00+03:30",
+      "end": "2026-11-12T10:00:00+03:30",
+      "color": "e1",
+      "topics": [
+        { "slug": "owasp-security", "title": "OWASP & Security" },
+        { "slug": "software-design", "title": "Software Design (OOP · SOLID · Clean Code)" },
+        { "slug": "testing", "title": "Test & Test Design" },
+        { "slug": "documentation", "title": "Documentation" },
+        { "slug": "git", "title": "Git" }
+      ]
+    },
+    {
+      "id": "e4",
+      "num": 4,
+      "title": "شایستگی‌های تخصصی مشترک سایر حوزه‌ها — مقدماتی",
+      "short": "مشترک سایر حوزه‌ها",
+      "day": "پنجشنبه ۲۱ آبان ۱۴۰۵",
+      "time": "۱۰:۱۵ تا ۱۲:۱۵",
+      "start": "2026-11-12T10:15:00+03:30",
+      "end": "2026-11-12T12:15:00+03:30",
+      "color": "e4",
+      "topics": [
+        { "slug": "cicd", "title": "CI/CD" },
+        { "slug": "docker", "title": "Docker" },
+        { "slug": "web-fundamentals", "title": "HTTP · HTML · CSS · JS" },
+        { "slug": "monitoring", "title": "Monitoring" },
+        { "slug": "scripting", "title": "Scripting" }
+      ]
+    }
+  ]
+}

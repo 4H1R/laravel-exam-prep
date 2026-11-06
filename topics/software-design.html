@@ -1,0 +1,1527 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Software Design (OOP · SOLID · Clean Code) — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="software-design">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Software Design (OOP · SOLID · Clean Code)</h1>
+    <p class="lead">اصول طراحی نرم‌افزار شیءگرا از پایه تا معماری: چهار ستون OOP، اصول SOLID با مثال «نقض ← اصلاح» در PHP و Laravel، Coupling و Cohesion، تزریق وابستگی، Clean Code، Code Smellها و Refactoring، و نگاهی به معماری لایه‌ای، Hexagonal و واژگان DDD.</p>
+  </header>
+
+  <!-- ============ 1. OOP pillars ============ -->
+  <section class="lesson" id="oop-pillars" data-title="چهار ستون OOP">
+    <h2>چهار ستون OOP</h2>
+    <p>برنامه‌نویسی شیءگرا (<strong>Object-Oriented Programming</strong>) یعنی مدل‌کردن سیستم به‌صورت مجموعه‌ای از <strong>شیء</strong>‌ها که هر کدام داده (state) و رفتار (behavior) مربوط به خودش را یک‌جا نگه می‌دارد و با بقیه فقط از طریق پیام (فراخوانی متد) ارتباط دارد. چهار مفهوم اصلی که تقریباً همیشه در آزمون پرسیده می‌شود: <strong>Encapsulation</strong>، <strong>Abstraction</strong>، <strong>Inheritance</strong> و <strong>Polymorphism</strong>.</p>
+
+    <h3>۱) Encapsulation (کپسوله‌سازی)</h3>
+    <p>یعنی <strong>پنهان‌کردن وضعیت داخلی</strong> شیء و در اختیار گذاشتن فقط یک رابط کنترل‌شده برای تغییر آن، تا شیء همیشه در یک وضعیت معتبر (<strong>invariant</strong>) باقی بماند. ابزارهایش در PHP: سطح دسترسی <code>private</code>/<code>protected</code>، <code>readonly</code> (PHP 8.1)، کلاس‌های <code>readonly</code> (PHP 8.2) و متدهایی که قواعد کسب‌وکار را اعمال می‌کنند. کپسوله‌سازی «getter و setter برای همه فیلدها» نیست؛ setter بی‌قید و شرط عملاً همان فیلد public است.</p>
+    <pre><code class="language-php">&lt;?php
+// نادرست: بدون کپسوله‌سازی: هر کسی می‌تواند موجودی را منفی کند
+class BankAccount
+{
+    public float $balance = 0;
+}
+$acc = new BankAccount();
+$acc-&gt;balance = -500; // invariant شکسته شد
+
+// درست: با کپسوله‌سازی: قاعده «موجودی منفی نمی‌شود» داخل خود شیء است
+final class Account
+{
+    private int $balanceInCents = 0;
+
+    public function deposit(int $amount): void
+    {
+        if ($amount &lt;= 0) {
+            throw new InvalidArgumentException('Amount must be positive.');
+        }
+        $this-&gt;balanceInCents += $amount;
+    }
+
+    public function withdraw(int $amount): void
+    {
+        if ($amount &gt; $this-&gt;balanceInCents) {
+            throw new InsufficientFunds();
+        }
+        $this-&gt;balanceInCents -= $amount;
+    }
+
+    public function balance(): int
+    {
+        return $this-&gt;balanceInCents;
+    }
+}</code></pre>
+    <div class="callout tip"><p>در PHP 8.4 با <strong>asymmetric visibility</strong> می‌توان نوشت <code>public private(set) int $balance</code>؛ یعنی خواندن آزاد و نوشتن فقط از داخل کلاس. <strong>Property hooks</strong> هم در 8.4 اضافه شده‌اند. اگر پروژه روی 8.3 است، همان <code>private</code> + متد عمومی کافی است.</p></div>
+
+    <h3>۲) Abstraction (انتزاع)</h3>
+    <p>یعنی <strong>نمایش فقط ویژگی‌های ضروری</strong> یک مفهوم و پنهان‌کردن جزئیات پیاده‌سازی؛ مصرف‌کننده می‌داند «چه کاری» انجام می‌شود، نه «چطور». در PHP معمولاً با <code>interface</code> یا <code>abstract class</code> بیان می‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+interface PaymentGateway
+{
+    public function charge(Money $amount, string $token): PaymentResult;
+}
+
+// کد سفارش فقط با مفهوم «درگاه پرداخت» کار می‌کند،
+// نه با جزئیات HTTP و امضای درخواست درگاه خاص.
+final class CheckoutService
+{
+    public function __construct(private PaymentGateway $gateway) {}
+
+    public function pay(Order $order, string $token): PaymentResult
+    {
+        return $this-&gt;gateway-&gt;charge($order-&gt;total(), $token);
+    }
+}</code></pre>
+
+    <h3>تفاوت Abstraction و Encapsulation</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>معیار</th><th>Abstraction</th><th>Encapsulation</th></tr></thead>
+      <tbody>
+        <tr><td>هدف</td><td>کاهش پیچیدگی با نمایش «چه» به‌جای «چطور»</td><td>محافظت از وضعیت داخلی و حفظ invariantها</td></tr>
+        <tr><td>سطح</td><td>سطح طراحی (design level) — چه رابطی ارائه شود</td><td>سطح پیاده‌سازی — داده چطور پنهان و کنترل شود</td></tr>
+        <tr><td>ابزار در PHP</td><td><code>interface</code>، <code>abstract class</code>، امضای متدها</td><td><code>private</code>، <code>protected</code>، <code>readonly</code>، متدهای کنترل‌شده</td></tr>
+        <tr><td>سوال کلیدی</td><td>مصرف‌کننده به چه چیزی نیاز دارد؟</td><td>چه کسی اجازه تغییر این داده را دارد؟</td></tr>
+        <tr><td>مثال</td><td><code>Cache::get()</code> بدون دانستن Redis یا File</td><td>فیلد <code>$balance</code> که فقط از <code>withdraw()</code> تغییر می‌کند</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>جمله طلایی برای برگه امتحان: «Abstraction پیچیدگی را از دید <strong>مصرف‌کننده</strong> پنهان می‌کند (چه کاری)، Encapsulation جزئیات و داده را از <strong>دسترسی مستقیم</strong> پنهان می‌کند (چه کسی و چطور). این دو مکمل‌اند: انتزاع رابط را تعریف می‌کند و کپسوله‌سازی تضمین می‌کند پشت آن رابط کسی به داده دست‌درازی نکند.»</p></div>
+
+    <h3>۳) Inheritance (وراثت)</h3>
+    <p>رابطه <strong>is-a</strong>: کلاس فرزند رفتار و وضعیت کلاس والد را به ارث می‌برد و می‌تواند آن را گسترش دهد یا override کند. PHP فقط <strong>single inheritance</strong> برای کلاس دارد (یک <code>extends</code>)، ولی یک کلاس می‌تواند چند interface را implement کند و چند trait استفاده کند.</p>
+    <pre><code class="language-php">&lt;?php
+abstract class Notification
+{
+    public function __construct(protected string $recipient) {}
+
+    abstract protected function body(): string;
+
+    public function render(): string
+    {
+        return "To: {$this-&gt;recipient}\n" . $this-&gt;body();
+    }
+}
+
+final class WelcomeNotification extends Notification
+{
+    #[\Override] // PHP 8.3: اگر متد والد وجود نداشته باشد، خطا می‌دهد
+    protected function body(): string
+    {
+        return 'Welcome aboard!';
+    }
+}</code></pre>
+    <div class="callout warn"><p>وراثت قوی‌ترین نوع coupling است: فرزند به جزئیات پیاده‌سازی والد وابسته می‌شود و تغییر والد ممکن است بی‌صدا فرزندان را بشکند (<strong>Fragile Base Class problem</strong>). وراثت را فقط برای رابطه واقعی is-a که قرارداد والد را کامل رعایت می‌کند (LSP) به کار ببرید؛ برای «استفاده مجدد از کد» معمولاً <strong>composition</strong> بهتر است.</p></div>
+
+    <h3>۴) Polymorphism (چندریختی)</h3>
+    <p>یعنی <strong>یک رابط، چند پیاده‌سازی</strong>: کد فراخواننده با نوع انتزاعی کار می‌کند و رفتار واقعی در زمان اجرا بر اساس نوع واقعی شیء انتخاب می‌شود (<strong>dynamic dispatch</strong> یا subtype polymorphism). PHP «method overloading» به سبک Java (چند متد هم‌نام با پارامترهای مختلف) ندارد؛ چیزی که در PHP به آن overloading می‌گویند متدهای جادویی <code>__call</code> و <code>__get</code> است.</p>
+    <pre><code class="language-php">&lt;?php
+interface Shape { public function area(): float; }
+
+final class Circle implements Shape {
+    public function __construct(private float $r) {}
+    public function area(): float { return M_PI * $this-&gt;r ** 2; }
+}
+
+final class Rect implements Shape {
+    public function __construct(private float $w, private float $h) {}
+    public function area(): float { return $this-&gt;w * $this-&gt;h; }
+}
+
+/** @param Shape[] $shapes */
+function totalArea(array $shapes): float
+{
+    // هیچ if/switch روی نوع وجود ندارد؛ هر شیء خودش می‌داند مساحتش چیست
+    return array_sum(array_map(fn (Shape $s) =&gt; $s-&gt;area(), $shapes));
+}</code></pre>
+    <p>نمونه‌های Laravel: هر <strong>driver</strong> کش (<code>redis</code>، <code>file</code>، <code>database</code>) قرارداد <code>Illuminate\Contracts\Cache\Store</code> را پیاده می‌کند؛ کانال‌های Notification (<code>mail</code>، <code>database</code>، <code>broadcast</code>) و disk‌های Filesystem هم همین الگو را دارند. کد شما فقط با <code>Cache::get()</code> کار می‌کند و driver از کانفیگ عوض می‌شود.</p>
+    <div class="callout exam"><p>اگر در کد زنجیره‌ای از <code>if ($x instanceof A) … elseif ($x instanceof B)</code> یا <code>switch ($type)</code> می‌بینید که در چند جا تکرار شده، این نشانه «جایگزین‌کردن شرط با polymorphism» (<strong>Replace Conditional with Polymorphism</strong>) است و هم‌زمان OCP را هم نقض می‌کند.</p></div>
+  </section>
+
+  <!-- ============ 2. interface / abstract / trait ============ -->
+  <section class="lesson" id="interface-abstract-trait" data-title="Interface، Abstract و Trait">
+    <h2>Interface، Abstract و Trait</h2>
+    <p>سه ابزار PHP برای اشتراک‌گذاری «قرارداد» یا «کد» بین کلاس‌ها که مقایسه‌شان سوال کلاسیک آزمون است.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>Interface</th><th>Abstract Class</th><th>Trait</th></tr></thead>
+      <tbody>
+        <tr><td>ماهیت</td><td>فقط <strong>قرارداد</strong> (چه متدهایی)</td><td>قرارداد + <strong>پیاده‌سازی مشترک</strong> و state</td><td><strong>کپی کد</strong> در زمان کامپایل (horizontal reuse)</td></tr>
+        <tr><td>رابطه</td><td>can-do / behaves-as</td><td>is-a</td><td>هیچ رابطه نوعی ایجاد نمی‌کند</td></tr>
+        <tr><td>تعداد در یک کلاس</td><td>چندتا (<code>implements A, B</code>)</td><td>فقط یکی (<code>extends</code>)</td><td>چندتا (<code>use A, B</code>)</td></tr>
+        <tr><td>Property</td><td>ندارد (فقط ثابت؛ property hook در 8.4)</td><td>دارد</td><td>دارد</td></tr>
+        <tr><td>Constructor</td><td>می‌تواند امضا تعریف کند ولی بدنه ندارد</td><td>دارد</td><td>دارد (ولی توصیه نمی‌شود)</td></tr>
+        <tr><td>Type hint / instanceof</td><td>بله</td><td>بله</td><td><strong>خیر</strong></td></tr>
+        <tr><td>نمونه‌سازی مستقیم</td><td>خیر</td><td>خیر</td><td>خیر</td></tr>
+        <tr><td>متد abstract</td><td>همه متدها abstract و public</td><td>اختیاری، با هر visibility جز private</td><td>می‌تواند داشته باشد</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>کی کدام را انتخاب کنیم؟</h3>
+    <ul>
+      <li><strong>Interface</strong>: وقتی می‌خواهید چند پیاده‌سازی مستقل و قابل‌جایگزین داشته باشید و کد مصرف‌کننده فقط به قرارداد وابسته باشد (DIP، تست با mock). پیش‌فرض خوب برای مرز بین لایه‌ها.</li>
+      <li><strong>Abstract class</strong>: وقتی پیاده‌سازی‌ها واقعاً از یک خانواده‌اند و الگوریتم یا state مشترک دارند؛ مثلاً <strong>Template Method</strong> که اسکلت الگوریتم در والد و گام‌های متغیر در فرزند است. معمولاً abstract class خودش یک interface را implement می‌کند.</li>
+      <li><strong>Trait</strong>: برای استفاده مجدد از قطعه‌کد کوچک و افقی بین کلاس‌های بی‌ربط، مثل <code>HasFactory</code>، <code>SoftDeletes</code>، <code>Notifiable</code> در Laravel. trait نوع (type) نیست و جایگزین interface نمی‌شود؛ الگوی رایج: interface برای قرارداد + trait برای پیاده‌سازی پیش‌فرض.</li>
+    </ul>
+
+    <pre><code class="language-php">&lt;?php
+interface HasSlug
+{
+    public function slug(): string;
+}
+
+trait GeneratesSlug
+{
+    // trait می‌تواند متد abstract بخواهد تا به کلاس میزبان وابسته شود
+    abstract protected function slugSource(): string;
+
+    public function slug(): string
+    {
+        return \Illuminate\Support\Str::slug($this-&gt;slugSource());
+    }
+}
+
+final class Article implements HasSlug
+{
+    use GeneratesSlug;
+
+    public function __construct(private string $title) {}
+
+    protected function slugSource(): string
+    {
+        return $this-&gt;title;
+    }
+}</code></pre>
+
+    <h4>حل تداخل trait‌ها</h4>
+    <pre><code class="language-php">&lt;?php
+trait Loggable  { public function report(): string { return 'log'; } }
+trait Auditable { public function report(): string { return 'audit'; } }
+
+class Invoice
+{
+    use Loggable, Auditable {
+        Auditable::report insteadof Loggable; // کدام نسخه برنده شود
+        Loggable::report as logReport;        // نسخه دیگر با نام مستعار
+    }
+}</code></pre>
+
+    <div class="callout warn"><p>اشتباه رایج: پرکردن trait با منطق کسب‌وکار سنگین و وابستگی پنهان به propertyهای کلاس میزبان (مثلاً <code>$this-&gt;user</code> که در trait تعریف نشده). این کار coupling پنهان می‌سازد، تست را سخت می‌کند و یک «God Class» تکه‌تکه شده تحویل می‌دهد. اگر trait به سرویس خارجی نیاز دارد، احتمالاً باید یک کلاس جدا باشد که از طریق composition تزریق شود.</p></div>
+    <div class="callout exam"><p>در پاسخ تشریحی حتماً بگویید trait یک <strong>مکانیزم کپی کد توسط کامپایلر</strong> است، نه وراثت؛ <code>$obj instanceof SomeTrait</code> همیشه false است و نمی‌توانید روی trait type hint بزنید. برای بررسی استفاده از trait باید از <code>class_uses()</code> استفاده کرد.</p></div>
+  </section>
+
+  <!-- ============ 3. composition ============ -->
+  <section class="lesson" id="composition" data-title="Composition به‌جای Inheritance">
+    <h2>Composition به‌جای Inheritance</h2>
+    <p>اصل «<strong>Favor composition over inheritance</strong>» (از کتاب GoF) می‌گوید برای استفاده مجدد از رفتار، به‌جای ارث‌بری، شیء را از اشیای کوچک‌تر <strong>بسازید</strong> (رابطه <strong>has-a</strong>) و کار را به آنها <strong>واگذار (delegate)</strong> کنید.</p>
+
+    <h3>چرا وراثت برای reuse مشکل‌ساز است؟</h3>
+    <ul>
+      <li><strong>Coupling شدید و ایستا</strong>: رابطه در زمان کامپایل ثابت است و در runtime قابل تعویض نیست.</li>
+      <li><strong>Fragile base class</strong>: تغییر در والد ممکن است رفتار همه فرزندان را عوض کند.</li>
+      <li><strong>انفجار ترکیبی کلاس‌ها</strong>: برای ترکیب ویژگی‌ها (مثلاً «گزارش PDF ایمیلی زمان‌بندی‌شده») باید سلسله‌مراتب عمیق یا کلاس‌های ترکیبی زیاد بسازید.</li>
+      <li><strong>ارث‌بری چیزهای ناخواسته</strong>: فرزند همه متدهای public والد را می‌گیرد، حتی اگر برایش معنا نداشته باشد (نقض LSP/ISP).</li>
+    </ul>
+
+    <div class="grid-2">
+      <div class="card"><h4>نادرست: وراثت برای reuse</h4>
+<pre><code class="language-php">&lt;?php
+class Report { /* query + format */ }
+class PdfReport extends Report {}
+class EmailedPdfReport extends PdfReport {}
+class ScheduledEmailedPdfReport
+    extends EmailedPdfReport {}
+// برای CSV ایمیلی باید یک شاخه دیگر ساخت…</code></pre>
+      </div>
+      <div class="card"><h4>درست: ترکیب و واگذاری</h4>
+<pre><code class="language-php">&lt;?php
+final class ReportJob
+{
+    public function __construct(
+        private ReportQuery $query,
+        private Formatter $formatter, // Pdf | Csv
+        private Delivery $delivery,   // Email | S3
+    ) {}
+
+    public function run(): void
+    {
+        $data = $this-&gt;query-&gt;fetch();
+        $file = $this-&gt;formatter-&gt;format($data);
+        $this-&gt;delivery-&gt;send($file);
+    }
+}</code></pre>
+      </div>
+    </div>
+
+    <p>با composition هر بُعد تغییر (فرمت، روش ارسال) یک interface و چند پیاده‌سازی کوچک دارد؛ ترکیب‌ها در runtime یا در Service Container ساخته می‌شوند و تست هر جزء جداگانه ساده است. این همان ایده‌ای است که پشت الگوهای <strong>Strategy</strong>، <strong>Decorator</strong> و <strong>Bridge</strong> وجود دارد.</p>
+
+    <h3>کی وراثت هنوز درست است؟</h3>
+    <ul>
+      <li>رابطه واقعی is-a که فرزند <strong>همه</strong> قرارداد والد را رعایت می‌کند (LSP).</li>
+      <li>چارچوب (framework) نقطه توسعه را به شکل کلاس پایه ارائه داده: <code>Model</code>، <code>FormRequest</code>، <code>Job</code>، <code>Command</code> در Laravel. اینجا وراثت «قرارداد چارچوب» است.</li>
+      <li>Template Method با سلسله‌مراتب کم‌عمق (یک یا دو سطح).</li>
+    </ul>
+    <div class="callout tip"><p>قاعده سرانگشتی: کلاس‌های خود را به‌طور پیش‌فرض <code>final</code> تعریف کنید. اگر بعداً نیاز واقعی به وراثت پیدا شد، آگاهانه <code>final</code> را بردارید. این کار جلوی سلسله‌مراتب‌های تصادفی را می‌گیرد و شما را به سمت composition هدایت می‌کند.</p></div>
+    <div class="callout exam"><p>«has-a در برابر is-a» و «انعطاف در runtime در برابر رابطه ایستای compile-time» دو کلیدواژه‌ای هستند که پاسخ این سوال را کامل می‌کنند. یک مثال Decorator (مثلاً <code>CachedUserRepository</code> که یک <code>UserRepository</code> دیگر را wrap می‌کند) هم نشان می‌دهد composition چطور رفتار را بدون تغییر کلاس اصلی اضافه می‌کند.</p></div>
+  </section>
+
+  <!-- ============ 4. SRP ============ -->
+  <section class="lesson" id="srp" data-title="SOLID — S: Single Responsibility">
+    <h2>SOLID — S: Single Responsibility</h2>
+    <p>SOLID پنج اصل طراحی شیءگراست که Robert C. Martin (Uncle Bob) جمع‌بندی کرد و هدف مشترکشان ساختن کدی است که <strong>تغییرپذیر، قابل‌فهم و قابل‌تست</strong> باشد. اولین اصل:</p>
+    <div class="callout note"><p><strong>Single Responsibility Principle</strong>: «یک کلاس (ماژول) باید فقط <strong>یک دلیل برای تغییر</strong> داشته باشد.» در بیان دقیق‌تر خود Martin: «یک ماژول باید فقط در برابر <strong>یک actor</strong> (یک گروه ذی‌نفع) پاسخ‌گو باشد.»</p></div>
+    <p>SRP به معنای «هر کلاس فقط یک متد» یا «فقط یک کار کوچک» نیست؛ معیار، <strong>منبع تغییر</strong> است. اگر تیم مالی فرمول مالیات را عوض کند و تیم مارکتینگ قالب ایمیل را، و هر دو تغییر به یک کلاس برسد، آن کلاس دو مسئولیت دارد.</p>
+
+    <h3>نقض ← اصلاح</h3>
+    <pre><code class="language-php">&lt;?php
+// نادرست: کنترلر چاق: اعتبارسنجی، منطق کسب‌وکار، پرداخت، ایمیل و پاسخ HTTP یک‌جا
+class OrderController extends Controller
+{
+    public function store(Request $request)
+    {
+        $data = $request-&gt;validate([
+            'items'   =&gt; 'required|array',
+            'coupon'  =&gt; 'nullable|string',
+        ]);
+
+        $total = 0;
+        foreach ($data['items'] as $item) {
+            $total += Product::find($item['id'])-&gt;price * $item['qty'];
+        }
+        if ($data['coupon'] ?? null) {
+            $total *= 0.9;
+        }
+
+        $order = Order::create(['user_id' =&gt; auth()-&gt;id(), 'total' =&gt; $total]);
+        Http::post('https://gateway.example/pay', ['amount' =&gt; $total]);
+        Mail::to($request-&gt;user())-&gt;send(new OrderPlaced($order));
+
+        return response()-&gt;json($order, 201);
+    }
+}</code></pre>
+    <pre><code class="language-php">&lt;?php
+// درست: تفکیک مسئولیت‌ها
+final class StoreOrderRequest extends FormRequest      // ورودی و اعتبارسنجی
+{
+    public function rules(): array
+    {
+        return [
+            'items'         =&gt; ['required', 'array'],
+            'coupon'        =&gt; ['nullable', 'string'],
+            'payment_token' =&gt; ['required', 'string'],
+        ];
+    }
+}
+
+final class PriceCalculator                           // قواعد قیمت‌گذاری
+{
+    public function total(array $items, ?Coupon $coupon): Money { /* ... */ }
+}
+
+final class PlaceOrder                                // use case (Action)
+{
+    public function __construct(
+        private PriceCalculator $prices,
+        private PaymentGateway $gateway,
+    ) {}
+
+    public function handle(User $user, array $items, ?Coupon $coupon, string $paymentToken): Order
+    {
+        $total = $this-&gt;prices-&gt;total($items, $coupon);
+        $order = DB::transaction(fn () =&gt; Order::create([
+            'user_id' =&gt; $user-&gt;id,
+            'total'   =&gt; $total-&gt;amount(),
+        ]));
+        $this-&gt;gateway-&gt;charge($total, $paymentToken);
+        OrderPlaced::dispatch($order);                // ایمیل در Listener جدا
+        return $order;
+    }
+}
+
+final class OrderController extends Controller        // فقط HTTP
+{
+    public function store(StoreOrderRequest $request, PlaceOrder $placeOrder)
+    {
+        $order = $placeOrder-&gt;handle(
+            $request-&gt;user(),
+            $request-&gt;validated('items'),
+            null,
+            $request-&gt;validated('payment_token'),
+        );
+        return OrderResource::make($order)-&gt;response()-&gt;setStatusCode(201);
+    }
+}</code></pre>
+
+    <h3>SRP در Laravel</h3>
+    <ul>
+      <li><strong>Form Request</strong>: اعتبارسنجی و authorization ورودی را از کنترلر جدا می‌کند.</li>
+      <li><strong>API Resource</strong>: تبدیل مدل به JSON (لایه نمایش) را جدا می‌کند.</li>
+      <li><strong>Event/Listener</strong> و <strong>Job</strong>: اثرات جانبی مثل ارسال ایمیل از جریان اصلی جدا می‌شود.</li>
+      <li><strong>Policy</strong>: قواعد دسترسی در یک کلاس مخصوص.</li>
+      <li><strong>Middleware</strong>: هر دغدغه مشترک HTTP (احراز هویت، throttle، CORS) یک کلاس.</li>
+    </ul>
+    <div class="callout warn"><p>افراط در SRP هم بد است: شکستن هر کلاس به ده کلاس یک‌خطی، فهم جریان را سخت می‌کند و cohesion را پایین می‌آورد. هدف، کنار هم نگه‌داشتن چیزهایی است که <strong>با هم تغییر می‌کنند</strong> و جدا کردن چیزهایی که <strong>به دلایل متفاوت</strong> تغییر می‌کنند.</p></div>
+    <div class="callout exam"><p>نشانه‌های نقض SRP برای نوشتن در امتحان: نام کلاس با «And» یا «Manager/Helper/Util» کلی؛ import تعداد زیادی کلاس از لایه‌های مختلف (HTTP، DB، Mail)؛ تست‌کردن یک متد نیازمند mock کردن نیمی از سیستم؛ تغییرات بی‌ربط مکرر روی یک فایل در git log.</p></div>
+  </section>
+
+  <!-- ============ 5. OCP ============ -->
+  <section class="lesson" id="ocp" data-title="SOLID — O: Open/Closed">
+    <h2>SOLID — O: Open/Closed</h2>
+    <div class="callout note"><p><strong>Open/Closed Principle</strong> (Bertrand Meyer): «اجزای نرم‌افزار باید برای <strong>گسترش باز</strong> و برای <strong>تغییر بسته</strong> باشند.» یعنی بتوان رفتار جدید اضافه کرد بدون اینکه کد موجود و تست‌شده را ویرایش کرد.</p></div>
+    <p>ابزار اصلی OCP، <strong>abstraction + polymorphism</strong> است: نقطه متغیر را پشت یک interface می‌بریم و رفتار جدید را با یک کلاس جدید اضافه می‌کنیم.</p>
+
+    <h3>نقض ← اصلاح</h3>
+    <pre><code class="language-php">&lt;?php
+// نادرست: هر روش ارسال جدید = ویرایش همین متد و ریسک شکستن بقیه
+final class ShippingCost
+{
+    public function calculate(Order $order): int
+    {
+        return match ($order-&gt;shipping_method) {
+            'post'    =&gt; 20_000 + $order-&gt;weight * 1_000,
+            'courier' =&gt; 50_000,
+            'tipax'   =&gt; 35_000 + $order-&gt;weight * 500,
+            default   =&gt; throw new UnexpectedValueException(),
+        };
+    }
+}</code></pre>
+    <pre><code class="language-php">&lt;?php
+// درست: هر روش ارسال یک Strategy؛ روش جدید = کلاس جدید + ثبت در container
+interface ShippingMethod
+{
+    public function supports(string $code): bool;
+    public function cost(Order $order): int;
+}
+
+final class PostShipping implements ShippingMethod
+{
+    public function supports(string $code): bool { return $code === 'post'; }
+    public function cost(Order $order): int { return 20_000 + $order-&gt;weight * 1_000; }
+}
+
+final class ShippingCost
+{
+    /** @param iterable&lt;ShippingMethod&gt; $methods */
+    public function __construct(private iterable $methods) {}
+
+    public function calculate(Order $order): int
+    {
+        foreach ($this-&gt;methods as $method) {
+            if ($method-&gt;supports($order-&gt;shipping_method)) {
+                return $method-&gt;cost($order);
+            }
+        }
+        throw new UnsupportedShippingMethod($order-&gt;shipping_method);
+    }
+}
+
+// AppServiceProvider::register()
+$this-&gt;app-&gt;tag([PostShipping::class, CourierShipping::class], 'shipping.methods');
+$this-&gt;app-&gt;when(ShippingCost::class)
+    -&gt;needs('$methods')
+    -&gt;giveTagged('shipping.methods');</code></pre>
+
+    <h3>OCP در Laravel</h3>
+    <ul>
+      <li><strong>Middleware pipeline</strong>: رفتار جدید روی درخواست با افزودن middleware، بدون تغییر هسته.</li>
+      <li><strong>Custom drivers</strong>: <code>Cache::extend()</code>، <code>Storage::extend()</code>، <code>Auth::extend()</code> و custom notification channel اجازه می‌دهند driver جدید اضافه کنید بدون دست‌زدن به framework.</li>
+      <li><strong>Events/Listeners</strong>: واکنش جدید به رویداد = Listener جدید.</li>
+      <li><strong>Macroable</strong>: <code>Collection::macro()</code>، <code>Str::macro()</code> برای افزودن متد به کلاس‌های framework.</li>
+      <li><strong>Custom validation rule</strong> با پیاده‌سازی <code>ValidationRule</code>.</li>
+    </ul>
+    <div class="callout warn"><p>OCP یعنی «هرگز کد را عوض نکن» نیست. باگ را باید در همان‌جا درست کرد. همچنین لازم نیست از روز اول برای همه چیز نقطه توسعه بسازید (YAGNI)؛ وقتی دومین یا سومین گونه از یک رفتار ظاهر شد (<strong>Rule of Three</strong>)، آن نقطه را abstract کنید.</p></div>
+    <div class="callout exam"><p>ارتباط اصول را بگویید: OCP «هدف» است و <strong>DIP</strong> و <strong>LSP</strong> «ابزار» رسیدن به آن. بدون وابستگی به abstraction (DIP) نمی‌توان پیاده‌سازی جدید را plug کرد، و اگر پیاده‌سازی جدید قرارداد را نشکند (LSP) کد موجود بدون تغییر درست کار می‌کند.</p></div>
+  </section>
+
+  <!-- ============ 6. LSP ============ -->
+  <section class="lesson" id="lsp" data-title="SOLID — L: Liskov Substitution">
+    <h2>SOLID — L: Liskov Substitution</h2>
+    <div class="callout note"><p><strong>Liskov Substitution Principle</strong> (Barbara Liskov، 1987): «اگر S زیرنوع T باشد، باید بتوان هر جا که T استفاده شده، شیئی از S گذاشت <strong>بدون اینکه درستی برنامه</strong> تغییر کند.» به زبان ساده: فرزند باید <strong>قرارداد رفتاری</strong> والد را رعایت کند، نه فقط امضای متدها را.</p></div>
+
+    <h3>قواعد قرارداد (Design by Contract)</h3>
+    <ul>
+      <li><strong>Precondition</strong>‌ها را در فرزند <strong>سخت‌تر نکنید</strong> (فرزند نباید ورودی‌ای را که والد قبول می‌کرد رد کند).</li>
+      <li><strong>Postcondition</strong>‌ها را <strong>ضعیف‌تر نکنید</strong> (فرزند باید حداقل همان تضمین‌های خروجی والد را بدهد).</li>
+      <li><strong>Invariant</strong>‌های والد حفظ شوند.</li>
+      <li>Exception <strong>جدید و غیرمنتظره</strong> پرتاب نشود (مثلاً <code>NotImplementedException</code> در متدی که والد قول اجرایش را داده).</li>
+      <li>از نظر نوع‌ها: پارامترها می‌توانند <strong>contravariant</strong> (عام‌تر) و نوع بازگشتی <strong>covariant</strong> (خاص‌تر) باشند؛ PHP از 7.4 این را پشتیبانی می‌کند.</li>
+    </ul>
+
+    <h3>مثال کلاسیک: مستطیل و مربع</h3>
+    <pre><code class="language-php">&lt;?php
+class Rectangle
+{
+    public function __construct(protected int $w, protected int $h) {}
+    public function setWidth(int $w): void  { $this-&gt;w = $w; }
+    public function setHeight(int $h): void { $this-&gt;h = $h; }
+    public function area(): int { return $this-&gt;w * $this-&gt;h; }
+}
+
+class Square extends Rectangle
+{
+    public function setWidth(int $w): void  { $this-&gt;w = $this-&gt;h = $w; }
+    public function setHeight(int $h): void { $this-&gt;w = $this-&gt;h = $h; }
+}
+
+function resize(Rectangle $r): void
+{
+    $r-&gt;setWidth(5);
+    $r-&gt;setHeight(4);
+    assert($r-&gt;area() === 20); // برای Square شکست می‌خورد: 16
+}</code></pre>
+    <p>از نظر ریاضی مربع «یک» مستطیل است، ولی از نظر <strong>رفتار</strong> این کلاس‌ها (عرض و ارتفاع مستقل قابل تغییرند) مربع جایگزین معتبر نیست. راه‌حل: سلسله‌مراتب را حذف کنید و هر دو را پیاده‌سازی یک <code>Shape</code> با <strong>value object تغییرناپذیر</strong> بسازید (<code>withWidth()</code> شیء جدید برمی‌گرداند).</p>
+
+    <h3>نقض رایج در کد واقعی</h3>
+    <pre><code class="language-php">&lt;?php
+interface FileStorage
+{
+    public function put(string $path, string $contents): void;
+    public function delete(string $path): void;
+}
+
+// نادرست: ذخیره‌ساز فقط‌خواندنی که مجبور شده interface کامل را implement کند
+final class ArchiveStorage implements FileStorage
+{
+    public function put(string $path, string $contents): void { /* ... */ }
+
+    public function delete(string $path): void
+    {
+        throw new LogicException('Archive is append-only'); // غافلگیری برای فراخواننده
+    }
+}</code></pre>
+    <p>هر کدی که <code>FileStorage</code> می‌گیرد و <code>delete()</code> را صدا می‌زند، با این پیاده‌سازی می‌شکند. اصلاح معمولاً با <strong>ISP</strong> است: interface را به <code>WritableStorage</code> و <code>DeletableStorage</code> بشکنید تا <code>ArchiveStorage</code> فقط قراردادی را بپذیرد که واقعاً رعایت می‌کند.</p>
+
+    <h3>LSP در Laravel</h3>
+    <p>کل ایده driverها بر LSP تکیه دارد: وقتی <code>CACHE_STORE</code> را از <code>file</code> به <code>redis</code> عوض می‌کنید، کد شما نباید بفهمد. هر driver که <code>Illuminate\Contracts\Cache\Store</code> را پیاده می‌کند باید همان معنای <code>get</code>/<code>put</code>/<code>forget</code> را حفظ کند. Fakeها در تست (<code>Mail::fake()</code>، <code>Queue::fake()</code>، <code>Storage::fake()</code>) هم جایگزین‌های LSP-سازگار هستند.</p>
+    <div class="callout exam"><p>نشانه‌های نقض LSP: بررسی نوع در کد مصرف‌کننده (<code>if ($storage instanceof ArchiveStorage)</code>)، متدهای override‌شده‌ای که خالی هستند یا exception «پشتیبانی نمی‌شود» می‌دهند، و تست‌هایی که برای والد پاس می‌شوند ولی برای فرزند نه. در پاسخ، «قرارداد رفتاری، نه فقط امضا» را حتماً بنویسید.</p></div>
+  </section>
+
+  <!-- ============ 7. ISP ============ -->
+  <section class="lesson" id="isp" data-title="SOLID — I: Interface Segregation">
+    <h2>SOLID — I: Interface Segregation</h2>
+    <div class="callout note"><p><strong>Interface Segregation Principle</strong>: «هیچ کلاینتی نباید مجبور شود به متدهایی وابسته باشد که از آنها استفاده نمی‌کند.» به‌جای یک interface چاق (fat interface)، چند interface کوچک و <strong>نقش‌محور (role interface)</strong> بسازید.</p></div>
+
+    <h3>نقض ← اصلاح</h3>
+    <pre><code class="language-php">&lt;?php
+// نادرست: interface چاق: هر پیاده‌سازی مجبور است همه را داشته باشد
+interface UserRepository
+{
+    public function find(int $id): ?User;
+    public function search(array $filters): Collection;
+    public function save(User $user): void;
+    public function delete(User $user): void;
+    public function exportToCsv(): string;
+    public function syncWithLdap(): void;
+}</code></pre>
+    <pre><code class="language-php">&lt;?php
+// درست: interfaceهای نقش‌محور؛ هر مصرف‌کننده فقط به چیزی که لازم دارد وابسته است
+interface FindsUsers   { public function find(int $id): ?User; }
+interface SavesUsers   { public function save(User $user): void; }
+interface ExportsUsers { public function exportToCsv(): string; }
+
+final class EloquentUserRepository implements FindsUsers, SavesUsers
+{
+    public function find(int $id): ?User { return User::find($id); }
+    public function save(User $user): void { $user-&gt;save(); }
+}
+
+// گزارش‌گیر فقط ExportsUsers را می‌شناسد؛ mock کردنش هم یک متد است
+final class MonthlyReport
+{
+    public function __construct(private ExportsUsers $users) {}
+}</code></pre>
+
+    <h3>چرا مهم است؟</h3>
+    <ul>
+      <li>تغییر در متدی که کلاینت استفاده نمی‌کند، نباید آن کلاینت را تحت‌تأثیر قرار دهد (کاهش coupling).</li>
+      <li>پیاده‌سازی‌ها مجبور به متدهای خالی یا exception نمی‌شوند (کمک به LSP).</li>
+      <li>تست‌ها ساده‌تر: test double کوچک‌تر.</li>
+    </ul>
+
+    <h3>ISP در Laravel</h3>
+    <p>پوشه <code>Illuminate\Contracts</code> پر از interfaceهای کوچک و تک‌منظوره است: <code>Arrayable</code> (فقط <code>toArray()</code>)، <code>Jsonable</code>، <code>Htmlable</code>، <code>Responsable</code> (فقط <code>toResponse()</code>)، <code>Renderable</code>. Interfaceهای نشانگر (marker) مثل <code>ShouldQueue</code>، <code>ShouldBeUnique</code> و <code>ShouldBroadcast</code> هم نمونه‌های افراطی ISP هستند: یک کلاس با implement کردن آنها فقط یک «نقش» را اعلام می‌کند.</p>
+    <div class="callout tip"><p>ISP از دید <strong>کلاینت</strong> تعریف می‌شود، نه پیاده‌ساز. سوال درست این است: «این مصرف‌کننده دقیقاً به چه متدهایی نیاز دارد؟» نه «این کلاس چه کارهایی بلد است؟»</p></div>
+    <div class="callout exam"><p>تفاوت ISP و SRP: SRP درباره <strong>دلیل تغییر یک کلاس</strong> است (سمت پیاده‌سازی)، ISP درباره <strong>اندازه و تمرکز قرارداد از دید مصرف‌کننده</strong> است. یک کلاس می‌تواند چند interface کوچک را implement کند و همچنان SRP را رعایت کند اگر همه آنها یک مسئولیت منسجم باشند.</p></div>
+  </section>
+
+  <!-- ============ 8. DIP ============ -->
+  <section class="lesson" id="dip" data-title="SOLID — D: Dependency Inversion">
+    <h2>SOLID — D: Dependency Inversion</h2>
+    <div class="callout note"><p><strong>Dependency Inversion Principle</strong>: (۱) ماژول‌های سطح بالا (سیاست/منطق کسب‌وکار) نباید به ماژول‌های سطح پایین (جزئیات: DB، HTTP، فایل) وابسته باشند؛ <strong>هر دو باید به abstraction وابسته باشند</strong>. (۲) abstraction نباید به جزئیات وابسته باشد؛ جزئیات باید به abstraction وابسته باشند.</p></div>
+    <p>«Inversion» یعنی جهت وابستگی در کد، <strong>برخلاف جهت جریان کنترل</strong> می‌شود: منطق سفارش، درگاه پرداخت را صدا می‌زند، ولی در کد، این کلاس درگاه است که به interface تعریف‌شده توسط لایه سفارش وابسته است. نکته ظریف: <strong>مالکیت interface</strong> با ماژول سطح بالاست.</p>
+
+    <pre class="diagram">Without DIP:
+  OrderService ─────────────► ZarinpalClient   (direct dependency on details)
+
+With DIP:
+  OrderService ─────► PaymentGateway (interface, owned by the domain layer)
+                             ▲
+                             │ implements
+                      ZarinpalGateway / FakeGateway (infrastructure)</pre>
+
+    <h3>نقض ← اصلاح</h3>
+    <pre><code class="language-php">&lt;?php
+// نادرست: وابستگی سخت به کلاس concrete و ساختن آن داخل کلاس
+final class InvoiceService
+{
+    public function send(Invoice $invoice): void
+    {
+        $sms = new KavenegarClient(config('services.kavenegar.key'));
+        $sms-&gt;send($invoice-&gt;customer-&gt;mobile, "Invoice #{$invoice-&gt;id}");
+    }
+}</code></pre>
+    <pre><code class="language-php">&lt;?php
+// درست: وابستگی به abstraction و تزریق از بیرون
+interface SmsSender
+{
+    public function send(string $to, string $message): void;
+}
+
+final class KavenegarSmsSender implements SmsSender
+{
+    public function __construct(private KavenegarClient $client) {}
+    public function send(string $to, string $message): void
+    {
+        $this-&gt;client-&gt;send($to, $message);
+    }
+}
+
+final class InvoiceService
+{
+    public function __construct(private SmsSender $sms) {}
+
+    public function send(Invoice $invoice): void
+    {
+        $this-&gt;sms-&gt;send($invoice-&gt;customer-&gt;mobile, "Invoice #{$invoice-&gt;id}");
+    }
+}
+
+// AppServiceProvider::register()
+$this-&gt;app-&gt;bind(SmsSender::class, KavenegarSmsSender::class);
+
+// در تست
+$this-&gt;app-&gt;instance(SmsSender::class, new FakeSmsSender());</code></pre>
+
+    <h3>DIP در Laravel</h3>
+    <ul>
+      <li><strong>Contracts</strong>: <code>Illuminate\Contracts\Mail\Mailer</code>، <code>Cache\Repository</code>، <code>Queue\Queue</code> و … ؛ کد شما می‌تواند به جای کلاس concrete به این قراردادها type hint بزند.</li>
+      <li><strong>Service Container</strong> با <code>bind</code>/<code>singleton</code>/<code>scoped</code> مشخص می‌کند کدام پیاده‌سازی به کدام abstraction وصل شود؛ <strong>Service Provider</strong> محل این «سیم‌کشی» است.</li>
+      <li><strong>Contextual binding</strong>: <code>$this-&gt;app-&gt;when(A::class)-&gt;needs(Storage::class)-&gt;give(S3Storage::class)</code> برای اینکه مصرف‌کننده‌های مختلف پیاده‌سازی متفاوت بگیرند.</li>
+    </ul>
+    <div class="callout warn"><p>DIP با DI یکی نیست. <strong>DIP</strong> یک اصل طراحی درباره جهت وابستگی‌هاست؛ <strong>DI</strong> یک تکنیک برای تحویل وابستگی از بیرون است. می‌توان DI انجام داد ولی DIP را نقض کرد (تزریق کلاس concrete از لایه پایین)، و <strong>IoC Container</strong> صرفاً ابزاری است که DI را خودکار می‌کند.</p></div>
+    <div class="callout exam"><p>همه چیز را interface نکنید. DIP برای <strong>مرزهای ناپایدار یا خارجی</strong> (درگاه پرداخت، SMS، سرویس‌های third-party، ذخیره‌سازی) بیشترین ارزش را دارد. برای کلاس‌های پایدار داخلی (مثل یک value object یا <code>PriceCalculator</code> ساده) interface اضافه فقط indirection بی‌فایده است.</p></div>
+  </section>
+
+  <!-- ============ 9. Principles ============ -->
+  <section class="lesson" id="principles" data-title="DRY، KISS، YAGNI و اصول دیگر">
+    <h2>DRY، KISS، YAGNI و اصول دیگر</h2>
+
+    <dl class="terms">
+      <dt>DRY</dt><dd><strong>Don't Repeat Yourself</strong> (کتاب Pragmatic Programmer): «هر تکه <strong>دانش</strong> باید یک نمایش واحد، بی‌ابهام و معتبر در سیستم داشته باشد.»</dd>
+      <dt>KISS</dt><dd><strong>Keep It Simple, Stupid</strong>: ساده‌ترین راه‌حلی که مسئله را درست حل می‌کند را انتخاب کنید؛ پیچیدگی باید توجیه داشته باشد.</dd>
+      <dt>YAGNI</dt><dd><strong>You Aren't Gonna Need It</strong> (از Extreme Programming): قابلیتی را که امروز لازم نیست، امروز نسازید.</dd>
+      <dt>Law of Demeter</dt><dd>«فقط با دوستان نزدیکت حرف بزن»: متد فقط با خودش، پارامترهایش، اشیایی که می‌سازد و فیلدهای مستقیمش کار کند.</dd>
+      <dt>Tell, Don't Ask</dt><dd>به شیء بگویید چه کند، به‌جای اینکه وضعیتش را بپرسید و بیرون از آن تصمیم بگیرید.</dd>
+      <dt>SoC</dt><dd><strong>Separation of Concerns</strong>: هر بخش سیستم یک دغدغه مشخص را مدیریت کند (نمایش، منطق، دسترسی به داده).</dd>
+    </dl>
+
+    <h3>DRY — درباره دانش، نه متن</h3>
+    <p>DRY یعنی <strong>یک قاعده کسب‌وکار</strong> فقط یک جا تعریف شود؛ نه اینکه هر دو خط کد مشابه باید یکی شوند. دو تکه کد که امروز شبیه‌اند ولی <strong>به دلایل متفاوت تغییر می‌کنند</strong> (مثلاً اعتبارسنجی ثبت‌نام کاربر و ثبت فروشنده) اگر به‌زور یکی شوند، یک abstraction غلط با flagهای boolean متعدد می‌سازند. به تکرار تصادفی (<strong>incidental duplication</strong>) دست نزنید.</p>
+    <pre><code class="language-php">&lt;?php
+// نادرست: قاعده «سفارش قابل لغو است؟» در کنترلر، Blade و Job تکرار شده
+if ($order-&gt;status === 'pending' &amp;&amp; $order-&gt;created_at-&gt;gt(now()-&gt;subDay())) { /* ... */ }
+
+// درست: دانش یک جا
+final class Order extends Model
+{
+    public function isCancellable(): bool
+    {
+        return $this-&gt;status === OrderStatus::Pending
+            &amp;&amp; $this-&gt;created_at-&gt;gt(now()-&gt;subDay());
+    }
+}</code></pre>
+    <div class="callout tip"><p>عبارت «<strong>duplication is far cheaper than the wrong abstraction</strong>» (Sandi Metz) را به یاد داشته باشید. تکرار را تا دیدن الگوی واقعی تحمل کنید (Rule of Three)، بعد abstract کنید. اصل مقابل DRY افراطی را گاهی <strong>WET</strong> یا <strong>AHA</strong> (Avoid Hasty Abstractions) می‌نامند.</p></div>
+
+    <h3>KISS و YAGNI</h3>
+    <ul>
+      <li><strong>KISS</strong>: یک کوئری Eloquent ساده بهتر از Repository + Specification + Criteria برای یک CRUD ساده است. کد خوانا برای نفر بعدی مهم‌تر از کد «زیرکانه» است.</li>
+      <li><strong>YAGNI</strong>: «شاید روزی چند دیتابیس پشتیبانی کنیم» دلیل کافی برای لایه انتزاع امروز نیست. هزینه‌های ساختن زودهنگام: زمان ساخت، پیچیدگی نگه‌داری، و اغلب حدس اشتباه درباره نیاز آینده.</li>
+      <li>YAGNI شامل کیفیت نمی‌شود: تست، مدیریت خطا و کد تمیز «قابلیت آینده» نیستند.</li>
+    </ul>
+
+    <h3>Law of Demeter (اصل کمترین دانش)</h3>
+    <pre><code class="language-php">&lt;?php
+// نادرست: train wreck: کنترلر ساختار داخلی سه شیء را می‌داند
+$city = $order-&gt;getCustomer()-&gt;getAddress()-&gt;getCity()-&gt;getName();
+
+// درست: از شیء نزدیک بخواهید
+$city = $order-&gt;shippingCityName();</code></pre>
+    <p>هدف کاهش coupling است: اگر ساختار <code>Address</code> عوض شود، فقط <code>Order</code> باید تغییر کند. نکته: <strong>fluent interface</strong>‌ها (Query Builder، Collection) که هر بار همان نوع شیء را برمی‌گردانند، نقض Demeter نیستند؛ <code>User::where(...)-&gt;orderBy(...)-&gt;get()</code> مشکلی ندارد.</p>
+
+    <h3>Tell, Don't Ask</h3>
+    <pre><code class="language-php">&lt;?php
+// نادرست: Ask: منطق بیرون از شیء
+if ($wallet-&gt;getBalance() &gt;= $price) {
+    $wallet-&gt;setBalance($wallet-&gt;getBalance() - $price);
+}
+
+// درست: Tell: شیء خودش قاعده را اجرا می‌کند
+$wallet-&gt;pay($price); // اگر موجودی کافی نبود، InsufficientFunds پرتاب می‌شود</code></pre>
+    <p>این اصل مستقیماً به encapsulation کمک می‌کند و جلوی <strong>Anemic Domain Model</strong> (مدل‌هایی که فقط getter/setter دارند و همه منطق در سرویس‌هاست) را می‌گیرد.</p>
+
+    <h3>Separation of Concerns</h3>
+    <p>در Laravel: <strong>Route</strong> (نگاشت URL)، <strong>Middleware</strong> (دغدغه‌های مشترک)، <strong>Form Request</strong> (اعتبارسنجی)، <strong>Controller</strong> (هماهنگی HTTP)، <strong>Action/Service</strong> (use case)، <strong>Model</strong> (داده و قواعد دامنه)، <strong>Resource/Blade</strong> (نمایش). SoC اصل کلی‌تری است که SRP در سطح کلاس و معماری لایه‌ای در سطح سیستم از آن پیروی می‌کنند.</p>
+    <div class="callout exam"><p>سوال رایج: «تعارض DRY و KISS/YAGNI را توضیح دهید.» پاسخ: DRY افراطی abstractionهای زودهنگام و پیچیده می‌سازد (نقض KISS و YAGNI). راه تعادل: DRY را برای <strong>دانش و قواعد کسب‌وکار</strong> سخت‌گیرانه اجرا کنید، ولی شباهت ظاهری کد را تا تکرار سوم تحمل کنید.</p></div>
+  </section>
+
+  <!-- ============ 10. Coupling & cohesion ============ -->
+  <section class="lesson" id="coupling-cohesion" data-title="Coupling و Cohesion">
+    <h2>Coupling و Cohesion</h2>
+    <p>دو معیار بنیادی کیفیت طراحی که تقریباً همه اصول دیگر (SOLID، Demeter، SoC) در خدمت آنها هستند. هدف: <strong>Low Coupling, High Cohesion</strong>.</p>
+    <div class="grid-2">
+      <div class="card"><h4>Coupling (وابستگی بین ماژول‌ها)</h4>
+        <ul>
+          <li>میزان وابستگی یک ماژول به ماژول‌های <strong>دیگر</strong>.</li>
+          <li>Coupling بالا: تغییر در A باعث تغییر در B، C و D می‌شود (shotgun surgery)، تست جداگانه سخت است.</li>
+          <li>کاهش با: interface، DI، event، Demeter، DTO در مرزها.</li>
+        </ul>
+      </div>
+      <div class="card"><h4>Cohesion (انسجام درون ماژول)</h4>
+        <ul>
+          <li>میزان ارتباط و هم‌هدفی اجزای <strong>داخل</strong> یک ماژول.</li>
+          <li>Cohesion بالا: متدها روی داده‌های مشترک و برای یک هدف کار می‌کنند.</li>
+          <li>Cohesion پایین: کلاس‌های <code>Utils</code>/<code>Helper</code> که مجموعه‌ای از توابع بی‌ربط‌اند.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>انواع Coupling (از بد به خوب)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>توضیح</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td>Content</td><td>ماژول مستقیماً داخل ماژول دیگر را تغییر می‌دهد</td><td>دستکاری property خصوصی با Reflection</td></tr>
+        <tr><td>Common (Global)</td><td>اشتراک داده سراسری</td><td>متغیر global، state استاتیک مشترک</td></tr>
+        <tr><td>Control</td><td>یکی با flag رفتار دیگری را کنترل می‌کند</td><td><code>export($data, true, false)</code></td></tr>
+        <tr><td>Stamp</td><td>ارسال ساختار کامل وقتی فقط بخشی لازم است</td><td>پاس دادن کل <code>$request</code> به سرویس</td></tr>
+        <tr><td>Data</td><td>فقط داده لازم از طریق پارامتر</td><td><code>calculateTax(Money $amount)</code></td></tr>
+        <tr><td>Message</td><td>ارتباط فقط با پیام/رویداد</td><td>Event و Queue</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>انواع Cohesion (از بد به خوب)</h3>
+    <p><strong>Coincidental</strong> (تصادفی، کلاس Utils) ← <strong>Logical</strong> (دسته‌بندی منطقی مثل «همه ورودی‌ها») ← <strong>Temporal</strong> (کارهایی که هم‌زمان اجرا می‌شوند، مثل bootstrap) ← <strong>Procedural</strong> ← <strong>Communicational</strong> (روی داده مشترک) ← <strong>Sequential</strong> (خروجی یکی ورودی دیگری) ← <strong>Functional</strong> (همه اجزا برای یک وظیفه واحد) که بهترین است.</p>
+
+    <pre><code class="language-php">&lt;?php
+// نادرست: Cohesion پایین + Control coupling
+final class Helper
+{
+    public static function formatPrice(int $p): string { /* ... */ }
+    public static function sendSms(string $to, string $m): void { /* ... */ }
+    public static function resizeImage(string $path, bool $thumb = false): void { /* ... */ }
+}
+
+// درست: هر مفهوم یک خانه منسجم
+final class Money { public function format(): string { /* ... */ } }
+interface SmsSender { public function send(string $to, string $message): void; }
+final class ImageResizer
+{
+    public function thumbnail(string $path): void { /* ... */ }
+    public function full(string $path): void { /* ... */ }
+}</code></pre>
+    <div class="callout warn"><p>پاس‌دادن <code>Illuminate\Http\Request</code> به لایه سرویس یک stamp coupling رایج است: سرویس به HTTP گره می‌خورد و از Artisan command یا Job قابل استفاده نیست. داده‌های اعتبارسنجی‌شده یا یک <strong>DTO</strong> را پاس دهید.</p></div>
+    <div class="callout exam"><p>اگر پرسیدند «چرا low coupling و high cohesion مهم‌اند؟»: (۱) <strong>تغییرپذیری</strong>، تغییر محلی می‌ماند؛ (۲) <strong>تست‌پذیری</strong>، اجزا جدا تست می‌شوند؛ (۳) <strong>قابلیت استفاده مجدد</strong>؛ (۴) <strong>فهم‌پذیری</strong>، برای فهمیدن یک ماژول لازم نیست کل سیستم را بخوانید؛ (۵) کار موازی تیم‌ها. این دو معمولاً با هم حرکت می‌کنند: افزایش cohesion معمولاً coupling را کم می‌کند.</p></div>
+  </section>
+
+  <!-- ============ 11. DI / IoC ============ -->
+  <section class="lesson" id="di-ioc" data-title="DI، IoC و Service Locator">
+    <h2>DI، IoC و Service Locator</h2>
+    <dl class="terms">
+      <dt>IoC</dt><dd><strong>Inversion of Control</strong>: اصل کلی که در آن کنترل جریان یا ساخت اشیا از کد شما به یک چارچوب/کانتینر منتقل می‌شود («Don't call us, we'll call you»). Framework، Event، Template Method و DI همه شکل‌هایی از IoC هستند.</dd>
+      <dt>DI</dt><dd><strong>Dependency Injection</strong>: شکل خاصی از IoC؛ شیء وابستگی‌هایش را نمی‌سازد و پیدا نمی‌کند، بلکه <strong>از بیرون دریافت می‌کند</strong>.</dd>
+      <dt>IoC Container</dt><dd>ابزاری که گراف وابستگی‌ها را می‌سازد و DI را خودکار می‌کند؛ در Laravel همان <strong>Service Container</strong> است.</dd>
+      <dt>Service Locator</dt><dd>شیء خودش از یک رجیستری سراسری وابستگی‌اش را <strong>درخواست می‌کند</strong> (<code>app(Foo::class)</code> داخل متد).</dd>
+    </dl>
+
+    <h3>انواع DI</h3>
+    <ul>
+      <li><strong>Constructor injection</strong> (پیش‌فرض و بهترین): وابستگی‌های اجباری در سازنده؛ شیء هرگز در وضعیت ناقص ساخته نمی‌شود و وابستگی‌ها صریح و قابل دیدن‌اند.</li>
+      <li><strong>Method injection</strong>: وابستگی فقط برای یک متد لازم است؛ Laravel در متدهای کنترلر، <code>handle()</code> در Job و Command، و Listenerها این را خودکار انجام می‌دهد.</li>
+      <li><strong>Setter injection</strong>: برای وابستگی‌های اختیاری؛ خطر وضعیت ناقص و mutable بودن.</li>
+    </ul>
+
+    <h3>DI در برابر Service Locator</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Dependency Injection</h4>
+<pre><code class="language-php">&lt;?php
+final class ReportService
+{
+    public function __construct(
+        private ReportRepository $repo,
+        private Mailer $mailer,
+    ) {}
+}</code></pre>
+        <ul>
+          <li>وابستگی‌ها در امضا <strong>صریح</strong>‌اند.</li>
+          <li>تست: نمونه fake را مستقیم به سازنده بدهید.</li>
+          <li>خطای پیکربندی زودتر (هنگام ساخت) دیده می‌شود.</li>
+        </ul>
+      </div>
+      <div class="card"><h4>Service Locator</h4>
+<pre><code class="language-php">&lt;?php
+final class ReportService
+{
+    public function send(): void
+    {
+        $repo = app(ReportRepository::class);
+        $mailer = app('mailer');
+        // ...
+    }
+}</code></pre>
+        <ul>
+          <li>وابستگی‌ها <strong>پنهان</strong>‌اند؛ باید بدنه را خواند.</li>
+          <li>کلاس به خود container گره می‌خورد.</li>
+          <li>خطا فقط در runtime و در همان مسیر کد ظاهر می‌شود.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Service Container در Laravel</h3>
+    <pre><code class="language-php">&lt;?php
+// app/Providers/AppServiceProvider.php
+public function register(): void
+{
+    // هر بار resolve = نمونه جدید
+    $this-&gt;app-&gt;bind(SmsSender::class, KavenegarSmsSender::class);
+
+    // یک نمونه در کل عمر اپلیکیشن (در Octane: بین درخواست‌ها مشترک!)
+    $this-&gt;app-&gt;singleton(ExchangeRates::class, fn ($app) =&gt;
+        new ExchangeRates($app-&gt;make(HttpClient::class), config('rates.ttl'))
+    );
+
+    // یک نمونه در هر request/job lifecycle؛ در Octane و queue worker امن‌تر
+    $this-&gt;app-&gt;scoped(TenantContext::class);
+
+    // contextual binding
+    $this-&gt;app-&gt;when(PhotoController::class)
+        -&gt;needs(Filesystem::class)
+        -&gt;give(fn () =&gt; Storage::disk('s3'));
+}</code></pre>
+    <p>کلاس‌های concrete بدون interface نیاز به ثبت ندارند: container با <strong>Reflection</strong> سازنده را می‌خواند و وابستگی‌ها را به‌صورت بازگشتی می‌سازد (<strong>auto-wiring</strong>). ثبت فقط برای interface، primitiveها یا ساخت سفارشی لازم است.</p>
+
+    <h3>Facadeها کجای ماجرا هستند؟</h3>
+    <p>Facade (<code>Cache::get()</code>) یک <strong>static proxy</strong> به شیئی در container است؛ از نظر طراحی به Service Locator نزدیک است (وابستگی در امضا دیده نمی‌شود)، ولی Laravel با <code>Cache::shouldReceive()</code> و <code>Mail::fake()</code> تست‌پذیری‌اش را حفظ کرده. در کد دامنه و کتابخانه‌های قابل استفاده مجدد، تزریق <strong>Contract</strong> (مثل <code>Illuminate\Contracts\Cache\Repository</code>) صریح‌تر است؛ در کنترلر و کد چسب (glue)، Facade قابل‌قبول و رایج است.</p>
+    <div class="callout warn"><p>«Constructor over-injection» (سازنده‌ای با ۸ وابستگی) مشکل DI نیست؛ <strong>علامت نقض SRP</strong> است. راه‌حل، پنهان‌کردن وابستگی‌ها با <code>app()</code> نیست، بلکه شکستن کلاس است.</p></div>
+    <div class="callout exam"><p>جمع‌بندی برای پاسخ: IoC <strong>اصل</strong> است، DI <strong>الگو/تکنیک</strong> پیاده‌سازی آن، Container <strong>ابزار</strong> خودکارسازی DI، و DIP <strong>اصل طراحی</strong> درباره اینکه به چه چیزی (abstraction) وابسته شویم. Service Locator هم IoC است ولی Mark Seemann آن را <strong>anti-pattern</strong> می‌داند چون وابستگی‌ها را پنهان می‌کند.</p></div>
+  </section>
+
+  <!-- ============ 12. Clean code ============ -->
+  <section class="lesson" id="clean-code" data-title="Clean Code">
+    <h2>Clean Code</h2>
+    <p>کد تمیز کدی است که <strong>خواندن، فهمیدن و تغییر دادنش</strong> برای نفر بعدی (یا خود شما شش ماه بعد) ساده باشد. کد بسیار بیشتر از نوشته‌شدن، خوانده می‌شود.</p>
+
+    <h3>نام‌گذاری</h3>
+    <ul>
+      <li><strong>نیت را آشکار کند</strong>: <code>$elapsedDays</code> نه <code>$d</code>؛ <code>activeSubscribers()</code> نه <code>getList2()</code>.</li>
+      <li>کلاس‌ها <strong>اسم</strong> (<code>InvoiceGenerator</code>)، متدها <strong>فعل</strong> (<code>generate()</code>)، boolean به شکل سوال (<code>isPaid</code>، <code>hasAccess</code>، <code>canRefund</code>).</li>
+      <li>از encoding و پیشوندهای بی‌معنا پرهیز کنید (<code>$strName</code>، <code>IUserInterface</code>)؛ اختصار فقط وقتی همه آن را می‌شناسند (<code>id</code>، <code>url</code>).</li>
+      <li>یک واژه برای یک مفهوم: اگر جایی <code>fetch</code> و جایی <code>retrieve</code> و جایی <code>get</code> برای یک عمل دارید، یکی کنید (<strong>Ubiquitous Language</strong>).</li>
+    </ul>
+
+    <h3>توابع کوچک، یک کار، یک سطح انتزاع</h3>
+    <ul>
+      <li>تابع باید <strong>یک کار</strong> انجام دهد و همه خطوطش در <strong>یک سطح انتزاع</strong> باشند (منطق سطح بالا و جزئیات regex در یک تابع قاطی نشوند).</li>
+      <li><strong>آرگومان‌ها</strong>: هر چه کمتر بهتر؛ بیش از ۳ آرگومان نشانه نیاز به یک Parameter Object/DTO است. <strong>Flag argument</strong> (<code>render(true)</code>) یعنی تابع دو کار می‌کند؛ آن را دو تابع کنید. PHP 8 <strong>named arguments</strong> خوانایی فراخوانی را بهتر می‌کند ولی جایگزین طراحی خوب نیست.</li>
+      <li><strong>Command-Query Separation</strong>: تابع یا وضعیت را تغییر دهد (command) یا چیزی برگرداند (query)، نه هر دو.</li>
+      <li><strong>بدون اثر جانبی پنهان</strong>: تابعی به نام <code>checkPassword()</code> نباید session را هم initialize کند.</li>
+    </ul>
+
+    <h3>Early return و Guard clause</h3>
+    <pre><code class="language-php">&lt;?php
+// نادرست: Arrow code (تو در تو)
+public function refund(Order $order): void
+{
+    if ($order-&gt;isPaid()) {
+        if (! $order-&gt;isRefunded()) {
+            if ($order-&gt;paid_at-&gt;gt(now()-&gt;subDays(14))) {
+                $this-&gt;gateway-&gt;refund($order);
+            } else {
+                throw new RefundWindowExpired();
+            }
+        }
+    }
+}
+
+// درست: Guard clauses: شرایط استثنا اول، مسیر اصلی صاف
+private const REFUND_WINDOW_DAYS = 14;
+
+public function refund(Order $order): void
+{
+    if (! $order-&gt;isPaid() || $order-&gt;isRefunded()) {
+        return;
+    }
+    if ($order-&gt;paid_at-&gt;lt(now()-&gt;subDays(self::REFUND_WINDOW_DAYS))) {
+        throw new RefundWindowExpired();
+    }
+
+    $this-&gt;gateway-&gt;refund($order);
+}</code></pre>
+
+    <h3>Magic number و Magic string</h3>
+    <p>عدد یا رشته بی‌نام (<code>14</code>، <code>'pending'</code>، <code>3</code>) را با <strong>ثابت نام‌دار</strong>، <strong>Enum</strong> (PHP 8.1) یا کانفیگ جایگزین کنید. Enum‌های backed در Laravel مستقیماً در cast مدل و validation (<code>Rule::enum()</code>) استفاده می‌شوند.</p>
+    <pre><code class="language-php">&lt;?php
+enum OrderStatus: string
+{
+    case Pending = 'pending';
+    case Paid = 'paid';
+    case Cancelled = 'cancelled';
+
+    public function isFinal(): bool
+    {
+        return $this === self::Cancelled;
+    }
+}
+
+// Model
+protected function casts(): array
+{
+    return ['status' =&gt; OrderStatus::class];
+}</code></pre>
+
+    <h3>کامنت‌ها</h3>
+    <ul>
+      <li>کامنت جبران کد نامفهوم نیست؛ اول کد را با نام بهتر یا استخراج تابع گویا کنید.</li>
+      <li>کامنت خوب «<strong>چرا</strong>» را توضیح می‌دهد (تصمیم کسب‌وکار، محدودیت API خارجی، workaround یک باگ)، نه «چه» را.</li>
+      <li>کامنت‌های بد: تکرار کد، کد کامنت‌شده (git آن را نگه می‌دارد)، کامنت‌های قدیمی و گمراه‌کننده.</li>
+      <li>PHPDoc برای چیزی که type system بیان نمی‌کند ارزش دارد: <code>@param array&lt;int, OrderItem&gt;</code>، <code>@throws</code>.</li>
+    </ul>
+
+    <h3>مدیریت خطا و Exception</h3>
+    <ul>
+      <li><strong>Exception به‌جای کد خطا</strong> یا <code>false</code>/<code>null</code> مبهم؛ exception‌های <strong>دامنه‌ای</strong> با نام گویا (<code>InsufficientFunds</code>) بسازید.</li>
+      <li><strong>Fail fast</strong>: ورودی نامعتبر را زود رد کنید (در سازنده value object یا Form Request).</li>
+      <li>exception را <strong>نبلعید</strong>: <code>catch (\Exception $e) {}</code> خالی باگ‌ها را پنهان می‌کند. یا مدیریت کنید، یا با context بیشتر دوباره پرتاب کنید (<code>throw new PaymentFailed('...', previous: $e)</code>).</li>
+      <li>فقط چیزی را catch کنید که می‌توانید درباره‌اش کاری انجام دهید؛ بقیه به handler سراسری Laravel (<code>bootstrap/app.php</code> → <code>withExceptions()</code>) برسد.</li>
+      <li><code>null</code> برنگردانید اگر می‌توانید مجموعه خالی یا <strong>Null Object</strong> برگردانید؛ <code>null</code> هم پاس ندهید.</li>
+    </ul>
+    <div class="callout exam"><p>«چه چیزی کد را تمیز می‌کند؟» را با این ساختار پاسخ دهید: نام‌گذاری گویا ← توابع کوچک تک‌مسئولیتی با آرگومان کم ← نبود اثر جانبی پنهان ← early return به‌جای تودرتویی ← ثابت/enum به‌جای عدد جادویی ← مدیریت خطای صریح ← تست. و اشاره کنید که <strong>Boy Scout Rule</strong> («کد را تمیزتر از آنچه تحویل گرفتی تحویل بده») راه عملی حفظ کیفیت است.</p></div>
+  </section>
+
+  <!-- ============ 13. Code smells & refactoring ============ -->
+  <section class="lesson" id="code-smells" data-title="Code Smell و Refactoring">
+    <h2>Code Smell و Refactoring</h2>
+    <p><strong>Code smell</strong> (اصطلاح Kent Beck و Martin Fowler) نشانه‌ای سطحی در کد است که احتمالاً به یک مشکل عمیق‌تر طراحی اشاره می‌کند؛ باگ نیست و کد کار می‌کند، ولی تغییر آن را سخت می‌کند. <strong>Refactoring</strong> یعنی تغییر ساختار داخلی کد <strong>بدون تغییر رفتار بیرونی</strong>، در گام‌های کوچک و با پشتوانه تست.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>Smell</th><th>نشانه</th><th>Refactoring رایج</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Long Method</strong></td><td>متد طولانی که چند کار و چند سطح انتزاع دارد</td><td>Extract Method، Decompose Conditional، Replace Temp with Query</td></tr>
+        <tr><td><strong>God Class / Large Class</strong></td><td>کلاسی که همه چیز را می‌داند (<code>UserService</code> هزارخطی)</td><td>Extract Class، Extract Action، انتقال منطق به مدل/value object</td></tr>
+        <tr><td><strong>Feature Envy</strong></td><td>متدی که بیشتر از داده‌های کلاس دیگر استفاده می‌کند تا کلاس خودش</td><td>Move Method به کلاس صاحب داده</td></tr>
+        <tr><td><strong>Primitive Obsession</strong></td><td>استفاده از string/int/array برای مفاهیم دامنه (ایمیل، مبلغ، شماره موبایل)</td><td>Replace Primitive with Value Object، Enum</td></tr>
+        <tr><td><strong>Shotgun Surgery</strong></td><td>یک تغییر منطقی نیازمند ویرایش ده فایل مختلف</td><td>Move Method/Field برای جمع‌کردن دانش در یک جا</td></tr>
+        <tr><td><strong>Divergent Change</strong></td><td>یک کلاس به دلایل متعدد و بی‌ربط مدام تغییر می‌کند (برعکس shotgun)</td><td>Extract Class (اجرای SRP)</td></tr>
+        <tr><td><strong>Data Clumps</strong></td><td>گروهی از داده‌ها که همیشه با هم می‌آیند (<code>$lat, $lng</code>)</td><td>Introduce Parameter Object</td></tr>
+        <tr><td><strong>Long Parameter List</strong></td><td>بیش از ۳-۴ پارامتر</td><td>Parameter Object / DTO، Preserve Whole Object</td></tr>
+        <tr><td><strong>Switch Statements</strong></td><td>switch/match روی نوع که در چند جا تکرار شده</td><td>Replace Conditional with Polymorphism (Strategy)</td></tr>
+        <tr><td><strong>Duplicated Code</strong></td><td>منطق یکسان در چند جا</td><td>Extract Method، Pull Up Method</td></tr>
+        <tr><td><strong>Message Chains</strong></td><td><code>$a-&gt;b()-&gt;c()-&gt;d()</code></td><td>Hide Delegate (Law of Demeter)</td></tr>
+        <tr><td><strong>Refused Bequest</strong></td><td>فرزند متدهای والد را نمی‌خواهد یا خالی override می‌کند</td><td>Replace Inheritance with Delegation</td></tr>
+        <tr><td><strong>Speculative Generality</strong></td><td>abstraction و hook برای نیازهای فرضی آینده</td><td>Collapse Hierarchy، Inline Class (YAGNI)</td></tr>
+        <tr><td><strong>Dead Code</strong></td><td>کد استفاده‌نشده، کد کامنت‌شده</td><td>حذف (git تاریخچه را دارد)</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>مثال: Primitive Obsession ← Value Object</h3>
+    <pre><code class="language-php">&lt;?php
+// نادرست: هر جا موبایل استفاده شده باید دوباره validate و normalize شود
+function sendOtp(string $mobile): void { /* ... */ }
+
+// درست: Value Object: معتبر بودن در لحظه ساخت تضمین می‌شود
+final readonly class Mobile
+{
+    public string $value;
+
+    public function __construct(string $raw)
+    {
+        $normalized = preg_replace('/^(\+98|0098|0)/', '0', trim($raw));
+        if (! preg_match('/^09\d{9}$/', $normalized)) {
+            throw new InvalidArgumentException("Invalid mobile: {$raw}");
+        }
+        $this-&gt;value = $normalized;
+    }
+
+    public function equals(self $other): bool
+    {
+        return $this-&gt;value === $other-&gt;value;
+    }
+}
+
+function sendOtp(Mobile $mobile): void { /* دیگر نیازی به بررسی نیست */ }</code></pre>
+
+    <h3>مثال: Feature Envy ← Move Method</h3>
+    <pre><code class="language-php">&lt;?php
+// نادرست: سرویس دائم داده‌های Cart را بیرون می‌کشد
+final class CheckoutService
+{
+    public function subtotal(Cart $cart): int
+    {
+        $sum = 0;
+        foreach ($cart-&gt;items as $item) {
+            $sum += $item-&gt;price * $item-&gt;quantity;
+        }
+        return $sum - $cart-&gt;discount;
+    }
+}
+
+// درست: رفتار به کنار داده منتقل شد
+final class Cart
+{
+    public function subtotal(): int
+    {
+        return $this-&gt;items-&gt;sum(fn (CartItem $i) =&gt; $i-&gt;lineTotal()) - $this-&gt;discount;
+    }
+}</code></pre>
+
+    <h3>روند امن Refactoring</h3>
+    <ol>
+      <li>اول <strong>تست</strong> بنویسید که رفتار فعلی را قفل کند (در کد legacy: <strong>characterization test</strong>).</li>
+      <li>گام‌های <strong>کوچک</strong> بردارید و بعد از هر گام تست‌ها را اجرا کنید.</li>
+      <li>refactoring و تغییر رفتار (feature/bugfix) را در یک commit قاطی نکنید.</li>
+      <li>از ابزارها کمک بگیرید: refactor خودکار IDE، تحلیل ایستا (<strong>PHPStan/Larastan</strong>، <strong>Psalm</strong>)، و <strong>Rector</strong> برای تبدیل‌های خودکار.</li>
+    </ol>
+    <div class="callout exam"><p>تفاوت <strong>Shotgun Surgery</strong> و <strong>Divergent Change</strong> سوال محبوبی است: در shotgun surgery یک تغییر به چند کلاس پخش می‌شود (cohesion پایین در سطح سیستم، دانش پراکنده)؛ در divergent change یک کلاس به‌خاطر چند نوع تغییر ویرایش می‌شود (نقض SRP).</p></div>
+  </section>
+
+  <!-- ============ 14. Architecture ============ -->
+  <section class="lesson" id="architecture" data-title="معماری لایه‌ای، Hexagonal و DDD">
+    <h2>معماری لایه‌ای، Hexagonal و DDD</h2>
+
+    <h3>معماری لایه‌ای (Layered / N-tier)</h3>
+    <pre class="diagram">┌─ Presentation ──── Controller, FormRequest, Resource, Blade
+│        ▼
+├─ Application ───── Action / Service / Use Case, DTO
+│        ▼
+├─ Domain ────────── Model, Value Object, Business Rules, Events
+│        ▼
+└─ Infrastructure ── Eloquent, Queue, Mail, HTTP Client, Gateway
+
+Rule: each layer depends only on the layer below it.</pre>
+    <p>مزیت: سادگی و تفکیک دغدغه‌ها. ایراد کلاسیک: لایه دامنه به زیرساخت (دیتابیس) وابسته است، پس منطق کسب‌وکار بدون دیتابیس قابل تست نیست. Clean/Hexagonal دقیقاً این وابستگی را با DIP برعکس می‌کنند.</p>
+
+    <h3>Service class و Action class در Laravel</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Service class</h4>
+        <ul>
+          <li>گروهی از عملیات مرتبط حول یک مفهوم: <code>SubscriptionService</code> با <code>subscribe()</code>، <code>cancel()</code>، <code>renew()</code>.</li>
+          <li>خطر: به مرور تبدیل به God Class می‌شود.</li>
+        </ul>
+      </div>
+      <div class="card"><h4>Action class</h4>
+        <ul>
+          <li>یک کلاس = یک use case با یک متد عمومی (<code>handle</code>/<code>execute</code>/<code>__invoke</code>): <code>CancelSubscription</code>.</li>
+          <li>SRP عالی، قابل استفاده مجدد از Controller، Job، Command و Listener.</li>
+          <li>خطر: تعداد زیاد فایل؛ بیش‌ازحد برای CRUD ساده.</li>
+        </ul>
+      </div>
+    </div>
+    <pre><code class="language-php">&lt;?php
+final class CancelSubscription
+{
+    public function __construct(private PaymentGateway $gateway) {}
+
+    public function handle(Subscription $subscription, CancelReason $reason): void
+    {
+        if ($subscription-&gt;isCancelled()) {
+            throw new SubscriptionAlreadyCancelled();
+        }
+
+        DB::transaction(function () use ($subscription, $reason) {
+            $subscription-&gt;cancel($reason); // قاعده دامنه داخل مدل
+            $this-&gt;gateway-&gt;stopRecurring($subscription-&gt;gateway_id);
+        });
+
+        SubscriptionCancelled::dispatch($subscription);
+    }
+}
+
+// قابل استفاده از Controller، Artisan command یا Job
+app(CancelSubscription::class)-&gt;handle($sub, CancelReason::UserRequest);</code></pre>
+    <div class="callout warn"><p>فراخوانی سرویس خارجی (HTTP) داخل <code>DB::transaction</code> ریسک دارد: اگر درگاه موفق شود و commit شکست بخورد، دو سیستم ناسازگار می‌شوند؛ تراکنش هم مدت زیادی باز می‌ماند. در سیستم واقعی معمولاً اثر خارجی را بعد از commit (مثلاً با <code>DB::afterCommit()</code> یا یک Job با <code>afterCommit</code>) یا با الگوی <strong>Outbox</strong> انجام می‌دهند.</p></div>
+
+    <h3>Hexagonal (Ports &amp; Adapters) و Clean Architecture</h3>
+    <pre class="diagram">          Driving adapters                      Driven adapters
+   (HTTP Controller, CLI, Queue)          (Eloquent Repo, SMS, Payment API)
+              │                                      ▲
+              ▼                                      │ implements
+        ┌───────────── Port (in) ─────────── Port (out) ────┐
+        │                  APPLICATION CORE                  │
+        │        Use Cases  +  Domain Model (framework-free)    │
+        └────────────────────────────────────────────────────┘
+   Dependency Rule: all source-code dependencies point inward.</pre>
+    <ul>
+      <li><strong>Port</strong>: interfaceی که هسته تعریف می‌کند؛ ورودی (use case) یا خروجی (<code>PaymentGateway</code>، <code>OrderRepository</code>).</li>
+      <li><strong>Adapter</strong>: پیاده‌سازی port با فناوری مشخص (Controller، <code>EloquentOrderRepository</code>، <code>ZarinpalGateway</code>).</li>
+      <li><strong>Clean Architecture</strong> (Uncle Bob) همین ایده با دایره‌های هم‌مرکز Entities ← Use Cases ← Interface Adapters ← Frameworks است؛ <strong>Onion</strong> هم مشابه است.</li>
+      <li>مزیت: هسته بدون دیتابیس و framework قابل تست است و فناوری بیرونی قابل تعویض. هزینه: کد و mapping بیشتر (مدل دامنه جدا از مدل Eloquent). برای CRUD ساده over-engineering است؛ برای دامنه پیچیده و طول عمر بالا ارزشمند.</li>
+    </ul>
+
+    <h3>واژگان پایه DDD</h3>
+    <dl class="terms">
+      <dt>Entity</dt><dd>شیئی با <strong>هویت (identity)</strong> پایدار که در طول زمان تغییر می‌کند؛ دو Entity با id یکسان، یکی‌اند حتی اگر ویژگی‌هایشان فرق کند (<code>User</code>، <code>Order</code>).</dd>
+      <dt>Value Object</dt><dd>شیء <strong>بدون هویت</strong> که با مقدارش تعریف می‌شود، <strong>تغییرناپذیر (immutable)</strong> است و برابری‌اش بر اساس مقدار است (<code>Money</code>، <code>Email</code>، <code>DateRange</code>).</dd>
+      <dt>Aggregate</dt><dd>خوشه‌ای از Entity و Value Object که به‌عنوان <strong>یک واحد سازگاری</strong> رفتار می‌کند؛ فقط از طریق <strong>Aggregate Root</strong> تغییر می‌کند (<code>Order</code> ریشه و <code>OrderLine</code>‌ها عضو). مرز تراکنش معمولاً یک aggregate است.</dd>
+      <dt>Repository</dt><dd>انتزاعی شبیه کالکشن برای بارگذاری و ذخیره aggregateها، که جزئیات persistence را پنهان می‌کند.</dd>
+      <dt>Domain Service</dt><dd>منطق دامنه‌ای که طبیعتاً به هیچ Entity تعلق ندارد (مثل انتقال وجه بین دو حساب).</dd>
+      <dt>Domain Event</dt><dd>رخدادی معنادار در دامنه به زمان گذشته (<code>OrderPlaced</code>).</dd>
+      <dt>Ubiquitous Language</dt><dd>زبان مشترک تیم فنی و کسب‌وکار که در کد هم دقیقاً همان استفاده می‌شود.</dd>
+      <dt>Bounded Context</dt><dd>مرزی که در آن یک مدل و زبان مشخص معتبر است («مشتری» در فروش با «مشتری» در پشتیبانی متفاوت است).</dd>
+    </dl>
+    <div class="callout exam"><p>تفاوت Entity و Value Object را با معیار <strong>برابری</strong> توضیح دهید: Entity با <strong>identity</strong> مقایسه می‌شود و mutable است؛ Value Object با <strong>مقادیر</strong> مقایسه می‌شود و immutable است (تغییر = ساخت شیء جدید). در Laravel، value object را می‌توان با <strong>custom cast</strong> (پیاده‌سازی <code>CastsAttributes</code>) به ستون‌های مدل وصل کرد.</p></div>
+  </section>
+
+  <!-- ============ Questions ============ -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-software-design-1">
+      <summary>Abstraction و Encapsulation را تعریف کنید و تفاوت آنها را با مثال توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>Abstraction:</strong> نمایش ویژگی‌ها و رفتارهای <strong>ضروری</strong> یک مفهوم و پنهان‌کردن جزئیات پیاده‌سازی از مصرف‌کننده؛ پاسخ به «چه کاری انجام می‌شود». ابزار: <code>interface</code> و <code>abstract class</code>.</p>
+        <p><strong>Encapsulation:</strong> بسته‌بندی داده و رفتار در یک واحد و <strong>محدود کردن دسترسی مستقیم</strong> به وضعیت داخلی تا invariantها حفظ شوند؛ پاسخ به «چه کسی و چطور داده را تغییر می‌دهد». ابزار: <code>private</code>، <code>protected</code>، <code>readonly</code> و متدهای کنترل‌شده.</p>
+        <ul>
+          <li>Abstraction در <strong>سطح طراحی</strong> است (چه رابطی ارائه شود)، Encapsulation در <strong>سطح پیاده‌سازی</strong> (داده چطور محافظت شود).</li>
+          <li>مثال: <code>PaymentGateway::charge()</code> انتزاع است؛ مصرف‌کننده نمی‌داند پشت آن زرین‌پال است یا Stripe. داخل کلاس <code>ZarinpalGateway</code>، کلید API و کلاینت HTTP به‌صورت <code>private</code> نگه‌داری می‌شوند؛ این کپسوله‌سازی است.</li>
+          <li>مثال دیگر: کلاس <code>Account</code> با فیلد <code>private $balance</code> که فقط از طریق <code>withdraw()</code> تغییر می‌کند و قاعده «منفی نشدن» را اجرا می‌کند.</li>
+        </ul>
+        <p><strong>رابطه:</strong> این دو مکمل‌اند؛ انتزاع رابط ساده را تعریف می‌کند و کپسوله‌سازی تضمین می‌کند کسی از رابط عبور نکند و به داده دست نزند. کپسوله‌سازی به معنای getter/setter برای همه فیلدها نیست؛ setter بی‌قیدوشرط عملاً کپسوله‌سازی را از بین می‌برد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-2">
+      <summary>تفاوت interface، abstract class و trait در PHP چیست؟ در چه شرایطی هر کدام را انتخاب می‌کنید؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Interface:</strong> فقط <strong>قرارداد</strong> (امضای متدهای public و ثابت‌ها)، بدون state. یک کلاس می‌تواند چند interface را implement کند. نوع (type) می‌سازد و برای type hint و <code>instanceof</code> قابل استفاده است.</li>
+          <li><strong>Abstract class:</strong> قرارداد + <strong>پیاده‌سازی مشترک و state</strong>، سازنده دارد، نمونه‌سازی مستقیم ندارد. فقط یک والد (single inheritance). رابطه <strong>is-a</strong>.</li>
+          <li><strong>Trait:</strong> مکانیزم <strong>horizontal reuse</strong>؛ کامپایلر کدش را داخل کلاس کپی می‌کند. نوع نمی‌سازد (<code>instanceof</code> روی trait معنا ندارد)، می‌تواند property و متد abstract داشته باشد و تداخل نام‌ها با <code>insteadof</code>/<code>as</code> حل می‌شود.</li>
+        </ul>
+        <p><strong>انتخاب:</strong></p>
+        <ul>
+          <li>مرز بین ماژول‌ها، چند پیاده‌سازی قابل‌جایگزین، تست با mock ← <strong>interface</strong> (DIP).</li>
+          <li>خانواده‌ای از کلاس‌ها با الگوریتم مشترک (Template Method) یا state مشترک ← <strong>abstract class</strong> (که معمولاً خودش interface را implement می‌کند).</li>
+          <li>قطعه رفتار کوچک و تکراری در کلاس‌های بی‌ربط ← <strong>trait</strong>؛ مثل <code>SoftDeletes</code> و <code>Notifiable</code> در Laravel.</li>
+        </ul>
+        <p><strong>الگوی رایج:</strong> interface برای قرارداد + trait برای پیاده‌سازی پیش‌فرض. اشتباه رایج: استفاده از trait برای منطق کسب‌وکار سنگین با وابستگی پنهان به propertyهای کلاس میزبان که coupling پنهان و تست سخت ایجاد می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-3">
+      <summary>چرا گفته می‌شود «Composition را به Inheritance ترجیح دهید»؟ با یک مثال توضیح دهید و بگویید کجا وراثت هنوز انتخاب درستی است.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Composition یعنی ساختن رفتار از ترکیب اشیای کوچک‌تر (رابطه <strong>has-a</strong>) و واگذاری کار به آنها؛ Inheritance یعنی دریافت رفتار از کلاس والد (رابطه <strong>is-a</strong>).</p>
+        <p><strong>مشکلات وراثت برای reuse:</strong></p>
+        <ul>
+          <li><strong>Coupling شدید</strong> به جزئیات والد و مشکل <strong>Fragile Base Class</strong>.</li>
+          <li>رابطه <strong>ایستا</strong> و در runtime غیرقابل تغییر.</li>
+          <li><strong>انفجار کلاس‌ها</strong> برای ترکیب ویژگی‌ها: <code>PdfReport</code>، <code>EmailedPdfReport</code>، <code>EmailedCsvReport</code>…</li>
+          <li>ارث‌بردن متدهای نامربوط (Refused Bequest، نقض LSP).</li>
+        </ul>
+        <p><strong>مثال:</strong> به‌جای سلسله‌مراتب گزارش، یک <code>ReportJob</code> که <code>Formatter</code> (Pdf/Csv) و <code>Delivery</code> (Email/S3) را از سازنده می‌گیرد. هر بُعد مستقل تغییر می‌کند و هر ترکیب در container ساخته می‌شود. الگوهای <strong>Strategy</strong> و <strong>Decorator</strong> (مثلاً <code>CachedUserRepository</code> که repository دیگری را wrap می‌کند) نمونه‌های این اصل‌اند.</p>
+        <p><strong>کجا وراثت درست است:</strong> رابطه واقعی is-a که قرارداد والد را کامل رعایت می‌کند؛ نقاط توسعه framework (<code>Model</code>، <code>FormRequest</code>، <code>Command</code>)؛ Template Method کم‌عمق. توصیه عملی: کلاس‌ها را پیش‌فرض <code>final</code> کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-4">
+      <summary>اصل Single Responsibility را تعریف کنید. آیا معنی آن «هر کلاس فقط یک کار» است؟ نقض آن در یک کنترلر Laravel و اصلاحش را شرح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> یک ماژول باید فقط <strong>یک دلیل برای تغییر</strong> داشته باشد؛ یا به تعبیر دقیق‌تر Robert Martin، فقط در برابر <strong>یک actor</strong> (گروه ذی‌نفع) مسئول باشد.</p>
+        <p><strong>سوءبرداشت:</strong> SRP به معنای «یک متد در هر کلاس» یا «یک کار ریز» نیست. معیار، <strong>منبع تغییر</strong> است. کلاس <code>Invoice</code> می‌تواند چند متد مرتبط داشته باشد؛ ولی اگر محاسبه مالیات (تیم مالی) و قالب PDF (تیم طراحی) هر دو در آن باشد، دو مسئولیت دارد.</p>
+        <p><strong>نقض رایج:</strong> متد <code>store</code> کنترلری که اعتبارسنجی، محاسبه قیمت، ذخیره در DB، فراخوانی درگاه و ارسال ایمیل را با هم انجام می‌دهد.</p>
+        <p><strong>اصلاح در Laravel:</strong></p>
+        <ul>
+          <li>اعتبارسنجی و authorization ← <strong>FormRequest</strong></li>
+          <li>قواعد قیمت ← <code>PriceCalculator</code> یا متد مدل</li>
+          <li>use case ← <strong>Action</strong> مثل <code>PlaceOrder</code></li>
+          <li>ایمیل ← <strong>Event + Listener</strong> صف‌شده</li>
+          <li>شکل خروجی ← <strong>API Resource</strong></li>
+        </ul>
+        <p>کنترلر فقط درخواست HTTP را به use case وصل می‌کند. <strong>مزایا:</strong> تست‌پذیری، استفاده مجدد Action از Command یا Job، تغییرات محلی. <strong>هشدار:</strong> افراط در SRP به کلاس‌های ریز بی‌شمار و cohesion پایین می‌رسد؛ چیزهایی که با هم تغییر می‌کنند باید کنار هم بمانند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-5">
+      <summary>کد زیر کدام اصل SOLID را نقض می‌کند؟ آن را بازطراحی کنید.
+        <code>match ($type) { 'pdf' =&gt; ..., 'csv' =&gt; ..., 'excel' =&gt; ... }</code> در متد <code>export()</code> که با هر فرمت جدید باید ویرایش شود.</summary>
+      <div class="answer">
+        <p><strong>اصل نقض‌شده:</strong> <strong>Open/Closed Principle</strong>؛ کلاس برای افزودن رفتار جدید (فرمت جدید) باید <strong>تغییر</strong> کند، نه <strong>گسترش</strong>. معمولاً SRP هم نقض شده چون منطق همه فرمت‌ها در یک کلاس است، و اگر همین switch در جاهای دیگر (مثلاً تعیین Content-Type) تکرار شده باشد، Shotgun Surgery هم داریم.</p>
+        <p><strong>بازطراحی با Strategy + DIP:</strong></p>
+        <pre><code class="language-php">&lt;?php
+interface Exporter
+{
+    public function format(): string;          // 'pdf' | 'csv' | ...
+    public function export(Collection $rows): string;
+    public function mimeType(): string;
+}
+
+final class CsvExporter implements Exporter { /* ... */ }
+final class PdfExporter implements Exporter { /* ... */ }
+
+final class ExportService
+{
+    /** @param iterable&lt;Exporter&gt; $exporters */
+    public function __construct(private iterable $exporters) {}
+
+    public function export(string $format, Collection $rows): string
+    {
+        foreach ($this-&gt;exporters as $exporter) {
+            if ($exporter-&gt;format() === $format) {
+                return $exporter-&gt;export($rows);
+            }
+        }
+        throw new UnsupportedFormat($format);
+    }
+}
+
+// ServiceProvider
+$this-&gt;app-&gt;tag([CsvExporter::class, PdfExporter::class], 'exporters');
+$this-&gt;app-&gt;when(ExportService::class)-&gt;needs('$exporters')-&gt;giveTagged('exporters');</code></pre>
+        <p><strong>نتیجه:</strong> فرمت Excel = یک کلاس جدید + ثبت tag، بدون دست‌زدن به <code>ExportService</code>. هر exporter جدا تست می‌شود. <strong>نکته YAGNI:</strong> اگر فقط یک یا دو فرمت دارید و تغییر نمی‌کنند، همان <code>match</code> قابل‌قبول است؛ abstraction را وقتی بسازید که نقطه تغییر واقعاً ظاهر شده.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-6">
+      <summary>اصل Liskov Substitution را توضیح دهید. چرا مثال Square و Rectangle نقض این اصل است؟ نشانه‌های نقض LSP در کد چیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> اگر S زیرنوع T است، باید بتوان هر شیء T را با شیء S جایگزین کرد <strong>بدون اینکه درستی برنامه</strong> تغییر کند. زیرنوع باید <strong>قرارداد رفتاری</strong> والد را رعایت کند، نه فقط امضای متدها را.</p>
+        <p><strong>قواعد:</strong> precondition سخت‌تر نشود؛ postcondition ضعیف‌تر نشود؛ invariantها حفظ شوند؛ exception غیرمنتظره جدید پرتاب نشود؛ پارامترها contravariant و نوع بازگشتی covariant باشند.</p>
+        <p><strong>Square/Rectangle:</strong> قرارداد ضمنی <code>Rectangle</code> این است که <code>setWidth</code> فقط عرض را عوض می‌کند. <code>Square</code> برای حفظ invariant خودش (ضلع‌های برابر) هر دو را عوض می‌کند، پس کدی که <code>setWidth(5); setHeight(4);</code> انجام می‌دهد و انتظار مساحت ۲۰ دارد، با Square عدد ۱۶ می‌گیرد. رابطه is-a ریاضی، رابطه is-a <strong>رفتاری</strong> نیست. راه‌حل: حذف وراثت و استفاده از interface مشترک <code>Shape</code> با value objectهای immutable.</p>
+        <p><strong>نشانه‌ها:</strong></p>
+        <ul>
+          <li><code>instanceof</code> برای رفتار خاص زیرنوع در کد مصرف‌کننده</li>
+          <li>متد override‌شده خالی یا <code>throw new LogicException('Not supported')</code></li>
+          <li>تست‌های والد که برای فرزند شکست می‌خورند</li>
+        </ul>
+        <p><strong>اهمیت:</strong> LSP پیش‌نیاز OCP است؛ driverهای Laravel (cache، queue، filesystem) و fakeهای تست فقط چون LSP را رعایت می‌کنند قابل‌تعویض‌اند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-7">
+      <summary>Interface Segregation را تعریف کنید و تفاوتش را با SRP بگویید. چه مثال‌هایی از ISP در Laravel وجود دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> هیچ کلاینتی نباید مجبور به وابستگی به متدهایی باشد که استفاده نمی‌کند. به‌جای interface «چاق»، interfaceهای کوچک <strong>نقش‌محور</strong> بسازید.</p>
+        <p><strong>چرا:</strong></p>
+        <ul>
+          <li>تغییر یک متد بی‌ربط، کلاینت‌هایی را که از آن استفاده نمی‌کنند متأثر نمی‌کند.</li>
+          <li>پیاده‌سازی‌ها مجبور به متد خالی یا exception نمی‌شوند (کمک به LSP).</li>
+          <li>test doubleها کوچک و ساده می‌شوند.</li>
+        </ul>
+        <p><strong>مثال:</strong> <code>UserRepository</code> با ۱۰ متد (find، save، export، syncLdap…) را به <code>FindsUsers</code>، <code>SavesUsers</code>، <code>ExportsUsers</code> بشکنیم؛ سرویس گزارش فقط <code>ExportsUsers</code> را دریافت کند.</p>
+        <p><strong>تفاوت با SRP:</strong> SRP درباره <strong>دلایل تغییر یک کلاس</strong> (دید پیاده‌ساز) است؛ ISP درباره <strong>اندازه قرارداد از دید مصرف‌کننده</strong> است. یک کلاس منسجم می‌تواند چند interface کوچک را implement کند.</p>
+        <p><strong>Laravel:</strong> <code>Arrayable</code>، <code>Jsonable</code>، <code>Htmlable</code>، <code>Responsable</code> هر کدام یک متد دارند؛ interfaceهای نشانگر مثل <code>ShouldQueue</code>، <code>ShouldBeUnique</code> و <code>ShouldBroadcast</code> فقط یک نقش را اعلام می‌کنند؛ و Contracts به قراردادهای کوچک مثل <code>Cache\Store</code> و <code>Cache\Repository</code> تفکیک شده‌اند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-8">
+      <summary>Dependency Inversion Principle، Dependency Injection و Inversion of Control را تعریف و با هم مقایسه کنید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>DIP (اصل طراحی):</strong> ماژول سطح بالا به ماژول سطح پایین وابسته نباشد؛ <strong>هر دو به abstraction</strong> وابسته باشند و abstraction متعلق به لایه سطح بالا باشد. موضوعش «به چه چیزی وابسته شویم» است.</li>
+          <li><strong>IoC (اصل کلی):</strong> کنترل جریان یا ساخت اشیا از کد شما به framework منتقل می‌شود («Don't call us, we'll call you»). Event، Template Method و DI همه IoC هستند.</li>
+          <li><strong>DI (تکنیک):</strong> شیء وابستگی‌اش را نمی‌سازد، <strong>از بیرون دریافت می‌کند</strong>؛ از طریق constructor (ترجیحی)، method یا setter. موضوعش «چطور وابستگی به دست برسد» است.</li>
+          <li><strong>IoC Container (ابزار):</strong> Service Container لاراول که با Reflection سازنده‌ها را می‌خواند و گراف وابستگی را خودکار می‌سازد (auto-wiring).</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+interface SmsSender { public function send(string $to, string $msg): void; }
+
+final class OtpService {
+    public function __construct(private SmsSender $sms) {} // DI + DIP
+}
+
+$this-&gt;app-&gt;bind(SmsSender::class, KavenegarSmsSender::class); // Container</code></pre>
+        <p><strong>نکته کلیدی:</strong> این‌ها مستقل‌اند. می‌توان DI انجام داد و DIP را نقض کرد (تزریق <code>KavenegarClient</code> concrete)؛ و می‌توان DIP داشت بدون container (سیم‌کشی دستی در composition root). <strong>مزیت مشترک:</strong> loose coupling، تعویض پیاده‌سازی، و تست با fake (<code>$this-&gt;app-&gt;instance(SmsSender::class, new FakeSms)</code>).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-9">
+      <summary>چرا Service Locator را یک anti-pattern می‌دانند؟ آیا Facadeهای Laravel هم Service Locator هستند؟</summary>
+      <div class="answer">
+        <p><strong>Service Locator:</strong> کلاس وابستگی‌هایش را در زمان اجرا از یک رجیستری سراسری <strong>درخواست می‌کند</strong> (<code>app(Foo::class)</code> داخل متد) به‌جای اینکه آنها را دریافت کند.</p>
+        <p><strong>مشکلات:</strong></p>
+        <ul>
+          <li><strong>وابستگی پنهان:</strong> امضای کلاس دروغ می‌گوید؛ برای فهمیدن نیازهایش باید کل بدنه را خواند.</li>
+          <li><strong>Coupling به container:</strong> کلاس بدون framework قابل استفاده نیست.</li>
+          <li><strong>خطای دیرهنگام:</strong> binding اشتباه فقط وقتی همان مسیر کد اجرا شود دیده می‌شود.</li>
+          <li><strong>تست سخت‌تر:</strong> باید container را پیکربندی کنید به‌جای پاس‌دادن ساده fake به سازنده.</li>
+          <li>مخفی‌شدن نشانه نقض SRP (سازنده‌ای که اگر صریح بود ۹ وابستگی نشان می‌داد).</li>
+        </ul>
+        <p><strong>Facadeها:</strong> از نظر ساختار، Facade یک <strong>static proxy</strong> روی container است و به Service Locator شبیه است: وابستگی در امضا دیده نمی‌شود. اما Laravel مشکل تست را با <code>Mail::fake()</code>، <code>Queue::fake()</code> و <code>Cache::shouldReceive()</code> حل کرده است. جمع‌بندی منصفانه:</p>
+        <ul>
+          <li>در کنترلر، route و کد چسب: Facade راحت و قابل‌قبول است.</li>
+          <li>در کد دامنه، Actionهای مهم و پکیج‌های قابل استفاده مجدد: <strong>constructor injection</strong> با Contract (<code>Illuminate\Contracts\Mail\Mailer</code>) صریح‌تر و مستقل‌تر است.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-10">
+      <summary>Coupling و Cohesion را تعریف کنید. چرا هدف «Low Coupling, High Cohesion» است؟ برای هر کدام یک مثال بد و خوب بزنید.</summary>
+      <div class="answer">
+        <p><strong>Coupling:</strong> میزان وابستگی یک ماژول به ماژول‌های <strong>دیگر</strong>؛ هرچه بیشتر، تغییر در یکی بیشتر به دیگری سرایت می‌کند. انواع از بد به خوب: content، common/global، control (flag)، stamp (پاس دادن کل ساختار)، data، message.</p>
+        <p><strong>Cohesion:</strong> میزان ارتباط و هم‌هدفی اجزای <strong>درون</strong> یک ماژول. بدترین: coincidental (کلاس <code>Utils</code>)؛ بهترین: functional (همه اجزا برای یک وظیفه).</p>
+        <p><strong>چرا:</strong> تغییرات محلی می‌مانند، تست جداگانه ممکن است، استفاده مجدد و فهم ساده‌تر است، و تیم‌ها موازی کار می‌کنند.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>بد</th><th>خوب</th></tr></thead>
+          <tbody>
+            <tr><td>Coupling</td><td>سرویس که <code>Request</code> کامل می‌گیرد و <code>new KavenegarClient()</code> می‌سازد</td><td>سرویس که DTO و <code>SmsSender</code> (interface) دریافت می‌کند</td></tr>
+            <tr><td>Cohesion</td><td><code>Helper</code> با <code>formatPrice</code>، <code>sendSms</code>، <code>resizeImage</code></td><td><code>Money</code>، <code>SmsSender</code>، <code>ImageResizer</code> جدا و منسجم</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>ابزارهای بهبود:</strong> interface و DI، Law of Demeter، event برای جداسازی اثرات جانبی، انتقال رفتار به کنار داده (رفع Feature Envy). این دو معیار معمولاً با هم حرکت می‌کنند: افزایش cohesion اغلب coupling را کم می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-11">
+      <summary>DRY، KISS و YAGNI را توضیح دهید. آیا ممکن است این اصول با هم در تعارض باشند؟ چگونه تعادل برقرار می‌کنید؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>DRY:</strong> هر <strong>تکه دانش</strong> (قاعده کسب‌وکار) یک نمایش واحد و معتبر در سیستم داشته باشد. درباره دانش است، نه شباهت متنی کد.</li>
+          <li><strong>KISS:</strong> ساده‌ترین راه‌حل درست را انتخاب کنید؛ پیچیدگی باید توجیه داشته باشد.</li>
+          <li><strong>YAGNI:</strong> قابلیت یا انعطافی را که امروز نیاز نیست، نسازید؛ هزینه ساخت و نگه‌داری قطعی است ولی نیاز آینده حدسی.</li>
+        </ul>
+        <p><strong>تعارض:</strong> DRY افراطی دو کد را که فقط ظاهراً شبیه‌اند ولی به دلایل متفاوت تغییر می‌کنند، در یک abstraction ادغام می‌کند. نتیجه: تابعی با چند پارامتر boolean و شاخه‌های if که هم KISS را نقض می‌کند و هم coupling بین دو ویژگی بی‌ربط ایجاد می‌کند. همچنین ساختن لایه‌های عام برای «جلوگیری از تکرار در آینده» نقض YAGNI است.</p>
+        <p><strong>تعادل:</strong></p>
+        <ul>
+          <li>DRY را برای <strong>قواعد کسب‌وکار</strong> سخت‌گیرانه اجرا کنید (مثل <code>Order::isCancellable()</code> به‌جای تکرار شرط در کنترلر، Blade و Job).</li>
+          <li>برای شباهت تصادفی (incidental duplication) <strong>Rule of Three</strong>: تا سومین تکرار صبر کنید.</li>
+          <li>به یاد داشته باشید: «تکرار ارزان‌تر از abstraction اشتباه است» (Sandi Metz).</li>
+          <li>YAGNI شامل کیفیت نمی‌شود؛ تست و مدیریت خطا «قابلیت آینده» نیستند.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-12">
+      <summary>Law of Demeter و Tell, Don't Ask را با مثال توضیح دهید. آیا زنجیره Query Builder در Laravel نقض Law of Demeter است؟</summary>
+      <div class="answer">
+        <p><strong>Law of Demeter (اصل کمترین دانش):</strong> متد یک شیء فقط باید با خودش، پارامترهایش، اشیایی که خودش ساخته و اجزای مستقیمش صحبت کند؛ نه با «غریبه‌ها»ی برگشتی از آنها.</p>
+        <pre><code class="language-php">&lt;?php
+// نقض: کنترلر ساختار سه شیء را می‌داند
+$order-&gt;getCustomer()-&gt;getAddress()-&gt;getCity()-&gt;getName();
+// اصلاح (Hide Delegate)
+$order-&gt;shippingCityName();</code></pre>
+        <p><strong>Tell, Don't Ask:</strong> به‌جای پرسیدن وضعیت و تصمیم‌گیری بیرون از شیء، به شیء <strong>دستور دهید</strong> و بگذارید خودش قواعد را اجرا کند.</p>
+        <pre><code class="language-php">&lt;?php
+// Ask
+if ($wallet-&gt;balance() &gt;= $price) { $wallet-&gt;setBalance($wallet-&gt;balance() - $price); }
+// Tell
+$wallet-&gt;pay($price); // InsufficientFunds در صورت کمبود</code></pre>
+        <p><strong>هدف هر دو:</strong> کاهش coupling و تقویت encapsulation؛ وقتی ساختار <code>Address</code> عوض شود فقط <code>Order</code> تغییر می‌کند، و منطق کیف پول در یک جا می‌ماند (جلوگیری از Anemic Domain Model).</p>
+        <p><strong>Query Builder:</strong> خیر. <code>User::where(...)-&gt;orderBy(...)-&gt;limit(10)-&gt;get()</code> یک <strong>fluent interface</strong> است که هر متد همان شیء builder را برمی‌گرداند؛ شما به ساختار داخلی اشیای مختلف سرک نمی‌کشید. Demeter درباره عبور از <strong>چند شیء متفاوت</strong> است، نه تعداد نقطه‌ها.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-13">
+      <summary>کد زیر چه مشکلاتی از نظر Clean Code دارد؟ آن را بازنویسی کنید.
+        <code>function proc($u, $f = false) { if ($u) { if ($u-&gt;s == 2) { if ($f) { mail(...); } return $u-&gt;p * 0.09; } } return null; }</code></summary>
+      <div class="answer">
+        <p><strong>مشکلات:</strong></p>
+        <ul>
+          <li><strong>نام‌گذاری مبهم:</strong> <code>proc</code>، <code>$u</code>، <code>$f</code>، <code>s</code>، <code>p</code> نیت را بیان نمی‌کنند.</li>
+          <li><strong>Magic numbers:</strong> <code>2</code> (کدام وضعیت؟) و <code>0.09</code> (نرخ مالیات؟).</li>
+          <li><strong>Flag argument:</strong> <code>$f</code> یعنی تابع دو کار می‌کند.</li>
+          <li><strong>اثر جانبی پنهان و نقض CQS:</strong> تابعی که مقدار محاسبه می‌کند، ایمیل هم می‌فرستد.</li>
+          <li><strong>Arrow code:</strong> سه سطح if تودرتو.</li>
+          <li><strong>برگرداندن null</strong> مبهم و نبود type hint.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+final class TaxCalculator
+{
+    private const VAT_RATE = 0.10; // از config یا جدول نرخ‌ها خوانده شود
+
+    public function vatFor(User $user): int
+    {
+        if ($user-&gt;status !== UserStatus::Active) {
+            throw new InactiveUser($user-&gt;id);
+        }
+
+        return (int) round($user-&gt;plan_price * self::VAT_RATE);
+    }
+}
+
+// ارسال ایمیل جدا: رویداد یا فراخوانی صریح در use case
+$vat = $taxCalculator-&gt;vatFor($user);
+VatCalculated::dispatch($user, $vat);</code></pre>
+        <p><strong>اصول به‌کاررفته:</strong> نام‌های گویا، type hint کامل، <strong>Enum</strong> به‌جای عدد جادویی، ثابت نام‌دار، <strong>guard clause</strong>، حذف flag با جداکردن دو مسئولیت، و exception صریح به‌جای null. همچنین مبالغ پولی را بهتر است به‌صورت integer (ریال/سنت) یا value object <code>Money</code> نگه داشت تا خطای ممیز شناور رخ ندهد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-14">
+      <summary>Code smell چیست؟ چهار smell از میان Long Method، God Class، Feature Envy، Primitive Obsession و Shotgun Surgery را توضیح داده و روش refactoring هر کدام را بگویید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> code smell نشانه‌ای سطحی در کد است که <strong>احتمالاً</strong> به مشکل عمیق‌تر طراحی اشاره دارد؛ باگ نیست ولی تغییر و فهم کد را سخت می‌کند. <strong>Refactoring</strong> تغییر ساختار داخلی <strong>بدون تغییر رفتار بیرونی</strong> است، در گام‌های کوچک و با پشتوانه تست.</p>
+        <ul>
+          <li><strong>Long Method:</strong> متدی که چند کار و چند سطح انتزاع دارد. ← <strong>Extract Method</strong> با نام گویا، Decompose Conditional، guard clause.</li>
+          <li><strong>God Class:</strong> کلاسی که بخش بزرگی از سیستم را می‌داند و انجام می‌دهد (<code>UserService</code> دوهزار خطی). ← <strong>Extract Class</strong>، تفکیک به Actionها، انتقال قواعد به مدل یا value object.</li>
+          <li><strong>Feature Envy:</strong> متدی که بیشتر با داده‌های کلاس دیگر کار می‌کند (سرویسی که <code>$cart-&gt;items</code> را پیمایش و جمع می‌زند). ← <strong>Move Method</strong> به کلاس صاحب داده (<code>$cart-&gt;subtotal()</code>).</li>
+          <li><strong>Primitive Obsession:</strong> مفاهیم دامنه با string و int (ایمیل، موبایل، مبلغ) که اعتبارسنجی‌شان همه‌جا تکرار می‌شود. ← <strong>Replace Primitive with Value Object</strong> (<code>Mobile</code>، <code>Money</code>) یا Enum.</li>
+          <li><strong>Shotgun Surgery:</strong> یک تغییر منطقی (مثلاً افزودن وضعیت سفارش) نیازمند ویرایش ده فایل. ← <strong>Move Method/Field</strong> و تجمیع دانش در یک جا (Enum با متدهای رفتاری، polymorphism).</li>
+        </ul>
+        <p><strong>روند امن:</strong> اول تست (یا characterization test برای legacy)، سپس گام‌های کوچک با اجرای تست بعد از هر گام، جداکردن commit refactoring از تغییر رفتار، و کمک گرفتن از PHPStan/Larastan و Rector.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-15">
+      <summary>یک سناریو: کلاس <code>OrderService</code> در پروژه شما ۲۵۰۰ خط و ۱۵ وابستگی در سازنده دارد و هر تغییر کوچک باعث باگ در جای دیگری می‌شود. چگونه آن را بازطراحی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>تشخیص:</strong> این یک <strong>God Class</strong> است؛ نقض SRP (دلایل متعدد تغییر)، cohesion پایین، coupling بالا (۱۵ وابستگی = constructor over-injection) و احتمالاً Divergent Change.</p>
+        <p><strong>گام‌ها:</strong></p>
+        <ol>
+          <li><strong>شبکه ایمنی:</strong> قبل از هر تغییری، تست‌های feature/characterization برای رفتارهای حیاتی (ثبت سفارش، لغو، بازپرداخت) بنویسید.</li>
+          <li><strong>نقشه مسئولیت‌ها:</strong> متدها را بر اساس <strong>use case</strong> و وابستگی‌هایی که استفاده می‌کنند گروه‌بندی کنید؛ گروه‌ها معمولاً مرز طبیعی کلاس‌های جدیدند.</li>
+          <li><strong>استخراج Actionها:</strong> <code>PlaceOrder</code>، <code>CancelOrder</code>، <code>RefundOrder</code>؛ هر کدام فقط ۲-۳ وابستگی لازمش را می‌گیرد.</li>
+          <li><strong>انتقال قواعد به دامنه:</strong> منطقی مثل <code>isCancellable()</code> یا محاسبه جمع به مدل یا value object (رفع Feature Envy و Anemic Model).</li>
+          <li><strong>جداسازی اثرات جانبی:</strong> ایمیل، پیامک، به‌روزرسانی انبار با <strong>Event/Listener</strong> صف‌شده.</li>
+          <li><strong>مرزهای خارجی پشت interface:</strong> درگاه پرداخت و سرویس‌های third-party (DIP) تا قابل fake باشند.</li>
+          <li><strong>مهاجرت تدریجی (Strangler):</strong> متدهای قدیمی موقتاً به Actionهای جدید delegate کنند تا فراخواننده‌ها مرحله‌به‌مرحله منتقل شوند؛ سپس حذف.</li>
+        </ol>
+        <p><strong>نتیجه مورد انتظار:</strong> کلاس‌های کوچک با تست واحد ساده، تغییرات محلی، و امکان استفاده مجدد use caseها از Controller، Command و Job. <strong>هشدار:</strong> بازنویسی یک‌باره (big-bang rewrite) ریسک بالایی دارد؛ refactoring تدریجی با تست ارجح است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-16">
+      <summary>معماری Hexagonal (Ports &amp; Adapters) چیست و چه تفاوتی با معماری لایه‌ای سنتی دارد؟ در چه پروژه‌ای ارزش هزینه‌اش را دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> معماری‌ای (Alistair Cockburn) که <strong>هسته اپلیکیشن</strong> (use caseها و مدل دامنه) را در مرکز و مستقل از فناوری نگه می‌دارد. هسته از طریق <strong>Port</strong>ها (interfaceهایی که خودش تعریف می‌کند) با بیرون ارتباط دارد و <strong>Adapter</strong>ها این portها را با فناوری مشخص پیاده می‌کنند.</p>
+        <ul>
+          <li><strong>Driving adapters</strong> (ورودی): HTTP Controller، Artisan Command، Queue consumer.</li>
+          <li><strong>Driven adapters</strong> (خروجی): <code>EloquentOrderRepository</code>، <code>ZarinpalGateway</code>، SMS.</li>
+          <li><strong>Dependency Rule:</strong> وابستگی‌های کد همیشه به سمت مرکز.</li>
+        </ul>
+        <p><strong>تفاوت با لایه‌ای:</strong> در معماری لایه‌ای سنتی، لایه دامنه به لایه دسترسی داده وابسته است (بالا ← پایین)، پس منطق کسب‌وکار به دیتابیس گره خورده. Hexagonal با <strong>DIP</strong> این وابستگی را برعکس می‌کند: زیرساخت به interface تعریف‌شده در هسته وابسته است. همچنین «بالا و پایین» ندارد؛ همه فناوری‌ها (UI، DB، صف) به یک اندازه «بیرون» هستند.</p>
+        <p><strong>مزایا:</strong> تست هسته بدون DB و framework، تعویض فناوری، تمرکز بر دامنه، تأخیر در تصمیم‌های فنی.</p>
+        <p><strong>هزینه:</strong> کد بیشتر، mapping بین مدل دامنه و مدل persistence (در Laravel یعنی کنار گذاشتن بخشی از راحتی Active Record)، و منحنی یادگیری.</p>
+        <p><strong>کی ارزش دارد:</strong> دامنه پیچیده با قواعد زیاد، عمر طولانی محصول، چند کانال ورودی، یا وابستگی به سرویس‌های خارجی متغیر. برای CRUD ساده یا MVP، Laravel استاندارد + Action classها کافی و عملی‌تر است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-software-design-17">
+      <summary>Entity، Value Object و Aggregate را در DDD تعریف کنید و برای هر کدام مثالی در یک فروشگاه اینترنتی بزنید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Entity:</strong> شیئی با <strong>هویت پایدار</strong> که در طول زمان تغییر می‌کند؛ برابری بر اساس <strong>identity</strong>. مثال: <code>Customer</code> و <code>Order</code>؛ اگر آدرس مشتری عوض شود، همان مشتری است.</li>
+          <li><strong>Value Object:</strong> شیء <strong>بدون هویت</strong> که با مقدارش تعریف می‌شود، <strong>immutable</strong> است و برابری‌اش بر اساس مقدار است؛ اعتبارسنجی در سازنده. مثال: <code>Money(150000, 'IRR')</code>، <code>Address</code>، <code>Email</code>. تغییر = ساخت شیء جدید.</li>
+          <li><strong>Aggregate:</strong> خوشه‌ای از Entity و Value Object که <strong>مرز سازگاری (consistency boundary)</strong> را تعریف می‌کند و فقط از طریق <strong>Aggregate Root</strong> تغییر می‌کند. مثال: <code>Order</code> (ریشه) با <code>OrderLine</code>‌ها؛ افزودن قلم فقط با <code>$order-&gt;addLine()</code> که قاعده «حداکثر ۱۰ قلم» و جمع کل را حفظ می‌کند.</li>
+        </ul>
+        <pre><code class="language-php">&lt;?php
+final readonly class Money
+{
+    public function __construct(public int $amount, public string $currency)
+    {
+        if ($amount &lt; 0) throw new InvalidArgumentException();
+    }
+
+    public function add(Money $other): self
+    {
+        if ($other-&gt;currency !== $this-&gt;currency) throw new CurrencyMismatch();
+        return new self($this-&gt;amount + $other-&gt;amount, $this-&gt;currency);
+    }
+}</code></pre>
+        <p><strong>قواعد Aggregate:</strong> بیرون از aggregate فقط به ریشه ارجاع دهید؛ بین aggregateها با <strong>id</strong> ارجاع دهید نه شیء؛ معمولاً هر تراکنش یک aggregate را تغییر می‌دهد و هماهنگی بین aggregateها با <strong>Domain Event</strong> انجام می‌شود. در Laravel، value object را می‌توان با <strong>custom cast</strong> به ستون مدل Eloquent وصل کرد.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============ Cheatsheet ============ -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>OOP</h4>
+      <ul>
+        <li><strong>Encapsulation</strong>: پنهان‌کردن state، حفظ invariant (<code>private</code>، <code>readonly</code>).</li>
+        <li><strong>Abstraction</strong>: نمایش «چه» نه «چطور» (<code>interface</code>).</li>
+        <li><strong>Inheritance</strong>: is-a، قوی‌ترین coupling، Fragile Base Class.</li>
+        <li><strong>Polymorphism</strong>: یک رابط، چند پیاده‌سازی؛ جایگزین switch روی نوع.</li>
+        <li>Interface = قرارداد؛ Abstract = قرارداد + کد مشترک (is-a)؛ Trait = کپی کد، نوع نمی‌سازد.</li>
+        <li>Composition (has-a) &gt; Inheritance برای reuse؛ کلاس‌ها را پیش‌فرض <code>final</code> کنید.</li>
+      </ul>
+
+      <h4>SOLID</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>اصل</th><th>یک خط</th><th>Laravel</th></tr></thead>
+        <tbody>
+          <tr><td>SRP</td><td>یک دلیل برای تغییر (یک actor)</td><td>FormRequest، Resource، Policy، Action</td></tr>
+          <tr><td>OCP</td><td>باز برای گسترش، بسته برای تغییر</td><td>Middleware، <code>extend()</code>، Listener، macro</td></tr>
+          <tr><td>LSP</td><td>زیرنوع قرارداد رفتاری را حفظ کند</td><td>driverهای cache/queue، fakeها</td></tr>
+          <tr><td>ISP</td><td>interface کوچک نقش‌محور</td><td><code>Arrayable</code>، <code>ShouldQueue</code></td></tr>
+          <tr><td>DIP</td><td>هر دو سطح به abstraction وابسته</td><td>Contracts + Service Container</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>اصول دیگر</h4>
+      <ul>
+        <li><strong>DRY</strong>: یک نمایش برای هر دانش؛ Rule of Three؛ تکرار &lt; abstraction اشتباه.</li>
+        <li><strong>KISS</strong>: ساده‌ترین راه درست. <strong>YAGNI</strong>: چیزی که الان لازم نیست نساز.</li>
+        <li><strong>Demeter</strong>: با غریبه حرف نزن؛ fluent builder نقض نیست.</li>
+        <li><strong>Tell Don't Ask</strong>: <code>$wallet-&gt;pay()</code> نه get/set بیرونی.</li>
+        <li><strong>SoC</strong>: Route / Middleware / Request / Controller / Action / Model / Resource.</li>
+        <li><strong>Low coupling + High cohesion</strong>؛ Utils = cohesion تصادفی؛ پاس دادن <code>Request</code> به سرویس = stamp coupling.</li>
+      </ul>
+
+      <h4>DI / IoC</h4>
+      <ul>
+        <li>IoC = اصل؛ DI = تکنیک؛ Container = ابزار؛ DIP = جهت وابستگی.</li>
+        <li>Constructor injection برای وابستگی اجباری؛ method injection در controller/job.</li>
+        <li><code>bind</code> (هر بار جدید)، <code>singleton</code> (یکی برای عمر app)، <code>scoped</code> (یکی در هر request/job)، <code>when()-&gt;needs()-&gt;give()</code>.</li>
+        <li>Service Locator: وابستگی پنهان، خطای دیرهنگام؛ Facade = static proxy ولی با <code>fake()</code> قابل تست.</li>
+        <li>۱۰ وابستگی در سازنده = بوی نقض SRP.</li>
+      </ul>
+
+      <h4>Clean Code</h4>
+      <ul>
+        <li>نام نیت‌نما؛ کلاس = اسم، متد = فعل، bool = <code>is/has/can</code>.</li>
+        <li>تابع کوچک، یک کار، یک سطح انتزاع، ≤ ۳ آرگومان، بدون flag.</li>
+        <li>CQS؛ بدون اثر جانبی پنهان؛ guard clause / early return.</li>
+        <li>ثابت نام‌دار و Enum به‌جای magic number/string.</li>
+        <li>کامنت «چرا» نه «چه»؛ کد کامنت‌شده را حذف کن.</li>
+        <li>Exception دامنه‌ای، fail fast، catch خالی ممنوع، <code>previous:</code> برای زنجیره.</li>
+      </ul>
+
+      <h4>Smell ← Refactoring</h4>
+      <ul>
+        <li>Long Method ← Extract Method</li>
+        <li>God Class ← Extract Class / Actions</li>
+        <li>Feature Envy ← Move Method</li>
+        <li>Primitive Obsession ← Value Object / Enum</li>
+        <li>Shotgun Surgery ← تجمیع دانش (Move)</li>
+        <li>Divergent Change ← Extract Class</li>
+        <li>Switch روی نوع ← Polymorphism</li>
+        <li>Long Param List / Data Clumps ← Parameter Object / DTO</li>
+        <li>Message Chain ← Hide Delegate</li>
+        <li>Refused Bequest ← Delegation به‌جای وراثت</li>
+        <li>اول تست، گام کوچک، commit جدا.</li>
+      </ul>
+
+      <h4>معماری و DDD</h4>
+      <ul>
+        <li>Layered: هر لایه به پایینی؛ دامنه به DB گره می‌خورد.</li>
+        <li>Hexagonal/Clean: هسته در مرکز، Port = interface هسته، Adapter = پیاده‌سازی؛ وابستگی‌ها به داخل.</li>
+        <li>Service = گروه عملیات؛ Action = یک use case.</li>
+        <li>Entity = هویت + mutable؛ Value Object = مقدار + immutable؛ Aggregate = مرز سازگاری با Root.</li>
+        <li>Bounded Context، Ubiquitous Language، Domain Event، Repository.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

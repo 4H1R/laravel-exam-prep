@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="docker">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Docker</h1>
+    <p class="lead">Container در برابر VM، Image و لایه‌ها، دستورات Dockerfile و تفاوت‌های ظریف آن‌ها (CMD/ENTRYPOINT، COPY/ADD، ENV/ARG)، Dockerfile چندمرحله‌ای production برای Laravel، Volume و شبکه، Docker Compose با استک کامل Laravel، امنیت image، استراتژی tag و مقدمه‌ی Kubernetes.</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="containers-vs-vms" data-title="Container در برابر ماشین مجازی">
+    <h2>Container در برابر ماشین مجازی</h2>
+    <p><strong>Container</strong> یک <strong>فرایند (یا گروهی از فرایندها) ایزوله</strong> روی سیستم‌عامل میزبان است که <strong>کرنل میزبان را به اشتراک می‌گذارد</strong> اما فایل‌سیستم، شبکه، فهرست فرایندها و منابع محدودشده‌ی خودش را می‌بیند. <strong>ماشین مجازی (VM)</strong> یک کامپیوتر کامل شبیه‌سازی‌شده با <strong>کرنل و سیستم‌عامل مستقل</strong> است که روی <strong>Hypervisor</strong> اجرا می‌شود.</p>
+
+    <pre class="diagram">        Virtual Machines                         Containers
+  ┌────────┐ ┌────────┐ ┌────────┐       ┌────────┐ ┌────────┐ ┌────────┐
+  │ App A  │ │ App B  │ │ App C  │       │ App A  │ │ App B  │ │ App C  │
+  │ Bins   │ │ Bins   │ │ Bins   │       │ Bins   │ │ Bins   │ │ Bins   │
+  │Guest OS│ │Guest OS│ │Guest OS│       └────────┘ └────────┘ └────────┘
+  └────────┘ └────────┘ └────────┘       ┌──────────────────────────────┐
+  ┌──────────────────────────────┐       │   Container Runtime (Docker) │
+  │          Hypervisor          │       ├──────────────────────────────┤
+  ├──────────────────────────────┤       │   Host OS  (shared kernel)   │
+  │          Hardware            │       ├──────────────────────────────┤
+  └──────────────────────────────┘       │          Hardware            │
+                                         └──────────────────────────────┘</pre>
+
+    <h3>ایزوله‌سازی با Namespace و محدودیت با cgroup</h3>
+    <p>Container جادو نیست؛ ترکیبی از قابلیت‌های کرنل Linux است:</p>
+    <dl class="terms">
+      <dt>Namespaces</dt><dd>«چه چیزی را می‌بیند». هر container نمای جداگانه‌ای از منابع دارد: <code>pid</code> (فرایندها؛ اولین فرایند PID 1 است)، <code>net</code> (کارت شبکه، IP و پورت‌ها)، <code>mnt</code> (فایل‌سیستم)، <code>uts</code> (hostname)، <code>ipc</code>، <code>user</code> (نگاشت UIDها) و <code>cgroup</code>.</dd>
+      <dt>cgroups</dt><dd>«چقدر می‌تواند مصرف کند». محدود کردن و اندازه‌گیری CPU، حافظه، I/O و تعداد فرایندها (مثلاً <code>--memory=512m --cpus=1.5</code>). اگر container از سقف حافظه عبور کند، OOM killer آن را می‌کشد (exit code 137).</dd>
+      <dt>Union / Overlay FS</dt><dd>فایل‌سیستم لایه‌ای (درایور <code>overlay2</code>): لایه‌های فقط‌خواندنی image به‌علاوه‌ی یک لایه‌ی قابل‌نوشتن مخصوص هر container.</dd>
+      <dt>Capabilities و seccomp</dt><dd>محدود کردن دسترسی‌های root و system callها برای کاهش سطح حمله.</dd>
+    </dl>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ویژگی</th><th>Container</th><th>VM</th></tr></thead>
+      <tbody>
+        <tr><td>کرنل</td><td>مشترک با میزبان</td><td>کرنل مستقل برای هر VM</td></tr>
+        <tr><td>زمان راه‌اندازی</td><td>میلی‌ثانیه تا ثانیه (شروع یک فرایند)</td><td>ده‌ها ثانیه تا دقیقه (boot سیستم‌عامل)</td></tr>
+        <tr><td>اندازه</td><td>مگابایت</td><td>گیگابایت</td></tr>
+        <tr><td>سربار</td><td>نزدیک به صفر</td><td>سربار Hypervisor و Guest OS</td></tr>
+        <tr><td>ایزوله‌سازی</td><td>در سطح فرایند؛ ضعیف‌تر (کرنل مشترک)</td><td>در سطح سخت‌افزار مجازی؛ قوی‌تر</td></tr>
+        <tr><td>سیستم‌عامل مهمان</td><td>همان خانواده‌ی کرنل میزبان (container لینوکسی نیازمند کرنل لینوکس)</td><td>هر سیستم‌عاملی</td></tr>
+        <tr><td>تراکم</td><td>صدها container روی یک میزبان</td><td>تعداد محدود VM</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p>جمله‌ی کلیدی: «Container مجازی‌سازی در <strong>سطح سیستم‌عامل</strong> است، VM مجازی‌سازی در <strong>سطح سخت‌افزار</strong>.» Container سبک‌تر و سریع‌تر است، چون کرنل را به اشتراک می‌گذارد؛ اما به همین دلیل ایزوله‌سازی امنیتی آن ضعیف‌تر است. در عمل این دو رقیب نیستند: معمولاً containerها <em>داخل</em> VMهای ابری اجرا می‌شوند.</p></div>
+    <div class="callout note"><p>Docker Desktop روی Windows و macOS در واقع یک VM سبک لینوکسی (یا WSL2 در Windows) اجرا می‌کند و containerهای لینوکسی داخل آن اجرا می‌شوند؛ به همین دلیل bind mount روی این سیستم‌ها کندتر از Linux است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="core-concepts" data-title="Image، Container، Registry و معماری Docker">
+    <h2>Image، Container، Registry و معماری Docker</h2>
+    <dl class="terms">
+      <dt>Image</dt><dd>قالب <strong>فقط‌خواندنی و تغییرناپذیر</strong> شامل فایل‌سیستم لایه‌ای و metadata (دستور پیش‌فرض، متغیرها، پورت‌ها). مثل «کلاس» در برنامه‌نویسی شیءگرا.</dd>
+      <dt>Container</dt><dd><strong>نمونه‌ی در حال اجرای</strong> یک image: لایه‌های image + یک لایه‌ی نازک قابل‌نوشتن + فرایند ایزوله. مثل «شیء». از یک image می‌توان ده‌ها container ساخت. با حذف container، لایه‌ی قابل‌نوشتنش هم حذف می‌شود.</dd>
+      <dt>Registry</dt><dd>سرویس ذخیره و توزیع imageها: Docker Hub، GitHub Container Registry (ghcr.io)، GitLab Registry، AWS ECR یا Harbor خصوصی. یک registry شامل <strong>repository</strong>ها و هر repository شامل <strong>tag</strong>هاست.</dd>
+      <dt>Dockerfile</dt><dd>دستورالعمل متنی ساخت image.</dd>
+      <dt>Tag و Digest</dt><dd>Tag برچسب قابل‌تغییر انسانی (<code>php:8.3-fpm-alpine</code>)؛ Digest هش محتوایی تغییرناپذیر (<code>php@sha256:…</code>).</dd>
+    </dl>
+
+    <h3>معماری</h3>
+    <pre class="diagram">  docker CLI ──(REST API)──► dockerd (Docker Engine) ──► containerd ──► runc ──► container
+                                    │
+                                    └──── pull / push ────► Registry</pre>
+    <p><strong>Docker CLI</strong> فقط کلاینت است؛ کار اصلی را daemon (<code>dockerd</code>) انجام می‌دهد که مدیریت چرخه‌ی عمر container را به <strong>containerd</strong> و ساخت فرایند ایزوله را به <strong>runc</strong> می‌سپارد. قالب image و runtime توسط استاندارد <strong>OCI</strong> (Open Container Initiative) تعریف شده‌اند؛ به همین دلیل imageهای ساخته‌شده با Docker در Kubernetes، Podman و سایر runtimeها قابل اجرا هستند.</p>
+
+    <div class="callout warn"><p>دسترسی به سوکت daemon (<code>/var/run/docker.sock</code>) یا عضویت در گروه <code>docker</code> عملاً معادل <strong>دسترسی root روی میزبان</strong> است. mount کردن این سوکت داخل یک container (مثلاً برای CI) یک ریسک امنیتی جدی است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="layers-cache" data-title="لایه‌ها و Cache ساخت">
+    <h2>لایه‌ها و Cache ساخت</h2>
+    <p>هر دستور <code>RUN</code>، <code>COPY</code> و <code>ADD</code> در Dockerfile یک <strong>لایه‌ی جدید</strong> می‌سازد (دستورهایی مثل <code>ENV</code>، <code>CMD</code> و <code>EXPOSE</code> فقط metadata تغییر می‌دهند). لایه‌ها بین imageها به اشتراک گذاشته می‌شوند: ده image که روی <code>php:8.3-fpm-alpine</code> ساخته شده‌اند، لایه‌های پایه را یک بار روی دیسک نگه می‌دارند و یک بار دانلود می‌کنند.</p>
+
+    <h3>قانون Cache</h3>
+    <p>هنگام build، Docker برای هر دستور بررسی می‌کند آیا لایه‌ای با همان دستور و همان ورودی قبلاً ساخته شده است. برای <code>COPY</code>/<code>ADD</code>، ورودی شامل <strong>checksum محتوای فایل‌ها</strong> است. <strong>به محض اینکه یک لایه cache miss شود، همه‌ی لایه‌های بعدی دوباره ساخته می‌شوند.</strong></p>
+
+    <div class="grid-2">
+      <div class="card"><h4>ترتیب بد</h4>
+<pre><code class="language-dockerfile">FROM php:8.3-fpm-alpine
+WORKDIR /var/www/html
+COPY . .
+# هر تغییر در هر فایل ⇒ نصب مجدد همه‌ی وابستگی‌ها
+RUN composer install --no-dev</code></pre>
+      </div>
+      <div class="card"><h4>ترتیب خوب</h4>
+<pre><code class="language-dockerfile">FROM php:8.3-fpm-alpine
+WORKDIR /var/www/html
+COPY composer.json composer.lock ./
+# فقط وقتی lock عوض شود دوباره اجرا می‌شود
+RUN composer install --no-dev --no-scripts
+COPY . .</code></pre>
+      </div>
+    </div>
+
+    <ul>
+      <li><strong>از کم‌تغییرترین به پرتغییرترین:</strong> image پایه ← بسته‌های سیستمی ← extensionها ← فایل‌های وابستگی (<code>composer.lock</code>، <code>package-lock.json</code>) ← نصب وابستگی ← کد برنامه.</li>
+      <li><strong>ترکیب دستورات مرتبط در یک RUN</strong> و پاک‌سازی در <em>همان</em> لایه: حذف فایل در لایه‌ی بعدی حجم image را کم نمی‌کند، چون فایل در لایه‌ی قبلی باقی است.</li>
+      <li><code>apt-get update</code> و <code>apt-get install</code> را در یک <code>RUN</code> بنویسید؛ وگرنه لایه‌ی cache‌شده‌ی <code>update</code> قدیمی می‌ماند و نصب بعدی با فهرست کهنه اجرا می‌شود.</li>
+      <li><strong>BuildKit cache mount</strong> (<code>RUN --mount=type=cache,target=...</code>) دانلودهای Composer/npm را بین buildها نگه می‌دارد بدون اینکه وارد لایه‌ی image شوند.</li>
+      <li>در CI که ماشین تازه است، cache محلی وجود ندارد؛ از cache خارجی (<code>--cache-from</code>، <code>type=gha</code> یا <code>type=registry</code>) استفاده کنید.</li>
+    </ul>
+
+    <pre><code class="language-bash">docker history myapp:1.4.0          # لایه‌ها و حجم هرکدام
+docker build --no-cache -t myapp .   # build بدون استفاده از cache</code></pre>
+
+    <div class="callout exam"><p>سوال کلاسیک: «چرا <code>COPY composer.json composer.lock</code> را جدا و قبل از <code>COPY . .</code> می‌نویسیم؟» چون کد برنامه مدام عوض می‌شود ولی وابستگی‌ها به‌ندرت؛ با این ترتیب لایه‌ی سنگین <code>composer install</code> تا وقتی lock تغییر نکرده از cache استفاده می‌شود و build از چند دقیقه به چند ثانیه می‌رسد.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="dockerfile-instructions" data-title="دستورات Dockerfile">
+    <h2>دستورات Dockerfile</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دستور</th><th>کاربرد</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td><code>FROM</code></td><td>image پایه؛ شروع یک stage</td><td><code>FROM node:22-alpine AS assets</code> برای نام‌گذاری stage در multi-stage</td></tr>
+        <tr><td><code>RUN</code></td><td>اجرای دستور در زمان build و ذخیره‌ی نتیجه در لایه</td><td>ترکیب با <code>&amp;&amp;</code> و پاک‌سازی در همان لایه</td></tr>
+        <tr><td><code>COPY</code></td><td>کپی فایل از build context یا stage دیگر</td><td><code>--from=stage</code>، <code>--chown=user:group</code></td></tr>
+        <tr><td><code>ADD</code></td><td>مثل COPY + دانلود از URL + استخراج خودکار tar محلی</td><td>رفتار ضمنی دارد؛ COPY را ترجیح دهید</td></tr>
+        <tr><td><code>WORKDIR</code></td><td>تعیین پوشه‌ی کاری برای دستورات بعدی و runtime</td><td>اگر نباشد ساخته می‌شود؛ به‌جای <code>RUN cd</code></td></tr>
+        <tr><td><code>ENV</code></td><td>متغیر محیطی در build <strong>و</strong> runtime</td><td>در image ماندگار است؛ برای secret نه</td></tr>
+        <tr><td><code>ARG</code></td><td>متغیر <strong>فقط زمان build</strong> (<code>--build-arg</code>)</td><td>در container اجراشده نیست، اما در history قابل دیدن است</td></tr>
+        <tr><td><code>EXPOSE</code></td><td>مستندسازی پورتی که برنامه گوش می‌دهد</td><td>پورت را <strong>publish نمی‌کند</strong>؛ آن کار <code>-p</code> است</td></tr>
+        <tr><td><code>USER</code></td><td>کاربر اجرای دستورات بعدی و فرایند اصلی</td><td>اجرا با کاربر غیر root</td></tr>
+        <tr><td><code>CMD</code></td><td>دستور یا آرگومان پیش‌فرض اجرا</td><td>با آرگومان <code>docker run</code> جایگزین می‌شود</td></tr>
+        <tr><td><code>ENTRYPOINT</code></td><td>فرایند ثابت container</td><td>با <code>--entrypoint</code> override می‌شود</td></tr>
+        <tr><td><code>HEALTHCHECK</code></td><td>دستور بررسی سلامت دوره‌ای</td><td>وضعیت <code>healthy</code>/<code>unhealthy</code> در <code>docker ps</code></td></tr>
+        <tr><td><code>VOLUME</code></td><td>اعلام نقطه‌ی mount برای داده‌ی ماندگار</td><td>در زمان run، یک volume بی‌نام ساخته می‌شود</td></tr>
+        <tr><td><code>LABEL</code></td><td>metadata (نسخه، مالک، مخزن)</td><td>مثلاً <code>org.opencontainers.image.source</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>COPY در برابر ADD</h3>
+    <p><code>ADD</code> علاوه بر کپی، اگر مبدأ یک آرشیو tar محلی باشد آن را <strong>خودکار استخراج</strong> می‌کند و می‌تواند از <strong>URL دانلود</strong> کند. این رفتارهای ضمنی غافلگیرکننده‌اند (مثلاً فایل <code>.tar.gz</code> که قرار بود همان‌طور کپی شود، باز می‌شود) و دانلود با ADD معمولاً بدون بررسی checksum است. توصیه‌ی رسمی: <strong>همیشه COPY</strong>، مگر اینکه دقیقاً قابلیت استخراج خودکار را بخواهید. برای دانلود، <code>RUN curl</code> + بررسی checksum در همان لایه شفاف‌تر است.</p>
+
+    <h3>ENV در برابر ARG</h3>
+    <pre><code class="language-dockerfile">ARG PHP_VERSION=8.3                 # ARG قبل از FROM فقط برای خود FROM قابل استفاده است
+FROM php:${PHP_VERSION}-fpm-alpine
+
+ARG APP_VERSION=dev                 # باید بعد از FROM دوباره اعلام شود تا در stage در دسترس باشد
+LABEL org.opencontainers.image.version=$APP_VERSION
+
+ENV APP_ENV=production \
+    COMPOSER_ALLOW_SUPERUSER=1      # در container اجراشده هم وجود دارد</code></pre>
+    <pre><code class="language-bash">docker build --build-arg PHP_VERSION=8.4 --build-arg APP_VERSION=1.4.0 -t myapp:1.4.0 .</code></pre>
+    <div class="callout warn"><p>هیچ‌کدام برای <strong>secret</strong> مناسب نیستند: <code>ENV</code> در image باقی می‌ماند (<code>docker inspect</code>) و مقدار <code>ARG</code> در <code>docker history</code> دیده می‌شود. برای secretهای زمان build (مثلاً توکن مخزن خصوصی Composer) از <strong>BuildKit secret</strong> استفاده کنید که فقط در طول همان <code>RUN</code> mount می‌شود و در هیچ لایه‌ای ذخیره نمی‌شود:</p>
+    <pre><code class="language-dockerfile">RUN --mount=type=secret,id=composer_auth,target=/root/.composer/auth.json \
+    composer install --no-dev --prefer-dist</code></pre>
+    <pre><code class="language-bash">docker build --secret id=composer_auth,src=./auth.json -t myapp .</code></pre></div>
+
+    <h3>HEALTHCHECK</h3>
+    <pre><code class="language-dockerfile">HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost/up || exit 1</code></pre>
+    <p>exit code صفر یعنی سالم و ۱ یعنی ناسالم. Docker خودش container ناسالم را restart نمی‌کند (در حالت standalone)، اما Compose با <code>depends_on: condition: service_healthy</code> و Swarm از آن استفاده می‌کنند. Kubernetes دستور HEALTHCHECK را نادیده می‌گیرد و probeهای خودش را دارد.</p>
+    <div class="callout note"><p>PHP-FPM پروتکل <strong>FastCGI</strong> صحبت می‌کند، نه HTTP؛ پس health check مستقیم با <code>curl</code> روی پورت 9000 کار نمی‌کند. معمولاً health check روی container Nginx (مسیر <code>/up</code> لاراول) تعریف می‌شود، یا با فعال کردن <code>ping.path</code> در pool FPM و ابزاری مثل <code>cgi-fcgi</code>.</p></div>
+
+    <h3>VOLUME</h3>
+    <p><code>VOLUME /var/lib/mysql</code> اعلام می‌کند آن مسیر داده‌ی ماندگار است؛ اگر هنگام run چیزی به آن mount نشود، Docker یک <strong>volume بی‌نام (anonymous)</strong> می‌سازد. تغییراتی که در مراحل بعدی build روی آن مسیر انجام شود دور ریخته می‌شود. برای imageهای برنامه معمولاً نیازی به VOLUME نیست؛ mount را در Compose یا هنگام run تعریف کنید.</p>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="cmd-entrypoint" data-title="CMD، ENTRYPOINT، Exec form و PID 1">
+    <h2>CMD، ENTRYPOINT، Exec form و PID 1</h2>
+
+    <h3>Exec form در برابر Shell form</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Exec form (توصیه‌شده)</h4>
+<pre><code class="language-dockerfile">CMD ["php-fpm"]
+ENTRYPOINT ["php", "artisan"]</code></pre>
+        <ul>
+          <li>آرایه‌ی JSON؛ فرایند <strong>مستقیماً</strong> اجرا می‌شود و PID 1 است.</li>
+          <li>سیگنال‌ها (SIGTERM) مستقیم به برنامه می‌رسند.</li>
+          <li>بدون پردازش shell: <code>$VAR</code> باز نمی‌شود.</li>
+        </ul>
+      </div>
+      <div class="card"><h4>Shell form</h4>
+<pre><code class="language-dockerfile">CMD php-fpm
+# معادل: ["/bin/sh", "-c", "php-fpm"]</code></pre>
+        <ul>
+          <li>از طریق <code>/bin/sh -c</code> اجرا می‌شود؛ <strong>shell PID 1 است</strong>.</li>
+          <li>sh سیگنال SIGTERM را به فرزند منتقل نمی‌کند ⇒ خاموش شدن غیر graceful.</li>
+          <li>امکان استفاده از متغیر و pipe.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>CMD و ENTRYPOINT با هم</h3>
+    <p><code>ENTRYPOINT</code> <strong>برنامه‌ی ثابت</strong> و <code>CMD</code> <strong>آرگومان‌های پیش‌فرض</strong> آن است. آرگومان‌های <code>docker run</code> جایگزین CMD می‌شوند، نه ENTRYPOINT.</p>
+    <pre><code class="language-dockerfile">ENTRYPOINT ["php", "artisan"]
+CMD ["list"]</code></pre>
+    <pre><code class="language-bash">docker run myapp                      # php artisan list
+docker run myapp migrate --force      # php artisan migrate --force
+docker run --entrypoint sh -it myapp  # override خود ENTRYPOINT</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>بدون ENTRYPOINT</th><th>ENTRYPOINT ["e"]</th></tr></thead>
+      <tbody>
+        <tr><td>بدون CMD</td><td>خطا / پیش‌فرض image پایه</td><td><code>e</code></td></tr>
+        <tr><td>CMD ["c"]</td><td><code>c</code></td><td><code>e c</code></td></tr>
+        <tr><td><code>docker run img x</code></td><td><code>x</code></td><td><code>e x</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>الگوی entrypoint script</h3>
+    <p>برای کارهای آماده‌سازی در زمان start (مثل cache کردن config با env واقعی) یک اسکریپت entrypoint می‌نویسیم که در انتها با <code>exec</code> فرایند اصلی را <strong>جایگزین خودش</strong> کند تا آن فرایند PID 1 شود:</p>
+    <pre><code class="language-bash">#!/bin/sh
+# docker/entrypoint.sh
+set -e
+
+php artisan config:cache
+php artisan event:cache
+
+exec "$@"     # بدون exec، shell به‌عنوان PID 1 باقی می‌ماند و سیگنال‌ها گم می‌شوند</code></pre>
+    <pre><code class="language-dockerfile">COPY docker/entrypoint.sh /usr/local/bin/entrypoint
+ENTRYPOINT ["entrypoint"]
+CMD ["php-fpm"]</code></pre>
+
+    <h3>PID 1 و سیگنال‌ها</h3>
+    <ul>
+      <li><code>docker stop</code> ابتدا <strong>SIGTERM</strong> (یا <code>STOPSIGNAL</code> تعریف‌شده) می‌فرستد و پس از مهلت (پیش‌فرض <strong>۱۰ ثانیه</strong>) <strong>SIGKILL</strong>. <code>docker kill</code> به‌طور پیش‌فرض فوراً SIGKILL می‌فرستد.</li>
+      <li>کرنل برای PID 1 رفتار پیش‌فرض سیگنال‌ها را اعمال نمی‌کند؛ اگر برنامه handler نداشته باشد، SIGTERM نادیده گرفته می‌شود و container پس از ۱۰ ثانیه kill می‌شود.</li>
+      <li>PID 1 مسئول <strong>جمع‌آوری فرایندهای zombie</strong> است. اگر برنامه این کار را نمی‌کند، از <code>docker run --init</code> (tini) یا <code>init: true</code> در Compose استفاده کنید.</li>
+      <li><code>php artisan queue:work</code> با extension <code>pcntl</code> به SIGTERM واکنش graceful نشان می‌دهد: job جاری را تمام و سپس خارج می‌شود. مهلت توقف (<code>stop_grace_period</code>) باید از طولانی‌ترین job بیشتر باشد.</li>
+    </ul>
+
+    <div class="callout exam"><p>اگر container هنگام <code>docker stop</code> دقیقاً ۱۰ ثانیه طول می‌کشد تا متوقف شود، تقریباً همیشه علتش این است که فرایند اصلی SIGTERM را دریافت یا پردازش نمی‌کند (shell form، اسکریپت بدون <code>exec</code>، یا نبود handler). راه‌حل: exec form، <code>exec "$@"</code> و در صورت نیاز <code>--init</code>.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="multi-stage-laravel" data-title="Dockerfile چندمرحله‌ای Production برای Laravel">
+    <h2>Dockerfile چندمرحله‌ای Production برای Laravel</h2>
+    <p><strong>Multi-stage build</strong> چند <code>FROM</code> در یک Dockerfile دارد. هر stage می‌تواند ابزارهای سنگین build (Composer، Node، کامپایلرها) داشته باشد و image نهایی فقط <strong>خروجی</strong> آن‌ها را با <code>COPY --from</code> برمی‌دارد. نتیجه: image کوچک‌تر، سطح حمله‌ی کمتر و جدا شدن محیط build از runtime.</p>
+
+    <pre class="diagram">  ┌────────────┐    ┌────────────────────┐    ┌──────────────────┐
+  │ base       │──► │ vendor (+composer) │──► │                  │
+  │ php-fpm +  │    └────────────────────┘    │  runtime         │──► app image (php-fpm)
+  │ extensions │──────────────────────────────►│  (non-root,      │
+  └────────────┘    ┌────────────────────┐    │   opcache)       │──► web image (nginx + public)
+                    │ assets (node/vite) │──► │                  │
+                    └────────────────────┘    └──────────────────┘</pre>
+
+    <pre><code class="language-dockerfile"># syntax=docker/dockerfile:1
+
+############################
+# 1) base: PHP-FPM + extensions
+############################
+FROM php:8.3-fpm-alpine AS base
+
+RUN apk add --no-cache icu-libs libzip fcgi \
+ &amp;&amp; apk add --no-cache --virtual .build-deps $PHPIZE_DEPS icu-dev libzip-dev \
+ &amp;&amp; docker-php-ext-install -j"$(nproc)" pdo_mysql intl zip bcmath pcntl opcache \
+ &amp;&amp; pecl install redis \
+ &amp;&amp; docker-php-ext-enable redis \
+ &amp;&amp; apk del .build-deps
+
+WORKDIR /var/www/html
+
+############################
+# 2) vendor: Composer dependencies
+############################
+FROM base AS vendor
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+ENV COMPOSER_CACHE_DIR=/tmp/composer-cache
+
+COPY composer.json composer.lock ./
+RUN --mount=type=cache,target=/tmp/composer-cache \
+    composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction
+
+COPY . .
+RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
+
+############################
+# 3) assets: Vite build
+############################
+FROM node:22-alpine AS assets
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY vite.config.js ./
+COPY resources ./resources
+COPY public ./public
+RUN npm run build
+
+############################
+# 4) runtime: final PHP-FPM image
+############################
+FROM base AS runtime
+
+COPY docker/php/opcache.ini /usr/local/etc/php/conf.d/zz-opcache.ini
+COPY docker/php/php.ini     /usr/local/etc/php/conf.d/zz-app.ini
+
+COPY --from=vendor --chown=www-data:www-data /var/www/html /var/www/html
+COPY --from=assets --chown=www-data:www-data /app/public/build /var/www/html/public/build
+
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint
+RUN chmod +x /usr/local/bin/entrypoint \
+ &amp;&amp; php artisan route:cache \
+ &amp;&amp; php artisan view:cache \
+ &amp;&amp; chown -R www-data:www-data storage bootstrap/cache
+
+USER www-data
+EXPOSE 9000
+ENTRYPOINT ["entrypoint"]
+CMD ["php-fpm"]
+
+############################
+# 5) web: Nginx serving static files, proxying PHP to app
+############################
+FROM nginx:1.27-alpine AS web
+COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY --from=runtime /var/www/html/public /var/www/html/public</code></pre>
+
+    <pre><code class="language-ini">; docker/php/opcache.ini
+opcache.enable=1
+opcache.memory_consumption=256
+opcache.interned_strings_buffer=16
+opcache.max_accelerated_files=20000
+opcache.validate_timestamps=0   ; کد داخل image تغییر نمی‌کند ⇒ بررسی timestamp لازم نیست</code></pre>
+
+    <h3>چرا این طراحی؟</h3>
+    <ul>
+      <li><strong>stage پایه‌ی مشترک:</strong> Composer روی <em>همان</em> PHP و extensionهای runtime اجرا می‌شود، پس بررسی platform requirements (<code>ext-intl</code>، نسخه‌ی PHP) واقعی است. (استفاده از image <code>composer</code> به‌عنوان stage مستقل رایج است، اما PHP آن ممکن است با runtime فرق کند.)</li>
+      <li><strong>build-deps موقت:</strong> کامپایلرها (<code>$PHPIZE_DEPS</code>) در همان لایه نصب و حذف می‌شوند؛ فقط کتابخانه‌های runtime (<code>icu-libs</code>، <code>libzip</code>) می‌مانند.</li>
+      <li><strong>ترتیب لایه‌ها:</strong> ابتدا lock fileها، سپس نصب وابستگی و در آخر کد؛ برای npm هم همین الگو.</li>
+      <li><strong><code>--no-dev</code> و <code>--classmap-authoritative</code>:</strong> بدون PHPUnit و ابزارهای توسعه، و autoload سریع‌تر بدون جست‌وجوی فایل‌سیستم.</li>
+      <li><strong>Node فقط در stage build:</strong> image نهایی Node و <code>node_modules</code> ندارد.</li>
+      <li><strong>کاربر غیر root:</strong> <code>USER www-data</code>؛ فقط <code>storage</code> و <code>bootstrap/cache</code> قابل‌نوشتن‌اند.</li>
+      <li><strong>config:cache در زمان start</strong> (در entrypoint)، نه build؛ چون متغیرهای محیطی و secretهای واقعی فقط در runtime وجود دارند و نباید وارد image شوند. <code>route:cache</code> و <code>view:cache</code> به env وابسته نیستند و در build امن‌اند.</li>
+      <li><strong>image جداگانه‌ی web:</strong> Nginx به فایل‌های استاتیک <code>public/</code> نیاز دارد؛ با <code>COPY --from=runtime</code> دقیقاً همان نسخه‌ی assetها را دارد.</li>
+    </ul>
+
+    <pre><code class="language-bash">docker build --target runtime -t registry.example.com/shop/app:3f9c2ab .
+docker build --target web     -t registry.example.com/shop/web:3f9c2ab .</code></pre>
+
+    <div class="callout tip"><p>با <code>--target</code> می‌توان یک stage مشخص را ساخت؛ مثلاً یک stage <code>dev</code> با Xdebug و وابستگی‌های dev روی همان <code>base</code>، تا dev و prod از یک Dockerfile و یک پایه بیایند.</p></div>
+    <div class="callout warn"><p>اجرای <code>php artisan migrate</code> در entrypoint هر container، وقتی چند replica هم‌زمان بالا می‌آیند، باعث <strong>race condition</strong> و قفل روی جدول migrations می‌شود. migration را به‌صورت یک مرحله‌ی جدا در pipeline یا یک Job/سرویس یک‌باره اجرا کنید.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="dockerignore-security" data-title=".dockerignore، حجم و امنیت Image">
+    <h2>.dockerignore، حجم و امنیت Image</h2>
+
+    <h3>.dockerignore</h3>
+    <p>هنگام <code>docker build</code>، کل پوشه‌ی <strong>build context</strong> به builder فرستاده می‌شود. <code>.dockerignore</code> فایل‌هایی را که نباید در context باشند حذف می‌کند تا (۱) build سریع‌تر شود، (۲) cache بی‌دلیل invalid نشود و (۳) فایل حساس وارد image نشود.</p>
+    <pre><code class="language-plaintext"># .dockerignore
+.git
+.env
+.env.*
+!.env.example
+node_modules
+vendor
+public/build
+public/hot
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+tests
+.phpunit.result.cache
+docker-compose*.yml
+*.md
+.idea
+.vscode</code></pre>
+    <div class="callout warn"><p>بدون <code>.dockerignore</code>، دستور <code>COPY . .</code> فایل <code>.env</code> محلی (با رمز دیتابیس و <code>APP_KEY</code>) و کل تاریخچه‌ی <code>.git</code> را وارد image می‌کند. هر کسی که به image دسترسی داشته باشد آن‌ها را می‌خواند.</p></div>
+
+    <h3>انتخاب image پایه</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>مثال</th><th>مزایا</th><th>معایب</th></tr></thead>
+      <tbody>
+        <tr><td>Debian کامل/استاندارد</td><td><code>php:8.3-fpm</code></td><td>سازگاری بالا (glibc)، ابزار و بسته‌ی زیاد</td><td>حجم بیشتر، سطح حمله‌ی بزرگ‌تر</td></tr>
+        <tr><td>Slim</td><td><code>debian:bookworm-slim</code>، <code>python:3.12-slim</code></td><td>تعادل حجم و سازگاری</td><td>برخی ابزارها باید نصب شوند</td></tr>
+        <tr><td>Alpine</td><td><code>php:8.3-fpm-alpine</code></td><td>بسیار کوچک، بسته‌های کم</td><td><strong>musl libc</strong> به‌جای glibc: تفاوت رفتاری/کارایی در برخی کتابخانه‌ها، باینری‌های از پیش کامپایل‌شده‌ی glibc کار نمی‌کنند، DNS و locale متفاوت</td></tr>
+        <tr><td>Distroless / scratch</td><td><code>gcr.io/distroless/...</code></td><td>حداقل سطح حمله، بدون shell</td><td>دیباگ سخت؛ برای PHP کمتر رایج</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>بهترین روش‌های امنیت و حجم</h3>
+    <ul>
+      <li><strong>Pin کردن نسخه:</strong> <code>php:8.3-fpm-alpine3.20</code> به‌جای <code>php:latest</code>؛ برای تکرارپذیری کامل، pin با digest (<code>@sha256:...</code>) و به‌روزرسانی کنترل‌شده (مثلاً با Renovate/Dependabot).</li>
+      <li><strong>اجرا با کاربر غیر root</strong> (<code>USER</code>). اگر مهاجم از برنامه نفوذ کند، root داخل container خطر فرار به میزبان را بیشتر می‌کند.</li>
+      <li><strong>هیچ secretی در لایه‌ها:</strong> نه در ENV، نه ARG، نه فایل کپی‌شده (حتی اگر در لایه‌ی بعد پاک شود). از BuildKit secret و تزریق runtime استفاده کنید.</li>
+      <li><strong>Multi-stage</strong> تا ابزار build وارد image نهایی نشود.</li>
+      <li><strong>حداقل بسته:</strong> <code>apk add --no-cache</code>، <code>apt-get install --no-install-recommends</code> و پاک کردن <code>/var/lib/apt/lists/*</code> در همان لایه.</li>
+      <li><strong>اسکن آسیب‌پذیری</strong> image در CI: Trivy، Docker Scout، Grype؛ build را روی CVE بحرانی fail کنید.</li>
+      <li><strong>Rebuild دوره‌ای</strong> تا وصله‌های امنیتی image پایه اعمال شوند.</li>
+      <li><strong>محدودیت‌های runtime:</strong> <code>--read-only</code> (با tmpfs برای مسیرهای لازم)، <code>--cap-drop ALL</code>، <code>--security-opt no-new-privileges</code>، محدودیت <code>--memory</code>/<code>--cpus</code>؛ هرگز <code>--privileged</code> بدون دلیل.</li>
+      <li><strong>Image رسمی یا verified</strong> از منبع مطمئن؛ امضای image (مثلاً cosign) در محیط‌های حساس.</li>
+    </ul>
+
+    <div class="callout exam"><p>«چرا <code>RUN rm secret.txt</code> بعد از <code>COPY secret.txt</code> امن نیست؟» چون image مجموعه‌ای از لایه‌هاست و لایه‌ی COPY همچنان فایل را دارد؛ با <code>docker save</code> و باز کردن لایه‌ها، فایل قابل بازیابی است. حذف در لایه‌ی بعد فقط آن را «پنهان» می‌کند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="cli-lifecycle" data-title="چرخه‌ی عمر Container و دستورات CLI">
+    <h2>چرخه‌ی عمر Container و دستورات CLI</h2>
+    <pre class="diagram">  docker create      docker start        docker pause
+  ───────────► Created ──────────► Running ◄───────────► Paused
+                                     │  ▲      docker unpause
+                    docker stop/kill │  │ docker start / restart
+                     یا پایان فرایند ▼  │
+                                   Exited ──── docker rm ───► (حذف)</pre>
+    <p>container تا وقتی زنده است که <strong>فرایند اصلی (PID 1)</strong> زنده باشد. اگر CMD کارش تمام شود یا به background برود (مثلاً <code>nginx</code> بدون <code>daemon off</code>)، container بلافاصله Exited می‌شود.</p>
+
+    <h3>دستورات ضروری</h3>
+    <pre><code class="language-bash"># اجرا
+docker run -d --name web -p 8080:80 nginx:1.27-alpine        # detached + انتشار پورت میزبان 8080 به 80
+docker run --rm -it php:8.3-cli-alpine sh                     # تعاملی، حذف خودکار پس از خروج
+docker run -d --name db \
+  -e MYSQL_ROOT_PASSWORD=secret -e MYSQL_DATABASE=app \
+  -v mysql-data:/var/lib/mysql \
+  --restart unless-stopped \
+  --memory 1g \
+  mysql:8.4
+
+# مشاهده
+docker ps                 # containerهای در حال اجرا
+docker ps -a              # همه، شامل Exited
+docker logs -f --tail 100 web
+docker inspect web        # JSON کامل: IP، mountها، env، ExitCode، OOMKilled
+docker inspect -f '{{.State.ExitCode}} {{.State.OOMKilled}}' web
+docker stats              # مصرف زنده‌ی CPU/RAM
+docker top web            # فرایندهای داخل container
+
+# تعامل
+docker exec -it web sh                     # اجرای shell در container در حال اجرا
+docker exec app php artisan migrate --force
+docker cp web:/etc/nginx/nginx.conf ./nginx.conf
+
+# توقف و حذف
+docker stop web           # SIGTERM، سپس SIGKILL پس از 10s (قابل تنظیم با -t)
+docker kill web           # SIGKILL فوری
+docker rm web             # حذف container متوقف‌شده (‎-f برای حذف در حال اجرا)
+
+# imageها
+docker images
+docker build -t myapp:1.4.0 .
+docker tag myapp:1.4.0 registry.example.com/myapp:1.4.0
+docker push registry.example.com/myapp:1.4.0
+docker pull nginx:1.27-alpine
+docker rmi myapp:1.3.0
+
+# پاک‌سازی
+docker system df                  # مصرف دیسک
+docker image prune                # imageهای dangling (بدون tag)
+docker system prune               # containerهای متوقف، شبکه‌های بلااستفاده، imageهای dangling، build cache
+docker system prune -a --volumes  # ⚠ همه‌ی imageهای بلااستفاده و volumeها — احتمال از دست رفتن داده</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>گزینه‌ی run</th><th>معنا</th></tr></thead>
+      <tbody>
+        <tr><td><code>-d</code></td><td>اجرا در پس‌زمینه (detached)</td></tr>
+        <tr><td><code>-p host:container</code></td><td>انتشار پورت؛ <code>-p 127.0.0.1:8080:80</code> فقط روی localhost</td></tr>
+        <tr><td><code>-v</code> / <code>--mount</code></td><td>volume یا bind mount</td></tr>
+        <tr><td><code>-e</code> / <code>--env-file</code></td><td>متغیر محیطی</td></tr>
+        <tr><td><code>--name</code></td><td>نام ثابت (به‌جای نام تصادفی)</td></tr>
+        <tr><td><code>-it</code></td><td>تعاملی با TTY</td></tr>
+        <tr><td><code>--rm</code></td><td>حذف خودکار پس از خروج</td></tr>
+        <tr><td><code>--restart</code></td><td><code>no</code>، <code>on-failure</code>، <code>always</code>، <code>unless-stopped</code></td></tr>
+        <tr><td><code>--network</code></td><td>اتصال به شبکه‌ی مشخص</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Exit codeهای مهم برای دیباگ</h3>
+    <ul>
+      <li><strong>0:</strong> پایان عادی (برای سرویس یعنی فرایند به background رفته یا کارش تمام شده).</li>
+      <li><strong>1:</strong> خطای برنامه؛ <code>docker logs</code> را ببینید.</li>
+      <li><strong>126 / 127:</strong> دستور قابل اجرا نیست / پیدا نشد (مثلاً نبود <code>bash</code> در Alpine، یا فایل با line ending ویندوزی CRLF).</li>
+      <li><strong>137:</strong> = 128 + 9 (SIGKILL): kill شده؛ اغلب <strong>OOM</strong> (<code>OOMKilled: true</code> در inspect) یا پایان مهلت stop.</li>
+      <li><strong>143:</strong> = 128 + 15 (SIGTERM): با SIGTERM خاتمه یافته.</li>
+    </ul>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="storage" data-title="ذخیره‌سازی: Volume، Bind Mount و tmpfs">
+    <h2>ذخیره‌سازی: Volume، Bind Mount و tmpfs</h2>
+    <p>لایه‌ی قابل‌نوشتن container <strong>موقت</strong> است: با حذف container از بین می‌رود و برای نوشتن سنگین هم کند است (copy-on-write). داده‌ی ماندگار باید بیرون از آن نگه داشته شود.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>محل داده</th><th>مدیریت</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Named Volume</strong></td><td>ناحیه‌ی مدیریت‌شده توسط Docker (روی Linux معمولاً <code>/var/lib/docker/volumes/</code>)</td><td>Docker (<code>docker volume ...</code>)؛ مستقل از چرخه‌ی عمر container</td><td>داده‌ی دیتابیس، Redis، فایل‌های آپلود در Production</td></tr>
+        <tr><td><strong>Bind Mount</strong></td><td>مسیر دلخواه روی میزبان</td><td>شما؛ وابسته به ساختار پوشه‌ی میزبان</td><td>کد منبع در توسعه (hot reload)، فایل پیکربندی</td></tr>
+        <tr><td><strong>tmpfs</strong></td><td>RAM میزبان</td><td>با توقف container پاک می‌شود</td><td>فایل‌های موقت حساس یا پرسرعت؛ همراه با <code>--read-only</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <pre><code class="language-bash">docker volume create mysql-data
+docker run -v mysql-data:/var/lib/mysql mysql:8.4                    # named volume
+docker run -v "$(pwd)":/var/www/html php:8.3-fpm-alpine              # bind mount
+docker run --mount type=bind,src="$(pwd)"/nginx.conf,dst=/etc/nginx/conf.d/default.conf,readonly nginx
+docker run --read-only --tmpfs /tmp myapp                            # tmpfs
+docker volume ls
+docker volume inspect mysql-data
+docker volume rm mysql-data</code></pre>
+
+    <ul>
+      <li><code>--mount</code> صریح‌تر از <code>-v</code> است؛ اگر مسیر میزبان در bind mount وجود نداشته باشد، <code>-v</code> آن را به‌صورت پوشه می‌سازد ولی <code>--mount</code> خطا می‌دهد.</li>
+      <li>اگر یک <strong>named volume خالی</strong> روی مسیری از image که محتوا دارد mount شود، Docker محتوای image را در volume کپی می‌کند؛ <strong>bind mount</strong> این کار را نمی‌کند و محتوای image را می‌پوشاند (مثلاً bind mount پروژه، پوشه‌ی <code>vendor</code> داخل image را مخفی می‌کند).</li>
+      <li>مالکیت و permission: در bind mount، UID فایل‌ها همان UID میزبان است؛ مشکل رایج «Permission denied» روی <code>storage/</code> در Laravel از اینجاست.</li>
+      <li><strong>Backup volume:</strong> با یک container موقت: <code>docker run --rm -v mysql-data:/data -v "$(pwd)":/backup alpine tar czf /backup/db.tgz -C /data .</code> (برای دیتابیس، dump منطقی مثل <code>mysqldump</code> امن‌تر از کپی فایل‌های در حال استفاده است).</li>
+    </ul>
+
+    <div class="callout exam"><p>در Production کد برنامه <strong>داخل image</strong> است (تغییرناپذیر)، نه bind mount. Volume فقط برای <strong>state</strong> (دیتابیس، آپلود). در محیط چندسروری حتی آپلودها بهتر است روی object storage (S3) بروند تا containerها stateless بمانند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="networking" data-title="شبکه در Docker">
+    <h2>شبکه در Docker</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Driver</th><th>رفتار</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td><strong>bridge</strong> (پیش‌فرض)</td><td>شبکه‌ی مجازی خصوصی روی میزبان با NAT؛ containerها IP داخلی دارند</td><td>containerهای یک میزبان</td></tr>
+        <tr><td><strong>user-defined bridge</strong></td><td>مثل bridge اما با <strong>DNS داخلی</strong>: containerها یکدیگر را با <strong>نام</strong> پیدا می‌کنند؛ ایزوله از شبکه‌های دیگر</td><td>توصیه‌شده برای چند سرویس مرتبط (Compose خودکار می‌سازد)</td></tr>
+        <tr><td><strong>host</strong></td><td>container از stack شبکه‌ی میزبان مستقیماً استفاده می‌کند؛ بدون ایزوله‌سازی شبکه و بدون NAT</td><td>کارایی شبکه‌ی بالا؛ عمدتاً روی Linux</td></tr>
+        <tr><td><strong>none</strong></td><td>فقط loopback</td><td>کارهای کاملاً ایزوله</td></tr>
+        <tr><td><strong>overlay</strong></td><td>شبکه‌ی مجازی بین چند میزبان</td><td>Docker Swarm</td></tr>
+      </tbody>
+    </table></div>
+
+    <pre><code class="language-bash">docker network create app-net
+docker run -d --name mysql --network app-net -e MYSQL_ROOT_PASSWORD=secret mysql:8.4
+docker run -d --name app   --network app-net -e DB_HOST=mysql myapp:1.4.0
+# داخل app: DB_HOST=mysql  ←  DNS داخلی Docker نام mysql را به IP آن container ترجمه می‌کند
+docker network inspect app-net
+docker network connect app-net other-container</code></pre>
+
+    <h3>دو اشتباه بسیار رایج</h3>
+    <ul>
+      <li><strong><code>localhost</code> داخل container یعنی خود همان container</strong>، نه میزبان و نه container دیگر. اگر Laravel داخل container با <code>DB_HOST=127.0.0.1</code> تنظیم شده باشد، به MySQL در container دیگر وصل نمی‌شود. باید از <strong>نام سرویس</strong> (<code>DB_HOST=mysql</code>) استفاده کرد. برای دسترسی به سرویسی روی خود میزبان، در Docker Desktop نام <code>host.docker.internal</code> وجود دارد (روی Linux با <code>--add-host=host.docker.internal:host-gateway</code>).</li>
+      <li><strong>Publish کردن پورت لازم نیست</strong> برای ارتباط container به container در یک شبکه؛ آن‌ها مستقیم روی پورت داخلی (مثلاً 3306) با هم حرف می‌زنند. <code>-p</code> فقط برای دسترسی از <strong>بیرون</strong> میزبان است.</li>
+    </ul>
+
+    <h3>Port publishing</h3>
+    <pre class="diagram">  Internet ──► Host:8080 ──(NAT)──► nginx container:80 ──► app container:9000 (FastCGI, داخلی)
+                                              │
+                                              └──► mysql:3306  (بدون publish؛ فقط در شبکه‌ی داخلی)</pre>
+    <div class="callout warn"><p><code>-p 3306:3306</code> پورت را روی <strong>همه‌ی interfaceهای</strong> میزبان باز می‌کند و Docker با قواعد iptables خودش ممکن است فایروال‌هایی مثل UFW را دور بزند. دیتابیس را publish نکنید؛ اگر لازم است، فقط روی loopback: <code>-p 127.0.0.1:3306:3306</code>.</p></div>
+
+    <div class="callout exam"><p>تفاوت <code>EXPOSE</code> و <code>-p</code>: EXPOSE فقط metadata/مستندسازی است و پورتی را روی میزبان باز نمی‌کند؛ <code>-p</code> (یا <code>ports:</code> در Compose) پورت میزبان را به پورت container نگاشت می‌کند. <code>-P</code> همه‌ی پورت‌های EXPOSE‌شده را به پورت‌های تصادفی میزبان publish می‌کند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="compose" data-title="Docker Compose: استک کامل Laravel">
+    <h2>Docker Compose: استک کامل Laravel</h2>
+    <p><strong>Docker Compose</strong> ابزاری برای تعریف و اجرای برنامه‌های <strong>چند container</strong> به‌صورت declarative در یک فایل YAML (<code>compose.yaml</code>) است. Compose به‌طور خودکار یک شبکه‌ی user-defined برای پروژه می‌سازد، پس سرویس‌ها با <strong>نام سرویس</strong> یکدیگر را پیدا می‌کنند. دستور فعلی <code>docker compose</code> (نسخه‌ی ۲، plugin داخلی) است و کلید <code>version:</code> در بالای فایل منسوخ شده است.</p>
+
+    <pre><code class="language-yaml"># compose.yaml
+x-app: &amp;app
+  image: registry.example.com/shop/app:${APP_TAG:-dev}
+  build:
+    context: .
+    target: runtime
+  env_file: .env
+  restart: unless-stopped
+  depends_on:
+    mysql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  app:                                  # PHP-FPM
+    &lt;&lt;: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - storage:/var/www/html/storage/app
+
+  migrate:                              # اجرای یک‌باره‌ی migration
+    &lt;&lt;: *app
+    command: ["php", "artisan", "migrate", "--force"]
+    restart: "no"
+
+  queue:                                # worker صف — همان image، فرایند متفاوت
+    &lt;&lt;: *app
+    command: ["php", "artisan", "queue:work", "redis", "--tries=3", "--max-time=3600"]
+    stop_grace_period: 60s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  scheduler:                            # زمان‌بند لاراول
+    &lt;&lt;: *app
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  nginx:
+    image: registry.example.com/shop/web:${APP_TAG:-dev}
+    build:
+      context: .
+      target: web
+    ports:
+      - "8080:80"
+    depends_on:
+      - app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/up"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  mysql-data:
+  redis-data:
+  storage:</code></pre>
+
+    <pre><code class="language-nginx"># docker/nginx/default.conf
+server {
+    listen 80;
+    root /var/www/html/public;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        fastcgi_pass app:9000;            # نام سرویس Compose
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}</code></pre>
+
+    <pre><code class="language-ini"># .env (بخش مرتبط با Docker)
+APP_TAG=3f9c2ab
+DB_CONNECTION=mysql
+DB_HOST=mysql
+DB_PORT=3306
+DB_DATABASE=shop
+DB_USERNAME=shop
+DB_PASSWORD=change-me
+DB_ROOT_PASSWORD=change-me-too
+REDIS_HOST=redis
+QUEUE_CONNECTION=redis
+CACHE_STORE=redis
+SESSION_DRIVER=redis
+LOG_CHANNEL=stderr</code></pre>
+
+    <h3>نکات کلیدی</h3>
+    <ul>
+      <li><strong><code>depends_on</code> ساده فقط ترتیب start را تعیین می‌کند</strong>، نه آماده بودن. MySQL ممکن است چند ثانیه بعد از start هنوز اتصال نپذیرد. با <code>condition: service_healthy</code> و تعریف <code>healthcheck</code>، Compose صبر می‌کند تا سرویس واقعاً سالم شود. <code>service_completed_successfully</code> برای jobهای یک‌باره مثل migrate.</li>
+      <li><strong>یک image، چند نقش:</strong> app، queue، scheduler و migrate همه از یک image با <code>command</code> متفاوت‌اند؛ پس نسخه‌ی کد در همه یکسان است.</li>
+      <li><strong>YAML anchor و extension field (<code>x-app</code>)</strong> برای جلوگیری از تکرار پیکربندی.</li>
+      <li><strong>دو نوع env:</strong> فایل <code>.env</code> کنار <code>compose.yaml</code> به‌طور خودکار برای <strong>جایگزینی متغیرها در خود فایل Compose</strong> (<code>${DB_DATABASE}</code>) خوانده می‌شود؛ <code>env_file:</code> متغیرها را <strong>به داخل container</strong> می‌فرستد؛ <code>environment:</code> مقدار صریح برای container. این دو مفهوم متفاوت‌اند.</li>
+      <li>در ارتباط داخلی، سرویس‌ها روی پورت داخلی با هم حرف می‌زنند؛ فقط Nginx پورت publish کرده است.</li>
+      <li><code>LOG_CHANNEL=stderr</code>: لاگ‌های Laravel به خروجی استاندارد می‌روند و با <code>docker compose logs</code> یا collector مرکزی جمع می‌شوند.</li>
+    </ul>
+
+    <pre><code class="language-bash">docker compose up -d --build          # build و اجرای همه
+docker compose ps
+docker compose logs -f queue
+docker compose exec app php artisan tinker
+docker compose run --rm app php artisan db:seed
+docker compose restart queue
+docker compose down                   # حذف containerها و شبکه (volumeها می‌مانند)
+docker compose down -v                # ⚠ حذف volumeها هم
+docker compose config                 # نمایش فایل نهایی پس از جایگزینی متغیرها</code></pre>
+
+    <h3>یک فرایند در هر container</h3>
+    <p>اصل «<strong>one concern per container</strong>»: به‌جای اجرای PHP-FPM، Nginx، cron و queue worker در یک container با supervisord، هرکدام container جداگانه دارند. دلایل:</p>
+    <ul>
+      <li><strong>مقیاس‌پذیری مستقل:</strong> می‌توان ۵ worker صف و ۲ app داشت (<code>docker compose up -d --scale queue=5</code>).</li>
+      <li><strong>چرخه‌ی عمر و سلامت مستقل:</strong> crash شدن worker باعث restart وب نمی‌شود؛ Docker فقط وضعیت PID 1 را می‌بیند.</li>
+      <li><strong>لاگ تفکیک‌شده</strong> و محدودیت منابع جداگانه.</li>
+      <li><strong>Scheduler فقط یک نمونه:</strong> اگر cron داخل هر replica برنامه باشد، با scale شدن، taskها چند بار اجرا می‌شوند. (برای اطمینان در چندسروری، <code>onOneServer()</code> با cache مشترک هم وجود دارد.)</li>
+    </ul>
+    <div class="callout note"><p>این اصل قطعی نیست: «یک <em>نگرانی</em> در هر container»؛ PHP-FPM خودش چند فرایند worker دارد و این مشکلی نیست. بعضی imageها هم عمداً Nginx و FPM را با هم دارند (مثلاً برای سادگی در PaaS).</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="dev-prod-sail" data-title="Logها، Dev در برابر Prod و Laravel Sail">
+    <h2>Logها، Dev در برابر Prod و Laravel Sail</h2>
+
+    <h3>لاگ به stdout/stderr</h3>
+    <p>طبق اصل Twelve-Factor، برنامه لاگ را به‌صورت جریان رویداد به <strong>stdout/stderr</strong> می‌نویسد و مسئولیت جمع‌آوری، چرخش (rotation) و ارسال با محیط اجراست. Docker خروجی PID 1 را با <strong>logging driver</strong> (پیش‌فرض <code>json-file</code>) ذخیره می‌کند و <code>docker logs</code> آن را نشان می‌دهد. نوشتن لاگ در فایل داخل container یعنی: پر شدن لایه‌ی قابل‌نوشتن، از دست رفتن با حذف container و ندیدن آن در ابزارهای مرکزی.</p>
+    <ul>
+      <li>Laravel: <code>LOG_CHANNEL=stderr</code> (کانال آماده در <code>config/logging.php</code>).</li>
+      <li>image رسمی PHP-FPM لاگ‌های خطای FPM و خروجی workerها را به stderr هدایت می‌کند؛ image رسمی Nginx هم <code>access.log</code> و <code>error.log</code> را به stdout/stderr لینک کرده است.</li>
+      <li>برای driver <code>json-file</code> چرخش را تنظیم کنید (<code>max-size</code>، <code>max-file</code>) وگرنه دیسک میزبان پر می‌شود.</li>
+    </ul>
+
+    <h3>Image توسعه در برابر Production</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>جنبه</th><th>Development</th><th>Production</th></tr></thead>
+      <tbody>
+        <tr><td>کد</td><td>bind mount (تغییر آنی)</td><td>داخل image (تغییرناپذیر)</td></tr>
+        <tr><td>وابستگی‌ها</td><td>شامل dev (PHPUnit، Pint، Larastan)</td><td><code>--no-dev</code></td></tr>
+        <tr><td>ابزار</td><td>Xdebug، Node، ابزار دیباگ</td><td>حداقلی</td></tr>
+        <tr><td>OPcache</td><td><code>validate_timestamps=1</code></td><td><code>validate_timestamps=0</code></td></tr>
+        <tr><td>Laravel</td><td><code>APP_DEBUG=true</code></td><td><code>APP_DEBUG=false</code>، cacheهای optimize</td></tr>
+        <tr><td>کاربر</td><td>اغلب هم‌UID با توسعه‌دهنده برای permission</td><td>غیر root ثابت</td></tr>
+        <tr><td>Secret</td><td>فایل <code>.env</code> محلی</td><td>تزریق از secret manager یا orchestrator</td></tr>
+      </tbody>
+    </table></div>
+    <p>بهترین روش: یک Dockerfile با stageهای <code>base</code>، <code>dev</code> و <code>runtime</code> تا هر دو محیط روی یک پایه‌ی یکسان (همان نسخه‌ی PHP و extensionها) ساخته شوند و dev/prod parity حفظ شود.</p>
+
+    <h3>Laravel Sail</h3>
+    <p><strong>Sail</strong> یک رابط خط فرمان سبک روی Docker Compose برای <strong>محیط توسعه‌ی محلی</strong> Laravel است. یک فایل <code>compose.yaml</code> آماده با سرویس‌های انتخابی (MySQL، PostgreSQL، Redis، Meilisearch، Mailpit، Selenium و…) می‌سازد.</p>
+    <pre><code class="language-bash">composer require laravel/sail --dev
+php artisan sail:install            # انتخاب سرویس‌ها و ساخت compose.yaml
+./vendor/bin/sail up -d
+./vendor/bin/sail artisan migrate
+./vendor/bin/sail composer require laravel/horizon
+./vendor/bin/sail npm run dev
+./vendor/bin/sail test
+./vendor/bin/sail shell
+./vendor/bin/sail down</code></pre>
+    <div class="callout warn"><p>Sail برای <strong>توسعه‌ی محلی</strong> طراحی شده است (کد با bind mount، وابستگی‌های dev، اجرا با <code>artisan serve</code>-مانند)، نه Production. برای Production باید image اختصاصی (مثل Dockerfile چندمرحله‌ای بالا) ساخت.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="registry-tagging" data-title="Registry و استراتژی Tag">
+    <h2>Registry و استراتژی Tag</h2>
+    <p>نام کامل یک image: <code>[registry/][namespace/]repository[:tag][@digest]</code>، مثلاً <code>ghcr.io/acme/shop-app:1.4.2</code>. اگر registry ذکر نشود Docker Hub فرض می‌شود و اگر tag ذکر نشود <code>latest</code>.</p>
+
+    <h3>چرا به <code>:latest</code> تکیه نکنیم؟</h3>
+    <ul>
+      <li><code>latest</code> فقط یک <strong>tag معمولی و قابل‌تغییر</strong> است؛ به معنای «جدیدترین» نیست، فقط پیش‌فرض است. هر push بدون tag آن را جابه‌جا می‌کند.</li>
+      <li><strong>تکرارناپذیری:</strong> امروز و فردا <code>docker pull app:latest</code> ممکن است دو image متفاوت بدهد؛ دو سرور در یک کلاستر ممکن است نسخه‌های متفاوت اجرا کنند.</li>
+      <li><strong>Rollback ناممکن:</strong> «نسخه‌ی قبلی latest» مشخص نیست.</li>
+      <li><strong>ردیابی:</strong> از روی <code>latest</code> نمی‌توان فهمید کدام commit در حال اجراست.</li>
+      <li>Kubernetes برای tag <code>latest</code> به‌طور پیش‌فرض <code>imagePullPolicy: Always</code> در نظر می‌گیرد و رفتار cache متفاوتی دارد.</li>
+    </ul>
+
+    <h3>استراتژی پیشنهادی</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Tag</th><th>مثال</th><th>تغییرپذیری</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td>Git SHA</td><td><code>app:3f9c2ab</code></td><td>تغییرناپذیر</td><td>deploy و ردیابی دقیق؛ build once deploy many</td></tr>
+        <tr><td>SemVer کامل</td><td><code>app:1.4.2</code></td><td>تغییرناپذیر</td><td>releaseهای رسمی</td></tr>
+        <tr><td>SemVer جزئی</td><td><code>app:1.4</code>، <code>app:1</code></td><td>متحرک</td><td>مصرف‌کنندگانی که آخرین patch را می‌خواهند</td></tr>
+        <tr><td>برنچ/محیط</td><td><code>app:main</code></td><td>متحرک</td><td>محیط‌های dev؛ نه production</td></tr>
+        <tr><td>Digest</td><td><code>app@sha256:9b2…</code></td><td>کاملاً تغییرناپذیر (هش محتوا)</td><td>بالاترین اطمینان در production و GitOps</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-bash">docker build -t ghcr.io/acme/shop-app:3f9c2ab .
+docker tag ghcr.io/acme/shop-app:3f9c2ab ghcr.io/acme/shop-app:1.4.2
+docker push ghcr.io/acme/shop-app:3f9c2ab
+docker push ghcr.io/acme/shop-app:1.4.2
+docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/acme/shop-app:1.4.2</code></pre>
+    <ul>
+      <li>بسیاری از registryها (ECR، Harbor) قابلیت <strong>tag immutability</strong> دارند تا tag نسخه پس از push قابل بازنویسی نباشد.</li>
+      <li>سیاست <strong>retention/cleanup</strong> برای حذف imageهای قدیمی برنچ‌ها.</li>
+      <li>registry خصوصی برای کد سازمان؛ دسترسی push فقط برای CI.</li>
+    </ul>
+    <div class="callout exam"><p>پاسخ خلاصه: «در Production همیشه tag <strong>تغییرناپذیر</strong> (SHA کامیت یا نسخه‌ی SemVer) یا digest استفاده می‌کنیم تا deploy تکرارپذیر، قابل ردیابی و قابل rollback باشد. <code>latest</code> فقط یک اسم پیش‌فرض متحرک است.»</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="orchestration" data-title="مقدمه‌ی Orchestration: Kubernetes و Swarm">
+    <h2>مقدمه‌ی Orchestration: Kubernetes و Swarm</h2>
+    <p>Compose روی <strong>یک میزبان</strong> کار می‌کند. وقتی چند سرور، توزیع بار، self-healing، rolling update، مقیاس‌دهی خودکار و service discovery بین میزبان‌ها لازم باشد، به <strong>Orchestrator</strong> نیاز داریم. در Kubernetes وضعیت مطلوب را به‌صورت declarative تعریف می‌کنید و <strong>control loop</strong>ها مداوم وضعیت واقعی را به سمت آن می‌برند.</p>
+
+    <h3>اشیای اصلی Kubernetes</h3>
+    <dl class="terms">
+      <dt>Pod</dt><dd>کوچک‌ترین واحد قابل استقرار؛ یک یا چند container که <strong>namespace شبکه</strong> (یک IP) و volumeها را به اشتراک می‌گذارند و روی یک node زمان‌بندی می‌شوند. Podها موقت‌اند و IP آن‌ها ثابت نیست.</dd>
+      <dt>ReplicaSet</dt><dd>تضمین می‌کند تعداد مشخصی Pod همیشه در حال اجرا باشد.</dd>
+      <dt>Deployment</dt><dd>مدیریت declarative برنامه‌های stateless: تعداد replica، image، استراتژی <strong>rolling update</strong> و <strong>rollback</strong> (<code>kubectl rollout undo</code>)؛ ReplicaSetها را می‌سازد.</dd>
+      <dt>Service</dt><dd>نقطه‌ی دسترسی <strong>پایدار</strong> (IP مجازی و نام DNS) و توزیع بار روی Podهایی که با <code>selector</code> انتخاب می‌شوند. انواع: <code>ClusterIP</code> (داخلی، پیش‌فرض)، <code>NodePort</code>، <code>LoadBalancer</code>.</dd>
+      <dt>Ingress</dt><dd>قواعد مسیریابی HTTP/HTTPS لایه‌ی ۷ (host و path، TLS) از بیرون به Serviceها؛ نیازمند یک <strong>Ingress Controller</strong> (مثل ingress-nginx).</dd>
+      <dt>ConfigMap</dt><dd>پیکربندی غیرحساس به‌صورت env یا فایل.</dd>
+      <dt>Secret</dt><dd>داده‌ی حساس؛ به‌طور پیش‌فرض فقط <strong>base64</strong> است (نه رمزنگاری)؛ برای امنیت واقعی encryption at rest و RBAC یا ابزارهای خارجی لازم است.</dd>
+      <dt>Probes</dt><dd><code>livenessProbe</code> (اگر رد شود container restart می‌شود)، <code>readinessProbe</code> (اگر رد شود از Service خارج می‌شود)، <code>startupProbe</code> (برای شروع کند).</dd>
+      <dt>دیگر</dt><dd><code>StatefulSet</code> (هویت و ذخیره‌سازی پایدار، مثل دیتابیس)، <code>Job</code>/<code>CronJob</code> (migration، scheduler)، <code>HorizontalPodAutoscaler</code>، <code>Namespace</code>.</dd>
+    </dl>
+
+    <pre><code class="language-yaml">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: shop-app }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  template:
+    metadata:
+      labels: { app: shop-app }
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/acme/shop-app:3f9c2ab
+          ports: [{ containerPort: 9000 }]
+          envFrom:
+            - configMapRef: { name: shop-config }
+            - secretRef:    { name: shop-secrets }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits:   { memory: 512Mi }
+          readinessProbe:
+            tcpSocket: { port: 9000 }
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop-app
+spec:
+  selector: { app: shop-app }
+  ports: [{ port: 9000, targetPort: 9000 }]</code></pre>
+
+    <pre class="diagram">  Internet ─► Ingress (shop.example.com) ─► Service: web ─► Pods: nginx ×2
+                                                  │ fastcgi
+                                                  ▼
+                                           Service: shop-app ─► Pods: php-fpm ×3
+                        Deployment: queue ×5      CronJob/Deployment: scheduler ×1</pre>
+
+    <h3>Docker Swarm</h3>
+    <p><strong>Swarm</strong> orchestrator داخلی Docker است: با <code>docker swarm init</code> فعال می‌شود، از همان فرمت Compose (<code>docker stack deploy -c compose.yaml shop</code>) استفاده می‌کند و مفاهیم <strong>service</strong>، replica، rolling update و شبکه‌ی overlay دارد. یادگیری و راه‌اندازی بسیار ساده‌تری از Kubernetes دارد، اما اکوسیستم، انعطاف و جامعه‌ی کوچک‌تری دارد و صنعت عمدتاً به سمت Kubernetes رفته است.</p>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Docker Compose</th><th>Docker Swarm</th><th>Kubernetes</th></tr></thead>
+      <tbody>
+        <tr><td>دامنه</td><td>یک میزبان</td><td>کلاستر</td><td>کلاستر</td></tr>
+        <tr><td>پیچیدگی</td><td>کم</td><td>کم تا متوسط</td><td>زیاد</td></tr>
+        <tr><td>Self-healing / Rolling update</td><td>محدود (restart policy)</td><td>دارد</td><td>کامل</td></tr>
+        <tr><td>Autoscaling</td><td>ندارد</td><td>ندارد (دستی)</td><td>HPA و…</td></tr>
+        <tr><td>کاربرد معمول</td><td>توسعه، CI، سرور تکی</td><td>کلاستر کوچک</td><td>Production در مقیاس</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-docker-1">
+      <summary>Container و ماشین مجازی را تعریف و مقایسه کنید. Container از چه قابلیت‌هایی در کرنل Linux برای ایزوله‌سازی استفاده می‌کند؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> <strong>VM</strong> شبیه‌سازی کامل یک کامپیوتر روی Hypervisor است که سیستم‌عامل و کرنل مستقل خودش را دارد. <strong>Container</strong> یک یا چند فرایند ایزوله روی سیستم‌عامل میزبان است که <strong>کرنل میزبان را به اشتراک می‌گذارد</strong> و فایل‌سیستم، شبکه و فضای فرایند جداگانه می‌بیند.</p>
+        <p><strong>سازوکار ایزوله‌سازی:</strong></p>
+        <ul>
+          <li><strong>Namespaces</strong> (چه می‌بیند): pid، net، mnt، uts، ipc، user، cgroup.</li>
+          <li><strong>cgroups</strong> (چقدر مصرف می‌کند): سقف CPU، حافظه، I/O.</li>
+          <li><strong>Union filesystem</strong> (overlay2): لایه‌های فقط‌خواندنی image + لایه‌ی قابل‌نوشتن.</li>
+          <li><strong>Capabilities و seccomp</strong>: محدودسازی دسترسی‌ها و system callها.</li>
+        </ul>
+        <p><strong>مقایسه:</strong></p>
+        <ul>
+          <li><strong>سرعت و سبکی:</strong> container در حد ثانیه یا کمتر بالا می‌آید و مگابایتی است؛ VM نیاز به boot و گیگابایت‌ها حجم دارد.</li>
+          <li><strong>تراکم:</strong> روی یک میزبان صدها container در برابر تعداد محدود VM.</li>
+          <li><strong>ایزوله‌سازی:</strong> VM قوی‌تر است؛ آسیب‌پذیری کرنل در container می‌تواند به فرار به میزبان منجر شود.</li>
+          <li><strong>سیستم‌عامل:</strong> container لینوکسی نیازمند کرنل لینوکس است (روی Mac/Windows با یک VM لینوکسی اجرا می‌شود)؛ VM هر سیستم‌عاملی را اجرا می‌کند.</li>
+        </ul>
+        <p><strong>جمع‌بندی:</strong> container مجازی‌سازی سطح سیستم‌عامل و VM مجازی‌سازی سطح سخت‌افزار است؛ در عمل مکمل‌اند و containerها معمولاً داخل VMهای ابری اجرا می‌شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-2">
+      <summary>تفاوت Image، Container و Registry را توضیح دهید. لایه‌های image چه هستند و چه مزیتی دارند؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Image:</strong> قالب فقط‌خواندنی و تغییرناپذیر شامل فایل‌سیستم لایه‌ای و metadata (CMD، ENV، پورت‌ها). مثل کلاس.</li>
+          <li><strong>Container:</strong> نمونه‌ی در حال اجرای image؛ لایه‌های image + یک لایه‌ی قابل‌نوشتن + فرایند ایزوله. مثل شیء. با حذف container، تغییرات لایه‌ی قابل‌نوشتن از بین می‌رود.</li>
+          <li><strong>Registry:</strong> سرویس ذخیره و توزیع image (Docker Hub، GHCR، ECR، Harbor) شامل repositoryها و tagها.</li>
+        </ul>
+        <p><strong>لایه‌ها:</strong> هر دستور <code>RUN</code>/<code>COPY</code>/<code>ADD</code> یک لایه می‌سازد که تفاوت فایل‌سیستم نسبت به لایه‌ی قبل است و با هش محتوایش شناخته می‌شود.</p>
+        <ul>
+          <li><strong>اشتراک:</strong> imageهایی با پایه‌ی مشترک، لایه‌های مشترک را یک بار ذخیره و دانلود می‌کنند.</li>
+          <li><strong>Cache ساخت:</strong> لایه‌ای که ورودی‌اش تغییر نکرده دوباره ساخته نمی‌شود.</li>
+          <li><strong>Copy-on-write:</strong> containerها لایه‌های image را به اشتراک می‌گذارند و فقط تغییرات خود را در لایه‌ی بالایی می‌نویسند؛ ساخت container تقریباً آنی است.</li>
+        </ul>
+        <p><strong>پیامد مهم:</strong> فایل حذف‌شده در لایه‌ی بعدی همچنان در لایه‌ی قبلی موجود است؛ پس secret یا فایل حجیم را نباید حتی موقتاً در لایه‌ای قرار داد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-3">
+      <summary>چرا ترتیب دستورات در Dockerfile روی سرعت build اثر دارد؟ با یک مثال Laravel توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>سازوکار:</strong> Docker برای هر دستور بررسی می‌کند آیا لایه‌ای با همان دستور و همان ورودی (برای COPY، checksum فایل‌ها) در cache وجود دارد. <strong>اولین cache miss، همه‌ی لایه‌های بعدی را invalid می‌کند.</strong> پس دستورات با تغییر کم باید بالا و دستورات پرتغییر پایین باشند.</p>
+        <p><strong>مثال بد:</strong></p>
+        <pre><code class="language-dockerfile">COPY . .
+RUN composer install --no-dev</code></pre>
+        <p>با تغییر یک خط در یک Controller، checksum لایه‌ی <code>COPY . .</code> عوض و <code>composer install</code> هر بار از صفر اجرا می‌شود (چند دقیقه).</p>
+        <p><strong>مثال خوب:</strong></p>
+        <pre><code class="language-dockerfile">COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader
+COPY . .
+RUN composer dump-autoload --optimize --no-dev</code></pre>
+        <p>تا وقتی lock تغییر نکرده، لایه‌ی سنگین نصب از cache می‌آید؛ تغییر کد فقط دو لایه‌ی آخر (سریع) را می‌سازد. <code>--no-scripts</code> و <code>--no-autoloader</code> لازم‌اند چون هنوز کد برنامه (و فایل <code>artisan</code>) کپی نشده است.</p>
+        <p><strong>نکات تکمیلی:</strong> همین الگو برای <code>package-lock.json</code> و <code>npm ci</code>؛ <code>.dockerignore</code> تا فایل‌های بی‌ربط (مثل <code>storage/logs</code>) cache را invalid نکنند؛ BuildKit cache mount برای دانلودها؛ و در CI استفاده از cache خارجی (<code>--cache-from</code>) چون runner تازه است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-4">
+      <summary>تفاوت CMD و ENTRYPOINT چیست؟ exec form و shell form چه فرقی دارند و چرا exec form توصیه می‌شود؟</summary>
+      <div class="answer">
+        <p><strong>CMD:</strong> دستور یا آرگومان‌های <strong>پیش‌فرض</strong>؛ اگر به <code>docker run image ...</code> آرگومان بدهیم، CMD جایگزین می‌شود.</p>
+        <p><strong>ENTRYPOINT:</strong> <strong>برنامه‌ی ثابت</strong> container؛ آرگومان‌های run به انتهای آن اضافه می‌شوند و فقط با <code>--entrypoint</code> override می‌شود.</p>
+        <p><strong>ترکیب:</strong> ENTRYPOINT برنامه و CMD آرگومان پیش‌فرض:</p>
+        <pre><code class="language-dockerfile">ENTRYPOINT ["php", "artisan"]
+CMD ["list"]
+# docker run app            → php artisan list
+# docker run app queue:work → php artisan queue:work</code></pre>
+        <p><strong>Exec form</strong> (<code>["php-fpm"]</code>): برنامه مستقیماً با <code>exec</code> اجرا می‌شود و <strong>PID 1</strong> است، پس <strong>SIGTERM</strong> حاصل از <code>docker stop</code> مستقیماً به آن می‌رسد و می‌تواند graceful خاموش شود.</p>
+        <p><strong>Shell form</strong> (<code>CMD php-fpm</code>): به <code>/bin/sh -c "php-fpm"</code> تبدیل می‌شود؛ shell PID 1 است و سیگنال را به فرزند منتقل نمی‌کند. نتیجه: پس از مهلت ۱۰ ثانیه، Docker با SIGKILL فرایند را می‌کشد؛ برای queue worker یعنی قطع job در میانه‌ی کار. مزیت shell form فقط جایگزینی متغیرها و pipe است.</p>
+        <p><strong>بهترین روش:</strong> exec form؛ اگر اسکریپت entrypoint لازم است، در انتهای آن <code>exec "$@"</code> تا فرایند اصلی جای shell را بگیرد؛ و در صورت نیاز به reaping فرایندهای zombie، <code>--init</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-5">
+      <summary>تفاوت COPY و ADD، و همچنین ENV و ARG را بیان کنید. Secret مورد نیاز در زمان build (مثلاً توکن مخزن خصوصی Composer) را چگونه به build می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>COPY در برابر ADD:</strong> هر دو فایل را از build context به image کپی می‌کنند. <strong>ADD</strong> دو رفتار اضافه دارد: استخراج خودکار آرشیو tar محلی و دانلود از URL. این رفتارهای ضمنی غافلگیرکننده‌اند و دانلود با ADD شفافیت و کنترل checksum کمتری دارد؛ بنابراین <strong>COPY پیش‌فرض است</strong> و ADD فقط برای استخراج عمدی tar.</p>
+        <p><strong>ENV در برابر ARG:</strong></p>
+        <ul>
+          <li><strong>ARG:</strong> فقط در زمان build (<code>--build-arg</code>)؛ در container اجراشده وجود ندارد. ARG قبل از FROM فقط برای خود FROM است و باید در هر stage دوباره اعلام شود.</li>
+          <li><strong>ENV:</strong> هم در build و هم در runtime؛ در metadata image ماندگار است و با <code>docker run -e</code> قابل override.</li>
+        </ul>
+        <p><strong>Secret در build:</strong> نه ENV (در <code>docker inspect</code> دیده می‌شود)، نه ARG (در <code>docker history</code> دیده می‌شود)، نه COPY فایل (در لایه می‌ماند حتی اگر بعداً پاک شود). روش درست <strong>BuildKit secret mount</strong> است:</p>
+        <pre><code class="language-dockerfile">RUN --mount=type=secret,id=composer_auth,target=/root/.composer/auth.json \
+    composer install --no-dev --prefer-dist</code></pre>
+        <pre><code class="language-bash">docker build --secret id=composer_auth,src=./auth.json .</code></pre>
+        <p>فایل فقط در طول همان RUN در دسترس است و در هیچ لایه‌ای ذخیره نمی‌شود. secretهای runtime (رمز دیتابیس، APP_KEY) هم هرگز در image نیستند و در زمان اجرا از env/secret manager تزریق می‌شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-6">
+      <summary>Multi-stage build چیست و چه مزایایی دارد؟ ساختار stageهای یک image production برای Laravel را شرح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Dockerfile با چند <code>FROM</code> که هرکدام یک stage است؛ stage نهایی فقط خروجی‌های لازم را با <code>COPY --from=stage</code> از stageهای قبل برمی‌دارد و ابزارهای build در image نهایی باقی نمی‌مانند.</p>
+        <p><strong>مزایا:</strong> image کوچک‌تر (pull و deploy سریع‌تر)، سطح حمله‌ی کمتر (بدون Composer، Node، کامپایلر)، جدا شدن محیط build از runtime، یک Dockerfile برای dev و prod با <code>--target</code>، و build موازی stageهای مستقل توسط BuildKit.</p>
+        <p><strong>ساختار برای Laravel:</strong></p>
+        <ol>
+          <li><strong>base:</strong> <code>php:8.3-fpm-alpine</code> + extensionها (pdo_mysql، intl، zip، bcmath، pcntl، opcache، redis)؛ build-deps در همان لایه نصب و حذف.</li>
+          <li><strong>vendor:</strong> از base + باینری Composer؛ ابتدا <code>composer.json/lock</code> و <code>composer install --no-dev --no-scripts --no-autoloader</code>، سپس کپی کد و <code>dump-autoload --optimize --classmap-authoritative</code>.</li>
+          <li><strong>assets:</strong> <code>node:22-alpine</code>؛ <code>npm ci</code> و <code>npm run build</code> و خروجی <code>public/build</code>.</li>
+          <li><strong>runtime:</strong> از base؛ کپی کد و vendor و assetها با <code>--chown</code>، تنظیمات OPcache با <code>validate_timestamps=0</code>، <code>route:cache</code>/<code>view:cache</code>، <code>USER www-data</code>، <code>CMD ["php-fpm"]</code>. <code>config:cache</code> در entrypoint، چون env در runtime است.</li>
+          <li><strong>web (اختیاری):</strong> <code>nginx:alpine</code> + <code>COPY --from=runtime</code> پوشه‌ی <code>public</code>.</li>
+        </ol>
+        <p><strong>نکته:</strong> اجرای Composer روی همان stage پایه‌ی PHP تضمین می‌کند platform requirements با runtime یکسان بررسی شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-7">
+      <summary>این Dockerfile چه مشکلاتی دارد؟
+        <code>FROM php:latest</code> ← <code>COPY . /app</code> ← <code>ENV DB_PASSWORD=Secret123</code> ← <code>RUN apt-get update</code> ← <code>RUN apt-get install -y git unzip libzip-dev</code> ← <code>RUN composer install</code> ← <code>CMD php artisan serve --host=0.0.0.0</code></summary>
+      <div class="answer">
+        <ol>
+          <li><strong><code>php:latest</code>:</strong> نسخه‌ی شناور؛ build امروز و ماه بعد ممکن است PHP متفاوتی داشته باشد. اصلاح: <code>php:8.3-fpm-alpine</code> (یا pin با digest).</li>
+          <li><strong><code>COPY . /app</code> قبل از نصب وابستگی:</strong> هر تغییر کد cache نصب را باطل می‌کند. همچنین بدون <code>.dockerignore</code>، <code>.env</code> و <code>.git</code> و <code>vendor</code> محلی وارد image می‌شوند. اصلاح: اول lock fileها، سپس install، سپس کد؛ و <code>.dockerignore</code>.</li>
+          <li><strong><code>ENV DB_PASSWORD</code>:</strong> secret در metadata image؛ هر کسی با دسترسی به image آن را می‌بیند. اصلاح: تزریق در runtime.</li>
+          <li><strong><code>apt-get update</code> و <code>install</code> در دو RUN جدا:</strong> لایه‌ی update کش می‌شود و بعداً با فهرست کهنه نصب انجام می‌شود؛ cache apt هم پاک نشده است. اصلاح: یک RUN با <code>--no-install-recommends</code> و <code>rm -rf /var/lib/apt/lists/*</code>.</li>
+          <li><strong>نصب <code>libzip-dev</code> بدون <code>docker-php-ext-install zip</code>:</strong> extension نصب نمی‌شود و ابزار dev در image می‌ماند.</li>
+          <li><strong><code>composer install</code>:</strong> Composer در image <code>php</code> وجود ندارد؛ وابستگی‌های dev هم نصب می‌شوند. اصلاح: <code>COPY --from=composer:2</code> و <code>--no-dev --optimize-autoloader</code>، ترجیحاً در stage جدا.</li>
+          <li><strong><code>php artisan serve</code>:</strong> سرور توسعه‌ی تک‌فرایندی است و برای Production مناسب نیست. اصلاح: PHP-FPM + Nginx (یا یک application server مثل Octane/FrankenPHP).</li>
+          <li><strong>Shell form CMD:</strong> سیگنال‌ها به برنامه نمی‌رسند. اصلاح: exec form.</li>
+          <li><strong>اجرا با root</strong>، بدون <code>WORKDIR</code>، بدون OPcache و بدون multi-stage.</li>
+        </ol>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-8">
+      <summary>Named Volume، Bind Mount و tmpfs را مقایسه کنید. داده‌ی MySQL و کد برنامه را در توسعه و Production با کدام نگه می‌دارید؟</summary>
+      <div class="answer">
+        <p><strong>مسئله:</strong> لایه‌ی قابل‌نوشتن container با حذف آن از بین می‌رود و برای نوشتن سنگین کند است؛ داده‌ی ماندگار باید بیرون از آن باشد.</p>
+        <ul>
+          <li><strong>Named Volume:</strong> فضای ذخیره‌سازی مدیریت‌شده توسط Docker، مستقل از چرخه‌ی عمر container و ساختار پوشه‌ی میزبان؛ قابل backup و قابل استفاده با volume driverها. volume خالی هنگام mount محتوای اولیه‌ی image را می‌گیرد.</li>
+          <li><strong>Bind Mount:</strong> نگاشت مستقیم یک مسیر میزبان؛ تغییرات دوطرفه و آنی؛ وابسته به میزبان و مستعد مشکلات permission (UID)؛ محتوای image در آن مسیر را می‌پوشاند.</li>
+          <li><strong>tmpfs:</strong> در RAM؛ با توقف container پاک می‌شود؛ برای فایل موقت حساس یا پرسرعت و همراه با <code>--read-only</code>.</li>
+        </ul>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>توسعه</th><th>Production</th></tr></thead>
+          <tbody>
+            <tr><td>داده‌ی MySQL</td><td>Named volume</td><td>Named volume / دیسک مدیریت‌شده (یا سرویس دیتابیس مدیریت‌شده)</td></tr>
+            <tr><td>کد برنامه</td><td>Bind mount (hot reload)</td><td>داخل image (تغییرناپذیر)</td></tr>
+            <tr><td>آپلود کاربران</td><td>volume یا bind</td><td>volume، یا بهتر object storage (S3) برای stateless بودن</td></tr>
+            <tr><td>فایل پیکربندی</td><td>bind mount فقط‌خواندنی</td><td>داخل image یا ConfigMap</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>نکته:</strong> <code>docker compose down -v</code> و <code>docker system prune --volumes</code> volumeها را حذف می‌کنند؛ backup دیتابیس با dump منطقی (<code>mysqldump</code>) انجام شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-9">
+      <summary>یک سناریو: اپلیکیشن Laravel داخل container با خطای <code>SQLSTATE[HY000] [2002] Connection refused</code> به MySQL که در container دیگری است وصل نمی‌شود. در <code>.env</code> مقدار <code>DB_HOST=127.0.0.1</code> است. علت و راه‌حل؟</summary>
+      <div class="answer">
+        <p><strong>علت اصلی:</strong> هر container namespace شبکه‌ی خودش را دارد؛ <code>127.0.0.1</code> داخل container app یعنی <strong>خود container app</strong>، که MySQL در آن اجرا نمی‌شود.</p>
+        <p><strong>راه‌حل:</strong></p>
+        <ul>
+          <li>هر دو container در یک <strong>شبکه‌ی user-defined</strong> باشند (Compose خودکار این کار را می‌کند) و از <strong>نام سرویس</strong> استفاده شود: <code>DB_HOST=mysql</code>. DNS داخلی Docker نام را به IP container ترجمه می‌کند.</li>
+          <li>پورت داخلی (<code>3306</code>) استفاده شود، نه پورت publish‌شده روی میزبان.</li>
+          <li>اگر containerها با <code>docker run</code> روی شبکه‌ی bridge پیش‌فرض‌اند، آنجا DNS بر اساس نام وجود ندارد؛ شبکه بسازید: <code>docker network create app-net</code> و هر دو را با <code>--network app-net</code> اجرا کنید.</li>
+        </ul>
+        <p><strong>علت‌های احتمالی دیگر با همین خطا:</strong></p>
+        <ul>
+          <li><strong>MySQL هنوز آماده نیست:</strong> container بالا آمده اما در حال initialize است. اصلاح: <code>healthcheck</code> با <code>mysqladmin ping</code> و <code>depends_on: condition: service_healthy</code>، و retry در برنامه.</li>
+          <li><strong>config کش‌شده:</strong> <code>config:cache</code> در build با مقادیر قدیمی؛ تغییر env اثر ندارد. اصلاح: cache در start.</li>
+          <li><strong>متغیر env container</strong> با <code>.env</code> متفاوت است (متغیر محیطی واقعی بر <code>.env</code> اولویت دارد).</li>
+        </ul>
+        <p><strong>دیباگ:</strong> <code>docker compose exec app getent hosts mysql</code>، <code>docker network inspect</code>، <code>docker compose logs mysql</code> و <code>docker compose exec app php artisan db:show</code>.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-10">
+      <summary>آیا <code>depends_on</code> در Docker Compose تضمین می‌کند سرویس وابسته آماده‌ی پذیرش اتصال باشد؟ چگونه ترتیب راه‌اندازی صحیح را تضمین می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>پاسخ:</strong> خیر. <code>depends_on</code> در شکل ساده (فهرست نام‌ها) فقط <strong>ترتیب start</strong> را تعیین می‌کند: container MySQL قبل از app شروع می‌شود، اما ممکن است MySQL هنوز در حال initialize باشد و اتصال را رد کند.</p>
+        <p><strong>راه‌حل در Compose:</strong></p>
+        <pre><code class="language-yaml">services:
+  mysql:
+    image: mysql:8.4
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 10
+      start_period: 30s
+  migrate:
+    image: shop-app
+    command: ["php", "artisan", "migrate", "--force"]
+    depends_on:
+      mysql: { condition: service_healthy }
+  app:
+    image: shop-app
+    depends_on:
+      migrate: { condition: service_completed_successfully }</code></pre>
+        <ul>
+          <li><code>service_started</code> (پیش‌فرض)، <code>service_healthy</code> (منتظر healthcheck سالم)، <code>service_completed_successfully</code> (منتظر پایان موفق یک job یک‌باره).</li>
+        </ul>
+        <p><strong>نکته‌ی مهم‌تر:</strong> این ترتیب فقط در زمان راه‌اندازی است. اگر دیتابیس بعداً restart شود، Compose app را متوقف نمی‌کند. پس برنامه باید خودش در برابر قطعی موقت <strong>مقاوم</strong> باشد (retry، reconnect، health check که وابستگی‌ها را گزارش دهد). در Kubernetes اصلاً مفهوم depends_on وجود ندارد و همین مقاومت و readiness probe جایگزین آن‌اند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-11">
+      <summary>چرا PID 1 در container اهمیت دارد؟ چگونه از خاموش شدن graceful یک queue worker لاراول هنگام deploy اطمینان حاصل می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>PID 1</strong> اولین فرایند namespace فرایندهای container است و دو ویژگی خاص دارد:</p>
+        <ul>
+          <li>کرنل رفتار پیش‌فرض سیگنال‌ها را روی PID 1 اعمال نمی‌کند؛ اگر handler برای SIGTERM نداشته باشد، سیگنال <strong>نادیده</strong> گرفته می‌شود.</li>
+          <li>مسئول <strong>reap</strong> کردن فرایندهای zombie (فرزندان یتیم) است.</li>
+          <li>container تا وقتی زنده است که PID 1 زنده باشد.</li>
+        </ul>
+        <p><strong>جریان توقف:</strong> <code>docker stop</code> (یا توقف Pod در Kubernetes) SIGTERM می‌فرستد و پس از مهلت (پیش‌فرض ۱۰ ثانیه در Docker، ۳۰ ثانیه در Kubernetes) SIGKILL.</p>
+        <p><strong>برای queue worker:</strong></p>
+        <ol>
+          <li><strong>exec form:</strong> <code>command: ["php", "artisan", "queue:work", ...]</code> تا خود PHP فرایند PID 1 باشد و SIGTERM را دریافت کند؛ اگر entrypoint script دارید، <code>exec "$@"</code>.</li>
+          <li><strong>extension <code>pcntl</code></strong> نصب باشد؛ <code>queue:work</code> با آن SIGTERM را می‌گیرد، job جاری را تمام می‌کند و خارج می‌شود.</li>
+          <li><strong>مهلت کافی:</strong> <code>stop_grace_period</code> در Compose یا <code>terminationGracePeriodSeconds</code> در Kubernetes بیشتر از طولانی‌ترین job (و هماهنگ با <code>--timeout</code> worker).</li>
+          <li><strong>Idempotent بودن jobها</strong> و تنظیم <code>retry_after</code>، چون در بدترین حالت (SIGKILL، OOM) job دوباره اجرا می‌شود.</li>
+          <li>در صورت نیاز <code>init: true</code> (tini) برای reaping.</li>
+        </ol>
+        <p>در مدل container معمولاً به <code>queue:restart</code> نیازی نیست، چون deploy خودش containerهای قدیمی را با SIGTERM متوقف و containerهای جدید را با image جدید اجرا می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-12">
+      <summary>چرا توصیه می‌شود هر container فقط یک فرایند/نقش داشته باشد؟ در یک استک Laravel چه containerهایی تعریف می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>اصل:</strong> «یک نگرانی در هر container». Docker سلامت و چرخه‌ی عمر container را بر اساس <strong>PID 1</strong> می‌سنجد؛ اگر چند سرویس با supervisord در یک container باشند، crash یکی ممکن است دیده نشود.</p>
+        <p><strong>دلایل:</strong></p>
+        <ul>
+          <li><strong>مقیاس‌پذیری مستقل:</strong> ۵ worker صف در برابر ۲ وب.</li>
+          <li><strong>جداسازی خرابی و منابع:</strong> مصرف حافظه‌ی زیاد worker روی وب اثر نمی‌گذارد؛ limitهای جدا.</li>
+          <li><strong>لاگ و Monitoring تفکیک‌شده.</strong></li>
+          <li><strong>deploy و restart مستقل.</strong></li>
+          <li><strong>جلوگیری از اجرای تکراری scheduler</strong> وقتی وب scale می‌شود.</li>
+        </ul>
+        <p><strong>استک Laravel:</strong></p>
+        <ul>
+          <li><strong>app:</strong> PHP-FPM (image برنامه).</li>
+          <li><strong>nginx:</strong> وب‌سرور و فایل‌های استاتیک، <code>fastcgi_pass app:9000</code>.</li>
+          <li><strong>queue:</strong> همان image با <code>php artisan queue:work</code> (یا <code>horizon</code>)، قابل scale.</li>
+          <li><strong>scheduler:</strong> همان image با <code>php artisan schedule:work</code>، <strong>دقیقاً یک نمونه</strong>.</li>
+          <li><strong>migrate:</strong> job یک‌باره با <code>migrate --force</code>.</li>
+          <li><strong>mysql</strong> و <strong>redis</strong> با named volume و healthcheck.</li>
+        </ul>
+        <p>نکته: استفاده از <strong>یک image</strong> برای app، queue و scheduler تضمین می‌کند همه یک نسخه‌ی کد را اجرا می‌کنند. این اصل مطلق نیست؛ FPM خودش چند فرایند worker دارد و ترکیب Nginx+FPM در یک image برای بعضی PaaSها رایج است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-13">
+      <summary>استراتژی tag گذاری imageها را برای یک تیم توضیح دهید. چرا استفاده از <code>:latest</code> در Production توصیه نمی‌شود؟</summary>
+      <div class="answer">
+        <p><strong>مشکلات <code>latest</code>:</strong></p>
+        <ul>
+          <li>فقط یک <strong>tag پیش‌فرض و متحرک</strong> است، نه لزوماً جدیدترین نسخه.</li>
+          <li><strong>تکرارناپذیری:</strong> دو pull در دو زمان ممکن است image متفاوت بدهد؛ نودهای مختلف کلاستر ممکن است نسخه‌های متفاوت اجرا کنند.</li>
+          <li><strong>Rollback</strong> نامشخص و <strong>ردیابی</strong> نسخه‌ی در حال اجرا تا commit ناممکن.</li>
+          <li>caching و pull policy غیرقابل پیش‌بینی (در Kubernetes برای latest پیش‌فرض <code>Always</code> است).</li>
+        </ul>
+        <p><strong>استراتژی پیشنهادی:</strong></p>
+        <ul>
+          <li><strong>SHA کامیت</strong> روی هر build از main: <code>app:3f9c2ab</code>؛ تغییرناپذیر، پایه‌ی deploy و «build once, deploy many».</li>
+          <li><strong>SemVer</strong> روی releaseها: <code>app:1.4.2</code> و در صورت نیاز tagهای متحرک <code>1.4</code> و <code>1</code> برای مصرف‌کنندگان.</li>
+          <li><strong>Digest</strong> (<code>@sha256:...</code>) برای قطعیت کامل در مانیفست‌های production/GitOps.</li>
+          <li>tagهای برنچ (<code>main</code>، <code>pr-123</code>) فقط برای محیط‌های موقت.</li>
+          <li>فعال کردن <strong>tag immutability</strong> در registry و سیاست cleanup برای imageهای قدیمی.</li>
+          <li>LABELهای OCI (source، revision، version) برای ردیابی.</li>
+        </ul>
+        <p>همین اصل برای imageهای پایه هم برقرار است: <code>FROM php:8.3-fpm-alpine</code> به‌جای <code>FROM php</code>، با به‌روزرسانی کنترل‌شده.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-14">
+      <summary>بهترین روش‌های امنیتی برای ساخت و اجرای imageهای Docker در Production را بنویسید.</summary>
+      <div class="answer">
+        <p><strong>زمان ساخت:</strong></p>
+        <ul>
+          <li><strong>image پایه‌ی رسمی و حداقلی</strong> با نسخه‌ی pin‌شده؛ rebuild دوره‌ای برای وصله‌ها.</li>
+          <li><strong>Multi-stage</strong>: ابزار build، کامپایلر و Node در image نهایی نباشند.</li>
+          <li><strong>بدون secret در لایه‌ها:</strong> نه ENV، نه ARG، نه COPY؛ BuildKit secret برای build و تزریق runtime برای اجرا.</li>
+          <li><strong><code>.dockerignore</code></strong> برای <code>.env</code>، <code>.git</code> و فایل‌های محلی.</li>
+          <li><strong>اسکن آسیب‌پذیری</strong> (Trivy، Docker Scout، Grype) در CI و fail روی CVE بحرانی؛ <code>composer audit</code> برای وابستگی‌ها.</li>
+          <li><strong>حداقل بسته‌ها</strong> و پاک‌سازی cache در همان لایه.</li>
+          <li>امضای image و استفاده از registry خصوصی با دسترسی محدود.</li>
+        </ul>
+        <p><strong>زمان اجرا:</strong></p>
+        <ul>
+          <li><strong>کاربر غیر root</strong> (<code>USER www-data</code>)؛ فقط مسیرهای لازم قابل‌نوشتن.</li>
+          <li><code>--read-only</code> + tmpfs، <code>--cap-drop ALL</code>، <code>no-new-privileges</code>؛ هرگز <code>--privileged</code>.</li>
+          <li><strong>عدم mount کردن <code>docker.sock</code></strong> (معادل root میزبان).</li>
+          <li><strong>محدودیت منابع</strong> (memory، cpu، pids) برای جلوگیری از DoS روی میزبان.</li>
+          <li><strong>شبکه:</strong> فقط پورت‌های لازم publish شوند؛ دیتابیس فقط در شبکه‌ی داخلی.</li>
+          <li>به‌روز نگه داشتن Docker Engine و کرنل میزبان؛ در Kubernetes: Pod Security، NetworkPolicy، RBAC و Secretهای رمزنگاری‌شده.</li>
+        </ul>
+        <p><strong>اصل کلی:</strong> Defense in depth و least privilege؛ container مرز امنیتی کامل نیست، چون کرنل مشترک است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-15">
+      <summary>تفاوت image توسعه و Production چیست؟ Laravel Sail چیست و آیا برای Production مناسب است؟</summary>
+      <div class="answer">
+        <p><strong>Image توسعه</strong> برای سرعت چرخه‌ی کدنویسی و دیباگ طراحی می‌شود: کد با bind mount، وابستگی‌های dev، Xdebug، OPcache با بررسی timestamp، <code>APP_DEBUG=true</code>، Node برای Vite dev server.</p>
+        <p><strong>Image Production</strong> برای امنیت، کارایی و تکرارپذیری: کد داخل image، <code>composer install --no-dev -o</code>، assetهای build‌شده، OPcache با <code>validate_timestamps=0</code>، بدون ابزار توسعه، کاربر غیر root، و secretها در runtime.</p>
+        <p><strong>بهترین روش:</strong> یک Dockerfile با stageهای مشترک <code>base</code> و هدف‌های <code>dev</code> و <code>runtime</code> (<code>--target</code>)، تا نسخه‌ی PHP و extensionها یکسان باشد (<strong>dev/prod parity</strong>) و «روی سیستم من کار می‌کرد» رخ ندهد.</p>
+        <p><strong>Laravel Sail:</strong> رابط خط فرمان سبک روی Docker Compose برای <strong>محیط توسعه‌ی محلی</strong>؛ با <code>php artisan sail:install</code> فایل Compose با سرویس‌های انتخابی (MySQL/PostgreSQL، Redis، Mailpit، Meilisearch…) می‌سازد و دستورات <code>sail artisan</code>، <code>sail composer</code>، <code>sail test</code> را درون container اجرا می‌کند. مزیتش راه‌اندازی سریع و یکسان برای همه‌ی تیم بدون نصب PHP روی سیستم است.</p>
+        <p><strong>برای Production مناسب نیست:</strong> کد را mount می‌کند، وابستگی‌های dev دارد، برای امنیت و کارایی بهینه نشده و جای image تغییرناپذیر production را نمی‌گیرد. برای Production باید image اختصاصی multi-stage ساخت.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-16">
+      <summary>اشیای اصلی Kubernetes (Pod، Deployment، Service، Ingress، ConfigMap، Secret) را توضیح دهید. چه زمانی Docker Compose کافی است و چه زمانی به Kubernetes نیاز داریم؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Pod:</strong> کوچک‌ترین واحد استقرار؛ یک یا چند container با IP و volume مشترک. موقت است و IP ثابتی ندارد.</li>
+          <li><strong>Deployment:</strong> تعریف declarative برنامه‌ی stateless: image، تعداد replica، rolling update و rollback؛ با ReplicaSet تعداد Podها را تضمین می‌کند (self-healing).</li>
+          <li><strong>Service:</strong> نام DNS و IP مجازی پایدار با توزیع بار روی Podهای منتخب با label. ClusterIP (داخلی)، NodePort، LoadBalancer.</li>
+          <li><strong>Ingress:</strong> مسیریابی HTTP/HTTPS (host/path، TLS) از بیرون به Serviceها؛ نیازمند Ingress Controller.</li>
+          <li><strong>ConfigMap:</strong> پیکربندی غیرحساس به‌صورت env یا فایل.</li>
+          <li><strong>Secret:</strong> داده‌ی حساس؛ به‌طور پیش‌فرض فقط base64 (نه رمزنگاری) است، پس encryption at rest و RBAC لازم است.</li>
+          <li>به‌علاوه‌ی <strong>probe</strong>ها: readiness (ورود به Service)، liveness (restart).</li>
+        </ul>
+        <p><strong>Compose کافی است وقتی:</strong> توسعه‌ی محلی، CI، یا یک سرور تکی با ترافیک متوسط داریم و downtime کوتاه در deploy یا خرابی میزبان قابل قبول است.</p>
+        <p><strong>Kubernetes لازم است وقتی:</strong> چند سرور و high availability، rolling update بدون downtime، autoscaling، self-healing خودکار، service discovery بین نودها، تعداد زیاد سرویس (microservices) و تیم عملیاتی برای مدیریت پیچیدگی آن داریم.</p>
+        <p><strong>میانه:</strong> Docker Swarm (همان فرمت Compose روی کلاستر، ساده‌تر ولی اکوسیستم کوچک‌تر) یا سرویس‌های مدیریت‌شده (ECS، Cloud Run). انتخاب Kubernetes بدون نیاز واقعی، هزینه‌ی عملیاتی بالایی دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-docker-17">
+      <summary>یک container بلافاصله پس از اجرا متوقف می‌شود یا مدام restart می‌شود. مراحل عیب‌یابی شما چیست؟</summary>
+      <div class="answer">
+        <p><strong>۱. وضعیت و exit code:</strong></p>
+        <pre><code class="language-bash">docker ps -a
+docker inspect -f '{{.State.ExitCode}} {{.State.OOMKilled}} {{.State.Error}}' app
+docker logs --tail 200 app</code></pre>
+        <p><strong>۲. تفسیر exit code:</strong></p>
+        <ul>
+          <li><strong>0:</strong> فرایند اصلی کارش تمام شده یا به background رفته (مثلاً دستوری که daemon می‌شود). container فقط تا وقتی زنده است که PID 1 زنده باشد؛ فرایند باید در foreground اجرا شود.</li>
+          <li><strong>1:</strong> خطای برنامه؛ لاگ را ببینید (مثلاً <code>APP_KEY</code> تنظیم نشده، خطای PHP، اتصال دیتابیس).</li>
+          <li><strong>126/127:</strong> فایل اجرایی پیدا نشد یا مجوز اجرا ندارد: نبود <code>bash</code> در Alpine، <code>chmod +x</code> فراموش‌شده، یا line ending ویندوزی (CRLF) در اسکریپت entrypoint.</li>
+          <li><strong>137:</strong> SIGKILL؛ اگر <code>OOMKilled=true</code> است، حافظه کم است (افزایش limit یا کاهش <code>pm.max_children</code> در FPM).</li>
+        </ul>
+        <p><strong>۳. بررسی محیط:</strong> <code>docker inspect</code> برای env، mountها و command نهایی؛ اجرای تعاملی با override: <code>docker run --rm -it --entrypoint sh image</code> و اجرای دستی دستور.</p>
+        <p><strong>۴. وابستگی‌ها:</strong> آیا دیتابیس آماده است؟ healthcheck و <code>depends_on: service_healthy</code>؛ آیا permission پوشه‌ی <code>storage</code> برای کاربر غیر root درست است؟</p>
+        <p><strong>۵. حلقه‌ی restart:</strong> <code>restart: always</code> خطا را پنهان می‌کند؛ موقتاً حذفش کنید یا از <code>docker events</code> استفاده کنید. در Kubernetes معادلش <code>CrashLoopBackOff</code> است: <code>kubectl describe pod</code> و <code>kubectl logs --previous</code>.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>مفاهیم</h4>
+      <ul>
+        <li>Container = فرایند ایزوله با کرنل مشترک؛ VM = کرنل مستقل روی Hypervisor.</li>
+        <li>Namespaces (دیدن) + cgroups (مصرف) + overlay FS (لایه‌ها).</li>
+        <li>Image (کلاس، read-only) ← Container (شیء + لایه‌ی writable) ← Registry (repository:tag).</li>
+        <li>CLI ← dockerd ← containerd ← runc؛ استاندارد OCI.</li>
+      </ul>
+      <h4>لایه و Cache</h4>
+      <ul>
+        <li>RUN/COPY/ADD ⇒ لایه. اولین miss ⇒ همه‌ی بعدی‌ها rebuild.</li>
+        <li>ترتیب: base ← apk/apt ← ext ← lock files ← install ← کد.</li>
+        <li>پاک‌سازی در همان RUN؛ حذف در لایه‌ی بعد حجم را کم نمی‌کند.</li>
+        <li><code>RUN --mount=type=cache</code> و <code>--mount=type=secret</code>.</li>
+      </ul>
+      <h4>دستورات</h4>
+      <ul>
+        <li>COPY &gt; ADD (ADD: URL + extract tar).</li>
+        <li>ARG = build-time؛ ENV = build + runtime؛ هیچ‌کدام برای secret.</li>
+        <li>EXPOSE = مستند؛ <code>-p</code> = publish.</li>
+        <li>ENTRYPOINT = برنامه‌ی ثابت؛ CMD = آرگومان پیش‌فرض (override با run).</li>
+        <li>Exec form <code>["php-fpm"]</code> ⇒ PID 1 و SIGTERM؛ shell form ⇒ <code>sh -c</code>.</li>
+        <li>entrypoint script ⇒ <code>exec "$@"</code>.</li>
+        <li>HEALTHCHECK؛ FPM = FastCGI نه HTTP.</li>
+      </ul>
+      <h4>Laravel multi-stage</h4>
+      <ul>
+        <li>base (fpm + ext) ← vendor (composer --no-dev) ← assets (node, vite) ← runtime ← web (nginx).</li>
+        <li>OPcache <code>validate_timestamps=0</code>؛ <code>USER www-data</code>.</li>
+        <li>config:cache در start، route/view:cache در build.</li>
+        <li>migrate در job جدا، نه در entrypoint هر replica.</li>
+      </ul>
+      <h4>امنیت و حجم</h4>
+      <ul>
+        <li><code>.dockerignore</code>: .env، .git، vendor، node_modules.</li>
+        <li>pin نسخه/digest؛ alpine = musl؛ slim = تعادل.</li>
+        <li>non-root، read-only، cap-drop، بدون privileged، بدون docker.sock.</li>
+        <li>Trivy/Scout در CI؛ rebuild دوره‌ای.</li>
+      </ul>
+      <h4>CLI</h4>
+      <ul>
+        <li><code>run -d -p -v -e --name --rm --restart</code>.</li>
+        <li><code>ps -a</code>، <code>logs -f</code>، <code>exec -it sh</code>، <code>inspect</code>، <code>stats</code>.</li>
+        <li>stop = SIGTERM + 10s + SIGKILL؛ kill = SIGKILL.</li>
+        <li>Exit: 0 تمام، 1 خطا، 127 پیدا نشد، 137 KILL/OOM، 143 TERM.</li>
+        <li><code>system prune -a --volumes</code> ⚠.</li>
+      </ul>
+      <h4>Storage</h4>
+      <ul>
+        <li>Named volume: state (DB) — مدیریت Docker.</li>
+        <li>Bind mount: کد در dev، config.</li>
+        <li>tmpfs: RAM، موقت.</li>
+        <li>Prod: کد در image.</li>
+      </ul>
+      <h4>Network</h4>
+      <ul>
+        <li>user-defined bridge ⇒ DNS با نام سرویس.</li>
+        <li>localhost داخل container = خود container.</li>
+        <li>ارتباط داخلی بدون publish؛ DB را publish نکنید (یا 127.0.0.1).</li>
+        <li>host، none، overlay (Swarm).</li>
+      </ul>
+      <h4>Compose</h4>
+      <ul>
+        <li>app (fpm)، nginx، mysql، redis، queue، scheduler (×1)، migrate (one-off).</li>
+        <li><code>depends_on</code> ساده = ترتیب؛ <code>service_healthy</code> = آماده؛ <code>service_completed_successfully</code>.</li>
+        <li><code>.env</code> برای interpolation فایل؛ <code>env_file</code> برای container.</li>
+        <li>لاگ به stdout: <code>LOG_CHANNEL=stderr</code>.</li>
+        <li>Sail = فقط dev.</li>
+      </ul>
+      <h4>Tag</h4>
+      <ul>
+        <li>SHA / SemVer / digest؛ <code>latest</code> = متحرک، نه در prod.</li>
+      </ul>
+      <h4>Kubernetes</h4>
+      <ul>
+        <li>Pod، Deployment (rolling/rollback)، Service (ClusterIP/NodePort/LB)، Ingress (+controller)، ConfigMap، Secret (base64!).</li>
+        <li>readiness ⇒ ترافیک؛ liveness ⇒ restart.</li>
+        <li>Swarm: <code>docker stack deploy</code>، ساده‌تر.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

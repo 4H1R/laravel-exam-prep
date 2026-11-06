@@ -1,0 +1,1492 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test &amp; Test Design — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="testing">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Test &amp; Test Design</h1>
+    <p class="lead">چرا و چگونه تست می‌نویسیم: سطوح تست و هرم تست، black-box و white-box، تکنیک‌های طراحی تست (افراز هم‌ارز، مقادیر مرزی، جدول تصمیم، انتقال وضعیت، pairwise)، TDD و BDD، test doubleها، PHPUnit و Pest، تست در Laravel، coverage و mutation testing، تست‌های ناپایدار و کد legacy.</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="why-test" data-title="چرا تست؟">
+    <h2>چرا تست؟</h2>
+    <p><strong>تست نرم‌افزار</strong> فرایند اجرای سیستم (یا بخشی از آن) با هدف یافتن خطا و ایجاد <strong>اطمینان</strong> از اینکه رفتار واقعی با رفتار مورد انتظار مطابقت دارد. تست خودکار برای یک توسعه‌دهنده‌ی بک‌اند بیش از «پیدا کردن باگ» ارزش دارد:</p>
+    <ul>
+      <li><strong>اطمینان برای تغییر و refactor:</strong> بدون تست، هر تغییر ترسناک است و کد «یخ می‌زند». تست‌ها شبکه‌ی ایمنی تغییرند.</li>
+      <li><strong>بازخورد سریع:</strong> باگ در چند ثانیه روی سیستم توسعه‌دهنده پیدا می‌شود، نه هفته‌ها بعد در production. هرچه دیرتر کشف شود، رفعش گران‌تر است.</li>
+      <li><strong>مستند اجرایی:</strong> تستی با نام <code>it_rejects_expired_coupons</code> قاعده‌ی کسب‌وکار را مستند می‌کند و برخلاف مستند متنی، اگر کهنه شود fail می‌شود.</li>
+      <li><strong>بازخورد طراحی:</strong> کدی که تست کردنش سخت است، معمولاً coupling بالا و وابستگی‌های پنهان دارد.</li>
+      <li><strong>جلوگیری از regression:</strong> هر باگ رفع‌شده با یک تست، دیگر بی‌صدا برنمی‌گردد.</li>
+      <li><strong>امکان CI/CD:</strong> deploy مداوم بدون تست خودکار قابل اعتماد، قمار است.</li>
+    </ul>
+
+    <h3>Verification و Validation</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Verification</h4><ul>
+        <li>«آیا محصول را <strong>درست</strong> می‌سازیم؟»</li>
+        <li>مطابقت با مشخصات و طراحی.</li>
+        <li>review، static analysis، unit و integration test.</li>
+      </ul></div>
+      <div class="card"><h4>Validation</h4><ul>
+        <li>«آیا محصول <strong>درست</strong> را می‌سازیم؟»</li>
+        <li>برآورده شدن نیاز واقعی کاربر.</li>
+        <li>acceptance test، UAT، بازخورد کاربر.</li>
+      </ul></div>
+    </div>
+
+    <h3>هفت اصل تست (ISTQB)</h3>
+    <ol>
+      <li><strong>تست وجود خطا را نشان می‌دهد، نه نبود آن را.</strong> پاس شدن همه‌ی تست‌ها به معنی بی‌باگ بودن نیست.</li>
+      <li><strong>تست کامل (exhaustive) غیرممکن است.</strong> به همین دلیل به تکنیک‌های طراحی تست و اولویت‌بندی بر اساس ریسک نیاز داریم.</li>
+      <li><strong>تست زودهنگام (shift-left)</strong> هزینه را کاهش می‌دهد.</li>
+      <li><strong>تجمع خطا (defect clustering):</strong> بیشتر باگ‌ها در تعداد کمی از ماژول‌ها هستند.</li>
+      <li><strong>پارادوکس آفت‌کش (pesticide paradox):</strong> تکرار همان تست‌ها، باگ جدیدی پیدا نمی‌کند؛ تست‌ها باید بازبینی و تکمیل شوند.</li>
+      <li><strong>تست وابسته به زمینه است:</strong> تست سیستم پرداخت با یک وبلاگ فرق دارد.</li>
+      <li><strong>مغالطه‌ی نبود خطا:</strong> سیستم بدون باگ که نیاز کاربر را برآورده نکند، بی‌ارزش است.</li>
+    </ol>
+    <dl class="terms">
+      <dt>Error (Mistake)</dt><dd>اشتباه انسانی توسعه‌دهنده یا تحلیل‌گر.</dd>
+      <dt>Defect (Bug / Fault)</dt><dd>نقص در کد یا مستند که نتیجه‌ی آن اشتباه است.</dd>
+      <dt>Failure</dt><dd>رفتار نادرست مشاهده‌شده در زمان اجرا، وقتی کد معیوب اجرا شود.</dd>
+      <dt>Test Oracle</dt><dd>منبعی که نتیجه‌ی مورد انتظار را تعیین می‌کند (مشخصات، محاسبه‌ی دستی، سیستم قدیمی).</dd>
+    </dl>
+    <div class="callout exam"><p>جمله‌ی Dijkstra را در پاسخ‌ها به کار ببرید: «تست می‌تواند وجود باگ را نشان دهد، اما هرگز نبود آن را.» بنابراین هدف تست <strong>کاهش ریسک و ایجاد اطمینان کافی</strong> است، نه اثبات درستی؛ و چون تست کامل ممکن نیست، باید با تکنیک‌های طراحی تست، موارد کم ولی پرارزش را انتخاب کرد.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="test-levels" data-title="سطوح و انواع تست">
+    <h2>سطوح و انواع تست</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>سطح</th><th>محدوده</th><th>وابستگی‌ها</th><th>سرعت</th><th>مثال در Laravel</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Unit</strong></td><td>یک واحد کوچک منطق (کلاس، متد) در انزوا</td><td>جایگزین با test double یا بدون وابستگی</td><td>میلی‌ثانیه</td><td>تست <code>PriceCalculator</code> یا Value Object <code>Money</code></td></tr>
+        <tr><td><strong>Integration</strong></td><td>همکاری چند جزء یا یک جزء با زیرساخت واقعی</td><td>دیتابیس، cache، فایل سیستم واقعی (یا نزدیک به واقعی)</td><td>ده‌ها تا صدها میلی‌ثانیه</td><td>تست یک Repository/Query روی MySQL واقعی</td></tr>
+        <tr><td><strong>Feature / Functional</strong></td><td>یک قابلیت از ورودی تا خروجی سیستم (معمولاً از طریق HTTP)</td><td>کل اپلیکیشن داخل process تست؛ سرویس‌های بیرونی fake</td><td>متوسط</td><td><code>$this-&gt;postJson('/api/orders')</code> و بررسی پاسخ و دیتابیس</td></tr>
+        <tr><td><strong>End-to-End (E2E)</strong></td><td>جریان کامل کاربر از UI تا دیتابیس، مانند کاربر واقعی</td><td>مرورگر واقعی، سرور در حال اجرا</td><td>ثانیه‌ها</td><td>Laravel Dusk، Playwright، Cypress</td></tr>
+        <tr><td><strong>Acceptance</strong></td><td>تأیید اینکه سیستم معیارهای پذیرش کسب‌وکار را برآورده می‌کند</td><td>بسته به روش؛ اغلب feature یا E2E</td><td>متغیر</td><td>سناریوهای Given/When/Then، UAT با کاربر</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>System testing</strong> در ادبیات کلاسیک یعنی تست کل سیستم یکپارچه در برابر مشخصات (شامل غیرعملکردی‌ها).</li>
+      <li><strong>تست‌های غیرعملکردی (non-functional):</strong> کارایی (load، stress، soak)، امنیت (penetration، SAST/DAST)، دسترس‌پذیری، usability.</li>
+      <li><strong>Static testing:</strong> بدون اجرای کد؛ code review، PHPStan/Larastan، Psalm، linters. ارزان‌ترین لایه.</li>
+    </ul>
+
+    <h3>Unit و Feature در Laravel</h3>
+    <p>Laravel به‌طور پیش‌فرض دو پوشه دارد: <code>tests/Unit</code> و <code>tests/Feature</code>. تست‌های پوشه‌ی Unit معمولاً از <code>PHPUnit\Framework\TestCase</code> ارث می‌برند و اپلیکیشن Laravel را boot نمی‌کنند (پس به facade، config و دیتابیس دسترسی ندارند)، در حالی که Feature testها از <code>Tests\TestCase</code> ارث می‌برند و کل اپلیکیشن را بالا می‌آورند.</p>
+
+    <div class="callout note"><p>تعریف «unit» محل اختلاف است. مکتب <strong>classical (Detroit)</strong> «واحد» را یک <em>رفتار</em> می‌داند که ممکن است چند کلاس را شامل شود و فقط وابستگی‌های مشترک/کند (دیتابیس، شبکه) را جایگزین می‌کند. مکتب <strong>London (mockist)</strong> واحد را یک کلاس می‌داند و همه‌ی همکاران آن را mock می‌کند. هر دو را در پاسخ ذکر کنید.</p></div>
+    <div class="callout exam"><p>تفاوت integration و E2E: integration تست ارتباط <em>چند جزء</em> (مثلاً کد شما با دیتابیس یا یک سرویس) است؛ E2E کل جریان را از دید کاربر و از طریق رابط واقعی (مرورگر یا کلاینت API) و روی محیط کامل اجرا می‌کند. E2E بیشترین اطمینان و بیشترین هزینه، کندی و ناپایداری را دارد.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="pyramid" data-title="هرم تست و Testing Trophy">
+    <h2>هرم تست و Testing Trophy</h2>
+    <p><strong>هرم تست (Test Pyramid)</strong> که Mike Cohn معرفی کرد، می‌گوید تعداد زیادی تست سریع و ارزان در پایه (unit)، تعداد کمتری تست integration در میانه، و تعداد کمی تست E2E کند و پرهزینه در رأس داشته باشید.</p>
+    <pre class="diagram">            /\
+           /  \        E2E / UI          کم، کند، شکننده، پرهزینه
+          /────\                         اطمینان بالا از کل سیستم
+         /      \      Integration /
+        /        \     Feature           متوسط
+       /──────────\
+      /            \   Unit              زیاد، سریع، پایدار، ارزان
+     /──────────────\                    بازخورد دقیق (محل خطا مشخص)</pre>
+
+    <h3>چرا این شکل؟</h3>
+    <ul>
+      <li>هرچه بالاتر می‌رویم: <strong>کندتر</strong>، <strong>شکننده‌تر (flaky)</strong>، <strong>گران‌تر در نگهداری</strong> و <strong>مبهم‌تر در تشخیص محل خطا</strong>.</li>
+      <li>هرچه پایین‌تر: سریع‌تر و دقیق‌تر، اما با اطمینان کمتر درباره‌ی یکپارچگی واقعی اجزا.</li>
+      <li>منطق ترکیبی (حالت‌های زیاد) را در پایین تست کنید؛ در بالا فقط مسیرهای حیاتی (happy path) را.</li>
+    </ul>
+
+    <h3>ضدالگوی «بستنی قیفی» (Ice-cream Cone)</h3>
+    <p>هرم وارونه: تعداد زیادی تست دستی و E2E و تعداد کمی unit test. نتیجه: CI چندساعته، تست‌های ناپایدار، و ترس از تغییر.</p>
+
+    <h3>Testing Trophy</h3>
+    <p>Kent C. Dodds مدل <strong>Testing Trophy</strong> را مطرح کرد: لایه‌ی پایه <strong>static analysis</strong> (type و lint)، سپس unit، <strong>بزرگ‌ترین بخش integration</strong>، و E2E کم در رأس. شعار آن: «تست بنویسید؛ نه خیلی زیاد؛ بیشتر integration». استدلال: integration testها بهترین تعادل بین اطمینان و هزینه را دارند، چون به جزئیات پیاده‌سازی کمتر وابسته‌اند.</p>
+    <div class="grid-2">
+      <div class="card"><h4>هرم</h4><ul>
+        <li>تأکید بر unit test.</li>
+        <li>مناسب منطق دامنه‌ی پیچیده (محاسبات، قواعد).</li>
+        <li>خطر: unit testهای وابسته به پیاده‌سازی که با هر refactor می‌شکنند.</li>
+      </ul></div>
+      <div class="card"><h4>Trophy</h4><ul>
+        <li>تأکید بر integration/feature test.</li>
+        <li>مناسب اپلیکیشن‌های CRUD و وب که بیشتر «اتصال» اجزاست.</li>
+        <li>خطر: کندتر شدن suite و تشخیص سخت‌تر محل خطا.</li>
+      </ul></div>
+    </div>
+    <div class="callout tip"><p>در پروژه‌ی Laravel عملاً ترکیبی کار می‌کند: <strong>feature testهای HTTP</strong> با دیتابیس واقعی (SQLite یا MySQL تست) ستون اصلی‌اند چون سریع‌اند (داخل process، بدون مرورگر)؛ منطق دامنه‌ی پیچیده (قیمت‌گذاری، مالیات، state machine) unit test کامل دارد؛ و چند تست E2E/Dusk برای مسیرهای حیاتی (ثبت‌نام، پرداخت). PHPStan/Larastan و Pint پایه‌ی static را تشکیل می‌دهند.</p></div>
+    <div class="callout exam"><p>اگر پرسیدند «هرم تست چیست؟»، علاوه بر شکل، <strong>دلیل</strong> را بگویید (سرعت، هزینه، پایداری، دقت تشخیص) و ضدالگوی بستنی قیفی و دیدگاه trophy را به‌عنوان نقد/تکمیل ذکر کنید. نکته‌ی کلیدی: نسبت‌ها قانون نیستند؛ هدف بیشترین اطمینان با کمترین هزینه است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="box-testing" data-title="Black-box و White-box">
+    <h2>Black-box و White-box</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Black-box</th><th>White-box (Glass-box)</th><th>Gray-box</th></tr></thead>
+      <tbody>
+        <tr><td>مبنا</td><td>مشخصات و رفتار بیرونی؛ بدون نگاه به کد</td><td>ساختار داخلی کد (شاخه‌ها، مسیرها، حلقه‌ها)</td><td>دانش جزئی از داخل (مثلاً schema دیتابیس) + تست از بیرون</td></tr>
+        <tr><td>تکنیک‌ها</td><td>افراز هم‌ارز، مقادیر مرزی، جدول تصمیم، انتقال وضعیت، pairwise، use case</td><td>statement/branch/path coverage، تست حلقه، data flow</td><td>ترکیبی</td></tr>
+        <tr><td>چه چیزی پیدا می‌کند</td><td>نیازمندی‌های پیاده‌نشده یا اشتباه پیاده‌شده</td><td>کد مرده، شاخه‌های تست‌نشده، خطاهای منطقی داخلی</td><td>مشکلات یکپارچگی و داده</td></tr>
+        <tr><td>ضعف</td><td>ممکن است مسیرهای داخلی را پوشش ندهد</td><td>نیازمندی‌ای را که اصلاً پیاده نشده پیدا نمی‌کند</td><td>—</td></tr>
+        <tr><td>چه کسی</td><td>QA، توسعه‌دهنده، کاربر</td><td>توسعه‌دهنده</td><td>توسعه‌دهنده، QA فنی</td></tr>
+      </tbody>
+    </table></div>
+    <p>یک feature test در Laravel که فقط endpoint را صدا می‌زند و پاسخ را بررسی می‌کند، ماهیت black-box دارد؛ ولی اگر بعد از آن <code>assertDatabaseHas</code> می‌زنید، دانش داخلی (schema) را به کار گرفته‌اید و به gray-box نزدیک می‌شوید. گزارش coverage ابزاری white-box برای یافتن کدهای تست‌نشده است.</p>
+    <div class="callout exam"><p>مهم‌ترین نکته‌ی مقایسه: white-box فقط کدی را که <strong>وجود دارد</strong> می‌سنجد؛ اگر یک نیازمندی (مثلاً «سفارش بالای ۱۰ میلیون نیاز به تأیید دارد») اصلاً پیاده نشده باشد، ۱۰۰٪ coverage هم آن را نشان نمی‌دهد. پس این دو مکمل‌اند: test caseها را با black-box از مشخصات طراحی کنید و با white-box (coverage) شکاف‌ها را پیدا کنید.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="ep-bva" data-title="افراز هم‌ارز و مقادیر مرزی">
+    <h2>افراز هم‌ارز و مقادیر مرزی</h2>
+    <p>چون تست همه‌ی ورودی‌ها ممکن نیست، تکنیک‌های black-box به ما کمک می‌کنند <strong>کمترین تعداد</strong> test case را با <strong>بیشترین احتمال</strong> یافتن خطا انتخاب کنیم.</p>
+
+    <h3>افراز هم‌ارز (Equivalence Partitioning)</h3>
+    <p>ورودی‌ها را به <strong>کلاس‌هایی</strong> تقسیم می‌کنیم که انتظار داریم سیستم با همه‌ی اعضای هر کلاس <strong>یکسان</strong> رفتار کند؛ سپس از هر کلاس یک نماینده تست می‌کنیم. کلاس‌های <strong>معتبر</strong> و <strong>نامعتبر</strong> هر دو باید پوشش داده شوند.</p>
+    <h4>مثال: تخفیف بر اساس مبلغ سبد خرید</h4>
+    <p>قاعده: مبلغ باید بیشتر از صفر باشد. زیر ۱۰۰ دلار بدون تخفیف، از ۱۰۰ تا کمتر از ۵۰۰ دلار ۵٪، و از ۵۰۰ دلار به بالا ۱۰٪ تخفیف. مبلغ به سنت (integer) ذخیره می‌شود.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>کلاس</th><th>بازه (سنت)</th><th>نوع</th><th>نماینده</th><th>نتیجه‌ی مورد انتظار</th></tr></thead>
+      <tbody>
+        <tr><td>EP1</td><td>&lt;= 0</td><td>نامعتبر</td><td>-500</td><td>خطای validation</td></tr>
+        <tr><td>EP2</td><td>1 … 9,999</td><td>معتبر</td><td>5,000</td><td>۰٪</td></tr>
+        <tr><td>EP3</td><td>10,000 … 49,999</td><td>معتبر</td><td>20,000</td><td>۵٪</td></tr>
+        <tr><td>EP4</td><td>&gt;= 50,000</td><td>معتبر</td><td>80,000</td><td>۱۰٪</td></tr>
+        <tr><td>EP5</td><td>غیرعددی / null</td><td>نامعتبر</td><td><code>"abc"</code></td><td>خطای validation</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>تحلیل مقادیر مرزی (Boundary Value Analysis)</h3>
+    <p>خطاها بیشتر در <strong>مرز</strong> کلاس‌ها رخ می‌دهند (اشتباه <code>&lt;</code> به‌جای <code>&lt;=</code>، off-by-one). در BVA مقادیر روی مرز و درست کنار آن را تست می‌کنیم.</p>
+    <ul>
+      <li><strong>BVA دومقداری:</strong> برای هر مرز، خود مرز و نزدیک‌ترین مقدار آن طرف مرز.</li>
+      <li><strong>BVA سه‌مقداری:</strong> مقدار قبل، روی و بعد از هر مرز.</li>
+    </ul>
+    <p>برای مثال بالا (دومقداری): <code>0</code> و <code>1</code>؛ <code>9,999</code> و <code>10,000</code>؛ <code>49,999</code> و <code>50,000</code>. یعنی ۶ test case که اگر برنامه‌نویس <code>&gt;</code> را به‌جای <code>&gt;=</code> نوشته باشد، حتماً یکی fail می‌شود.</p>
+    <pre><code class="language-php">&lt;?php
+
+use App\Pricing\DiscountPolicy;
+
+dataset('discount boundaries', [
+    'just above zero'        =&gt; [1, 0],
+    'just below 5% tier'     =&gt; [9_999, 0],
+    'start of 5% tier'       =&gt; [10_000, 500],
+    'just below 10% tier'    =&gt; [49_999, 2_499],
+    'start of 10% tier'      =&gt; [50_000, 5_000],
+]);
+
+it('calculates the discount at tier boundaries', function (int $subtotal, int $expected) {
+    expect((new DiscountPolicy())-&gt;discountFor($subtotal))-&gt;toBe($expected);
+})-&gt;with('discount boundaries');
+
+it('rejects non-positive subtotals', function (int $subtotal) {
+    (new DiscountPolicy())-&gt;discountFor($subtotal);
+})-&gt;with([0, -1])-&gt;throws(InvalidArgumentException::class);</code></pre>
+    <div class="callout note"><p>در مثال بالا، ۵٪ از 49,999 برابر 2,499.95 است و نتیجه‌ی مورد انتظار به <strong>قاعده‌ی گرد کردن</strong> بستگی دارد (اینجا رو به پایین فرض شده). نوشتن تست مرزی معمولاً همین ابهام‌های مشخصات را آشکار می‌کند؛ یکی از ارزش‌های طراحی تست همین است.</p></div>
+    <div class="callout tip"><p>مرزهای دیگر را هم فراموش نکنید: رشته‌ی خالی و حداکثر طول (<code>max:255</code> ← تست 255 و 256 کاراکتر)، اولین و آخرین عنصر لیست، صفحه‌ی آخر pagination، نیمه‌شب و تغییر سال، ۲۹ فوریه، و حداکثر مقدار integer.</p></div>
+    <div class="callout exam"><p>در پاسخ تشریحی، EP و BVA را همیشه با هم و با یک مثال عددی بنویسید: (۱) تقسیم ورودی به کلاس‌های معتبر و نامعتبر، (۲) یک نماینده از هر کلاس، (۳) مقادیر روی و کنار هر مرز. دلیل BVA: خطاهای off-by-one و عملگر مقایسه‌ی اشتباه.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="design-techniques" data-title="جدول تصمیم، انتقال وضعیت و Pairwise">
+    <h2>جدول تصمیم، انتقال وضعیت و Pairwise</h2>
+
+    <h3>جدول تصمیم (Decision Table)</h3>
+    <p>وقتی خروجی به <strong>ترکیب چند شرط</strong> بستگی دارد، همه‌ی ترکیب‌های شرط‌ها را در یک جدول فهرست می‌کنیم تا هیچ ترکیبی جا نماند و قواعد متناقض یا ناقص آشکار شوند. با n شرط بولی، حداکثر 2ⁿ ستون (قاعده) داریم که می‌توان ستون‌های هم‌نتیجه را ادغام کرد.</p>
+    <p><strong>مثال: ارسال رایگان.</strong> شرط‌ها: عضو ویژه است؟ مبلغ ≥ ۵۰ دلار؟ کد تخفیف ارسال دارد؟</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>شرط / قاعده</th><th>R1</th><th>R2</th><th>R3</th><th>R4</th><th>R5</th><th>R6</th><th>R7</th><th>R8</th></tr></thead>
+      <tbody>
+        <tr><td>عضو ویژه</td><td>T</td><td>T</td><td>T</td><td>T</td><td>F</td><td>F</td><td>F</td><td>F</td></tr>
+        <tr><td>مبلغ ≥ 50</td><td>T</td><td>T</td><td>F</td><td>F</td><td>T</td><td>T</td><td>F</td><td>F</td></tr>
+        <tr><td>کد تخفیف ارسال</td><td>T</td><td>F</td><td>T</td><td>F</td><td>T</td><td>F</td><td>T</td><td>F</td></tr>
+        <tr><td><strong>ارسال رایگان</strong></td><td>✔</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td><td>✘</td></tr>
+        <tr><td><strong>ارسال اکسپرس رایگان</strong></td><td>✔</td><td>✔</td><td>✘</td><td>✘</td><td>✘</td><td>✘</td><td>✘</td><td>✘</td></tr>
+      </tbody>
+    </table></div>
+    <p>هر ستون یک test case است. ادغام: R1 و R2 نتیجه‌ی یکسان دارند («عضو ویژه + مبلغ ≥ ۵۰، کد مهم نیست»)، پس می‌توان آن‌ها را با «–» (don't care) یکی کرد. اگر در جلسه‌ی تحلیل کسی نتواند بگوید R7 چه نتیجه‌ای دارد، یک ابهام در نیازمندی پیدا کرده‌اید، پیش از نوشتن حتی یک خط کد.</p>
+
+    <h3>انتقال وضعیت (State Transition Testing)</h3>
+    <p>برای سیستم‌هایی که رفتارشان به <strong>وضعیت فعلی</strong> بستگی دارد (سفارش، اشتراک، تیکت). مدل شامل وضعیت‌ها، رویدادها، انتقال‌ها و اقدام‌هاست. تست باید <strong>انتقال‌های معتبر</strong> و مهم‌تر از آن، <strong>انتقال‌های نامعتبر</strong> را بپوشاند.</p>
+    <pre class="diagram">             pay                 ship                deliver
+ [Pending] ───────► [Paid] ───────────► [Shipped] ───────────► [Delivered]
+     │                 │
+     │ cancel          │ refund
+     ▼                 ▼
+ [Cancelled]       [Refunded]</pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>وضعیت فعلی \ رویداد</th><th>pay</th><th>ship</th><th>deliver</th><th>cancel</th><th>refund</th></tr></thead>
+      <tbody>
+        <tr><td>Pending</td><td>Paid</td><td>✘</td><td>✘</td><td>Cancelled</td><td>✘</td></tr>
+        <tr><td>Paid</td><td>✘</td><td>Shipped</td><td>✘</td><td>✘</td><td>Refunded</td></tr>
+        <tr><td>Shipped</td><td>✘</td><td>✘</td><td>Delivered</td><td>✘</td><td>✘</td></tr>
+        <tr><td>Delivered / Cancelled / Refunded</td><td>✘</td><td>✘</td><td>✘</td><td>✘</td><td>✘</td></tr>
+      </tbody>
+    </table></div>
+    <p>جدول وضعیت (state table) کمک می‌کند انتقال‌های نامعتبر (✘) هم دیده شوند. پوشش پایه (<strong>0-switch</strong>): هر انتقال معتبر حداقل یک‌بار؛ پوشش قوی‌تر (<strong>1-switch</strong>): هر دنباله‌ی دوتایی از انتقال‌ها.</p>
+    <pre><code class="language-php">&lt;?php
+
+use App\Enums\OrderStatus;
+use App\Exceptions\InvalidOrderTransition;
+use App\Models\Order;
+
+it('allows valid transitions', function (OrderStatus $from, string $event, OrderStatus $to) {
+    $order = Order::factory()-&gt;make(['status' =&gt; $from]);
+
+    $order-&gt;{$event}();
+
+    expect($order-&gt;status)-&gt;toBe($to);
+})-&gt;with([
+    [OrderStatus::Pending, 'pay',     OrderStatus::Paid],
+    [OrderStatus::Pending, 'cancel',  OrderStatus::Cancelled],
+    [OrderStatus::Paid,    'ship',    OrderStatus::Shipped],
+    [OrderStatus::Paid,    'refund',  OrderStatus::Refunded],
+    [OrderStatus::Shipped, 'deliver', OrderStatus::Delivered],
+]);
+
+it('rejects invalid transitions', function (OrderStatus $from, string $event) {
+    Order::factory()-&gt;make(['status' =&gt; $from])-&gt;{$event}();
+})-&gt;with([
+    [OrderStatus::Pending,   'ship'],
+    [OrderStatus::Shipped,   'cancel'],
+    [OrderStatus::Delivered, 'refund'],
+    [OrderStatus::Cancelled, 'pay'],
+])-&gt;throws(InvalidOrderTransition::class);</code></pre>
+
+    <h3>Pairwise (All-pairs) Testing</h3>
+    <p>وقتی چند پارامتر با چند مقدار داریم، تعداد ترکیب‌ها انفجاری است. شواهد تجربی نشان می‌دهد بیشتر خطاها با تعامل <strong>یک یا دو</strong> پارامتر ایجاد می‌شوند. در pairwise، مجموعه‌ای از test caseها انتخاب می‌کنیم که <strong>هر جفت مقدار از هر دو پارامتر</strong> حداقل یک‌بار با هم ظاهر شوند.</p>
+    <p><strong>مثال:</strong> مرورگر (Chrome، Firefox، Safari) × روش پرداخت (کارت، کیف پول) × نوع کاربر (مهمان، عضو). همه‌ی ترکیب‌ها: 3×2×2 = 12. مجموعه‌ی pairwise با ۶ تست:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>مرورگر</th><th>پرداخت</th><th>کاربر</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Chrome</td><td>کارت</td><td>مهمان</td></tr>
+        <tr><td>2</td><td>Chrome</td><td>کیف پول</td><td>عضو</td></tr>
+        <tr><td>3</td><td>Firefox</td><td>کارت</td><td>عضو</td></tr>
+        <tr><td>4</td><td>Firefox</td><td>کیف پول</td><td>مهمان</td></tr>
+        <tr><td>5</td><td>Safari</td><td>کارت</td><td>مهمان</td></tr>
+        <tr><td>6</td><td>Safari</td><td>کیف پول</td><td>عضو</td></tr>
+      </tbody>
+    </table></div>
+    <p>همه‌ی جفت‌های مرورگر×پرداخت (۶)، مرورگر×کاربر (۶) و پرداخت×کاربر (۴) پوشش داده شده‌اند. صرفه‌جویی با افزایش پارامترها چشمگیر می‌شود: ۴ پارامتر سه‌مقداری = ۸۱ ترکیب، اما ۹ تست برای پوشش pairwise کافی است. ابزارهایی مثل PICT این مجموعه‌ها را تولید می‌کنند.</p>
+    <div class="callout warn"><p>pairwise تضمین نمی‌کند خطاهایی که به تعامل سه پارامتر یا بیشتر وابسته‌اند پیدا شوند. برای ترکیب‌های پرریسک شناخته‌شده، تست اختصاصی اضافه کنید.</p></div>
+
+    <h3>حدس خطا (Error Guessing)</h3>
+    <p>تکنیکی تجربه‌محور: تست‌کننده بر اساس تجربه از باگ‌های رایج، ورودی‌های مشکوک را حدس می‌زند. معمولاً به‌صورت یک چک‌لیست تیمی نگه داشته می‌شود:</p>
+    <ul>
+      <li>null، رشته‌ی خالی، فقط فاصله، رشته‌ی بسیار طولانی.</li>
+      <li>کاراکترهای فارسی و Unicode، ارقام فارسی (<code>۱۲۳</code>)، emoji، «ي/ی» و «ك/ک» عربی.</li>
+      <li>صفر، منفی، اعشار، عدد بسیار بزرگ.</li>
+      <li>ارسال دوباره‌ی فرم (double submit)، درخواست هم‌زمان (race condition)، retry.</li>
+      <li>منطقه‌ی زمانی، تغییر ساعت تابستانی، پایان ماه، سال کبیسه.</li>
+      <li>فایل خالی، فایل خیلی بزرگ، پسوند جعلی.</li>
+      <li>کاربر بدون مجوز، توکن منقضی، دسترسی به منبع کاربر دیگر (IDOR).</li>
+    </ul>
+    <div class="callout exam"><p>انتخاب تکنیک: ورودی با بازه ← EP + BVA؛ ترکیب شرط‌ها ← جدول تصمیم؛ رفتار وابسته به وضعیت و ترتیب رویدادها ← انتقال وضعیت؛ پیکربندی‌ها یا پارامترهای زیاد ← pairwise؛ و در همه‌ی موارد، error guessing به‌عنوان مکمل تجربی.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="tdd-bdd" data-title="TDD و BDD">
+    <h2>TDD و BDD</h2>
+    <h3>Test-Driven Development</h3>
+    <p><strong>TDD</strong> یک روش <em>توسعه و طراحی</em> است (نه صرفاً روش تست) که در آن پیش از نوشتن کد production، تستی می‌نویسید که fail شود و سپس کمترین کد لازم برای پاس شدن آن را می‌نویسید. چرخه‌ی آن <strong>Red → Green → Refactor</strong> است:</p>
+    <pre class="diagram">   ┌──────────► RED ───────────┐
+   │   تست کوچکی بنویس که     │
+   │   fail شود (و دلیل fail   │
+   │   درست باشد)              ▼
+REFACTOR                     GREEN
+ کد و تست را تمیز کن،       ساده‌ترین کدی که تست را
+ تست‌ها سبز بمانند  ◄────── پاس کند (حتی ساده‌لوحانه)</pre>
+    <h4>مثال کوتاه: قاعده‌ی رمز عبور</h4>
+    <pre><code class="language-php">&lt;?php
+// RED: اولین تست
+it('rejects passwords shorter than 12 characters', function () {
+    expect((new PasswordPolicy())-&gt;isValid('short'))-&gt;toBeFalse();
+});
+
+// GREEN: ساده‌ترین پیاده‌سازی
+final class PasswordPolicy
+{
+    public function isValid(string $password): bool
+    {
+        return mb_strlen($password) &gt;= 12;
+    }
+}
+
+// RED بعدی: تست جدید که پیاده‌سازی فعلی را مجبور به رشد می‌کند
+it('requires at least one digit', function () {
+    expect((new PasswordPolicy())-&gt;isValid('longpasswordwithoutdigit'))-&gt;toBeFalse()
+        -&gt;and((new PasswordPolicy())-&gt;isValid('longpassword1'))-&gt;toBeTrue();
+});
+// GREEN: افزودن preg_match('/\d/', ...) ؛ REFACTOR: استخراج قواعد به کلاس‌های جدا در صورت نیاز</code></pre>
+    <div class="grid-2">
+      <div class="card"><h4>مزایای TDD</h4><ul>
+        <li>هر خط کد دلیلی در قالب یک تست دارد؛ coverage بالا به‌صورت طبیعی.</li>
+        <li>طراحی بهتر: کد از ابتدا قابل تست، با وابستگی‌های صریح و API از دید مصرف‌کننده.</li>
+        <li>گام‌های کوچک و بازخورد سریع؛ debug کمتر.</li>
+        <li>اطمینان به refactor.</li>
+      </ul></div>
+      <div class="card"><h4>چالش‌ها</h4><ul>
+        <li>منحنی یادگیری و کندی اولیه.</li>
+        <li>در کار اکتشافی (spike، prototype) و UI کم‌ارزش‌تر است.</li>
+        <li>خطر تست‌های وابسته به پیاده‌سازی (overspecification با mock زیاد).</li>
+        <li>نیازمند انضباط؛ «test-after» با نام TDD رایج است.</li>
+      </ul></div>
+    </div>
+
+    <h3>Behavior-Driven Development</h3>
+    <p><strong>BDD</strong> توسعه‌ای از TDD است که بر <strong>رفتار از دید کسب‌وکار</strong> و <strong>زبان مشترک</strong> بین توسعه‌دهنده، QA و صاحب محصول تمرکز دارد. نیازمندی‌ها به‌صورت <strong>مثال‌های مشخص</strong> با قالب Given/When/Then نوشته می‌شوند (زبان Gherkin) و همین مثال‌ها به تست خودکار پذیرش تبدیل می‌شوند (ابزارها: Cucumber؛ در PHP: Behat).</p>
+    <pre><code class="language-plaintext">Feature: Coupon redemption
+  Scenario: Expired coupon is rejected
+    Given a coupon "AUTUMN10" that expired yesterday
+    And a cart with a subtotal of $120
+    When the customer applies the coupon "AUTUMN10"
+    Then the coupon is rejected with the message "This coupon has expired"
+    And the cart total remains $120</code></pre>
+    <p>حتی بدون Behat، می‌توان سبک BDD را در Pest/PHPUnit به کار برد: نام تست به شکل رفتار و بدنه با ساختار Given/When/Then (که همان Arrange/Act/Assert است).</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>TDD</th><th>BDD</th></tr></thead>
+      <tbody>
+        <tr><td>تمرکز</td><td>طراحی و درستی کد از دید توسعه‌دهنده</td><td>رفتار سیستم از دید کسب‌وکار</td></tr>
+        <tr><td>زبان</td><td>کد تست (PHPUnit/Pest)</td><td>زبان طبیعی ساخت‌یافته (Gherkin) + کد</td></tr>
+        <tr><td>مخاطب</td><td>توسعه‌دهندگان</td><td>توسعه‌دهنده، QA، محصول (Three Amigos)</td></tr>
+        <tr><td>سطح معمول</td><td>unit و integration</td><td>acceptance و feature</td></tr>
+        <tr><td>خروجی اصلی</td><td>کد طراحی‌شده با تست</td><td>درک مشترک + specification اجرایی</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout exam"><p>تمایز دقیق: TDD پاسخ می‌دهد «آیا کد را <strong>درست</strong> می‌سازیم؟» و BDD «آیا چیز <strong>درست</strong> را می‌سازیم؟». BDD بیش از ابزار، یک <strong>فرایند گفت‌وگو</strong> است: کشف نیازمندی با مثال‌های مشخص قبل از کدنویسی. ATDD (Acceptance Test-Driven Development) هم ایده‌ی مشابهی دارد: نوشتن تست‌های پذیرش پیش از پیاده‌سازی.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="test-structure" data-title="ساختار تست خوب: AAA و FIRST">
+    <h2>ساختار تست خوب: AAA و FIRST</h2>
+    <h3>الگوی Arrange–Act–Assert</h3>
+    <ul>
+      <li><strong>Arrange:</strong> آماده‌سازی داده، وابستگی‌ها و وضعیت.</li>
+      <li><strong>Act:</strong> اجرای <strong>یک</strong> عمل مورد تست (معمولاً یک خط).</li>
+      <li><strong>Assert:</strong> بررسی نتیجه یا اثر جانبی.</li>
+    </ul>
+    <pre><code class="language-php">&lt;?php
+
+namespace Tests\Feature;
+
+use App\Models\Coupon;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
+
+class ApplyCouponTest extends TestCase
+{
+    use RefreshDatabase;
+
+    #[Test]
+    public function an_expired_coupon_is_rejected(): void
+    {
+        // Arrange
+        $user = User::factory()-&gt;create();
+        $coupon = Coupon::factory()-&gt;expired()-&gt;create(['code' =&gt; 'AUTUMN10']);
+
+        // Act
+        $response = $this-&gt;actingAs($user)
+            -&gt;postJson('/api/cart/coupon', ['code' =&gt; $coupon-&gt;code]);
+
+        // Assert
+        $response-&gt;assertUnprocessable()
+            -&gt;assertJsonValidationErrors(['code']);
+        $this-&gt;assertDatabaseMissing('cart_coupons', ['coupon_id' =&gt; $coupon-&gt;id]);
+    }
+}</code></pre>
+    <p>قواعد مرتبط: یک رفتار در هر تست (نه لزوماً یک assert)؛ بدون منطق شرطی و حلقه در تست؛ نام تست بیانگر سناریو و نتیجه‌ی مورد انتظار؛ و Arrange کوتاه با کمک factory و helper.</p>
+
+    <h3>اصول FIRST</h3>
+    <dl class="terms">
+      <dt>Fast</dt><dd>سریع، تا توسعه‌دهنده آن را مدام اجرا کند. تست کند اجرا نمی‌شود و بی‌اثر می‌شود.</dd>
+      <dt>Independent / Isolated</dt><dd>مستقل از تست‌های دیگر و ترتیب اجرا؛ وضعیت مشترک ندارد (هر تست داده‌ی خودش را می‌سازد و پاک می‌کند).</dd>
+      <dt>Repeatable</dt><dd>در هر محیط و هر زمان نتیجه‌ی یکسان (بدون وابستگی به ساعت، شبکه، داده‌ی تصادفی کنترل‌نشده).</dd>
+      <dt>Self-validating</dt><dd>خودش pass/fail را اعلام می‌کند؛ نیاز به بررسی دستی log یا خروجی نیست.</dd>
+      <dt>Timely</dt><dd>به‌موقع نوشته می‌شود؛ ترجیحاً قبل یا هم‌زمان با کد production (TDD)، نه ماه‌ها بعد.</dd>
+    </dl>
+    <h3>ویژگی‌های دیگر تست خوب</h3>
+    <ul>
+      <li><strong>تست رفتار، نه پیاده‌سازی:</strong> با refactor بدون تغییر رفتار نباید بشکند.</li>
+      <li><strong>پیام خطای گویا:</strong> وقتی fail می‌شود، باید سریع معلوم شود چه چیزی خراب است.</li>
+      <li><strong>DAMP بیش از DRY:</strong> در تست، خوانایی (Descriptive And Meaningful Phrases) از حذف تکرار مهم‌تر است.</li>
+      <li><strong>قطعی (deterministic):</strong> کنترل زمان (<code>$this-&gt;freezeTime()</code>)، seed ثابت برای داده‌ی تصادفی، fake کردن شبکه.</li>
+    </ul>
+    <div class="callout warn"><p>ضدالگوها: تستی که هیچ assert ندارد، تست‌هایی که به ترتیب اجرا وابسته‌اند، تستی که با <code>sleep()</code> منتظر می‌ماند، تستی که چند رفتار نامرتبط را با هم بررسی می‌کند، و تستی که خروجی فعلی کد را کورکورانه به‌عنوان «مورد انتظار» کپی می‌کند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="test-doubles" data-title="Test Doubleها">
+    <h2>Test Doubleها</h2>
+    <p><strong>Test double</strong> (اصطلاح Gerard Meszaros، با الهام از «بدل» در فیلم‌سازی) هر شیئی است که در تست جایگزین یک وابستگی واقعی می‌شود؛ برای سرعت، قطعیت، جداسازی، یا شبیه‌سازی حالت‌هایی که ایجادشان با وابستگی واقعی سخت است (مثلاً timeout درگاه پرداخت).</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>تعریف</th><th>نوع بررسی</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Dummy</strong></td><td>فقط برای پر کردن پارامتر پاس داده می‌شود و هرگز استفاده نمی‌شود</td><td>—</td><td>یک Logger که در این مسیر کد اصلاً صدا زده نمی‌شود</td></tr>
+        <tr><td><strong>Stub</strong></td><td>به فراخوانی‌ها پاسخ از پیش تعیین‌شده (canned) می‌دهد</td><td>State verification (بررسی خروجی سیستم)</td><td>نرخ ارز همیشه ۱٫۱ برمی‌گرداند</td></tr>
+        <tr><td><strong>Spy</strong></td><td>stubی که فراخوانی‌ها را ثبت می‌کند تا <em>بعد از</em> Act بررسی شوند</td><td>Behavior verification پس از اجرا</td><td>ثبت می‌کند <code>send()</code> با چه آرگومانی صدا شد</td></tr>
+        <tr><td><strong>Mock</strong></td><td>از قبل با <em>انتظارات</em> برنامه‌ریزی می‌شود و اگر فراخوانی مطابق انتظار نباشد، تست را fail می‌کند</td><td>Behavior verification (تعامل)</td><td>انتظار: <code>charge()</code> دقیقاً یک‌بار با مبلغ 12900</td></tr>
+        <tr><td><strong>Fake</strong></td><td>پیاده‌سازی واقعی ولی ساده‌شده و غیرقابل استفاده در production</td><td>State verification</td><td>Repository درون‌حافظه، SQLite in-memory، <code>Storage::fake()</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>نمونه‌ها در PHPUnit</h3>
+    <pre><code class="language-php">&lt;?php
+
+use PHPUnit\Framework\TestCase;
+
+final class CheckoutServiceTest extends TestCase
+{
+    public function test_total_is_converted_with_current_rate(): void
+    {
+        // Stub: فقط پاسخ آماده
+        $rates = $this-&gt;createStub(ExchangeRates::class);
+        $rates-&gt;method('rate')-&gt;willReturn(1.1);
+
+        // Dummy: لازم برای constructor، در این سناریو استفاده نمی‌شود
+        $logger = $this-&gt;createStub(LoggerInterface::class);
+
+        $service = new CheckoutService($rates, $logger);
+
+        $this-&gt;assertSame(11000, $service-&gt;totalIn('EUR', 10000));
+    }
+
+    public function test_customer_is_charged_once(): void
+    {
+        // Mock: انتظار تعامل مشخص
+        $gateway = $this-&gt;createMock(PaymentGateway::class);
+        $gateway-&gt;expects($this-&gt;once())
+            -&gt;method('charge')
+            -&gt;with(12900, 'EUR')
+            -&gt;willReturn(new ChargeResult(id: 'ch_1', successful: true));
+
+        (new PaymentService($gateway))-&gt;pay(new Order(amount: 12900, currency: 'EUR'));
+    }
+}</code></pre>
+
+    <h3>Mockery و helperهای Laravel</h3>
+    <pre><code class="language-php">use Mockery\MockInterface;
+
+// جایگزینی binding در container با mock
+$this-&gt;mock(PaymentGateway::class, function (MockInterface $mock) {
+    $mock-&gt;shouldReceive('charge')-&gt;once()-&gt;with(12900, 'EUR')-&gt;andReturn(new ChargeResult('ch_1', true));
+});
+
+// Spy: بعد از اجرا بررسی می‌کنیم
+$spy = $this-&gt;spy(AuditLogger::class);
+$this-&gt;postJson('/api/orders/1/refund')-&gt;assertOk();
+$spy-&gt;shouldHaveReceived('record')-&gt;once();</code></pre>
+
+    <h3>Fake دست‌ساز</h3>
+    <pre><code class="language-php">final class InMemoryOrderRepository implements OrderRepository
+{
+    /** @var array&lt;int, Order&gt; */
+    private array $orders = [];
+
+    public function save(Order $order): void { $this-&gt;orders[$order-&gt;id] = $order; }
+
+    public function find(int $id): ?Order { return $this-&gt;orders[$id] ?? null; }
+}</code></pre>
+
+    <h3>کی از کدام استفاده کنیم؟</h3>
+    <ul>
+      <li><strong>Query</strong>ها (متدهایی که داده برمی‌گردانند و اثر جانبی ندارند) را <strong>stub</strong> کنید و روی آن‌ها assert تعاملی نزنید؛ نتیجه‌ی نهایی را بسنجید.</li>
+      <li><strong>Command</strong>هایی که اثر جانبی بیرونی دارند (ارسال ایمیل، شارژ کارت، انتشار event) را با <strong>mock/spy</strong> یا fake بررسی کنید؛ چون اثرشان در خروجی متد دیده نمی‌شود.</li>
+      <li>برای زیرساخت‌هایی که پیاده‌سازی سبک دارند، <strong>fake</strong> معمولاً از mock بهتر است: تست‌ها به جزئیات فراخوانی وابسته نمی‌شوند.</li>
+      <li><strong>«چیزی را که مالکش نیستید mock نکنید»:</strong> به‌جای mock کردن مستقیم SDK یک سرویس بیرونی، یک adapter/interface خودتان بسازید و آن را mock کنید؛ خود adapter را با integration/contract test بسنجید.</li>
+      <li>کلاس‌های دامنه و value objectها را mock نکنید؛ از نمونه‌ی واقعی استفاده کنید.</li>
+    </ul>
+    <div class="callout warn"><p><strong>Over-mocking</strong>: تستی که همه‌ی همکاران را mock می‌کند و ترتیب و تعداد دقیق فراخوانی‌ها را assert می‌کند، در واقع پیاده‌سازی را دوباره نوشته است. با هر refactor می‌شکند (false negative) و ممکن است با وجود باگ در یکپارچگی واقعی پاس شود (false positive، چون mock رفتار واقعی را نمایش نمی‌دهد).</p></div>
+    <div class="callout exam"><p>تفاوت stub و mock، سؤال کلاسیک است: <strong>stub</strong> ورودی غیرمستقیم را برای سیستم تحت تست فراهم می‌کند و ما <strong>وضعیت/خروجی</strong> را بررسی می‌کنیم؛ <strong>mock</strong> خروجی غیرمستقیم سیستم (فراخوانی به بیرون) را با <strong>انتظارات از پیش تعریف‌شده</strong> بررسی می‌کند. spy همان بررسی تعامل را <em>بعد از</em> اجرا انجام می‌دهد. fake یک پیاده‌سازی کارکردی ساده است. Fowler در مقاله‌ی «Mocks Aren't Stubs» همین تمایز state verification و behavior verification را توضیح می‌دهد.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="phpunit-pest" data-title="PHPUnit و Pest">
+    <h2>PHPUnit و Pest</h2>
+    <p><strong>PHPUnit</strong> چارچوب استاندارد تست در PHP است (سبک xUnit، کلاس‌محور). <strong>Pest</strong> چارچوبی روی PHPUnit با syntax تابعی و expressive است و در Laravel به‌عنوان گزینه‌ی پیش‌فرض هنگام ساخت پروژه پیشنهاد می‌شود. هر دو در یک پروژه قابل استفاده‌اند و با <code>php artisan test</code> اجرا می‌شوند.</p>
+
+    <h3>PHPUnit مدرن: attributeها و data provider</h3>
+    <pre><code class="language-php">&lt;?php
+
+namespace Tests\Unit;
+
+use App\Support\Slugger;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
+
+final class SluggerTest extends TestCase
+{
+    private Slugger $slugger;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this-&gt;slugger = new Slugger();
+    }
+
+    #[Test]
+    #[DataProvider('titles')]
+    public function it_creates_url_safe_slugs(string $title, string $expected): void
+    {
+        $this-&gt;assertSame($expected, $this-&gt;slugger-&gt;slug($title));
+    }
+
+    public static function titles(): iterable
+    {
+        yield 'simple'           =&gt; ['Hello World', 'hello-world'];
+        yield 'extra spaces'     =&gt; ['  Hello   World ', 'hello-world'];
+        yield 'special chars'    =&gt; ['PHP &amp; Laravel!', 'php-laravel'];
+    }
+
+    #[Test]
+    public function it_rejects_empty_titles(): void
+    {
+        $this-&gt;expectException(\InvalidArgumentException::class);
+
+        $this-&gt;slugger-&gt;slug('');
+    }
+}</code></pre>
+    <ul>
+      <li>در نسخه‌های جدید PHPUnit (10 به بعد)، <strong>attributeها</strong> (<code>#[Test]</code>، <code>#[DataProvider]</code>، <code>#[CoversClass]</code>) جایگزین annotationهای docblock شده‌اند و data providerها باید <code>public static</code> باشند.</li>
+      <li>چرخه‌ی عمر: <code>setUp()</code> و <code>tearDown()</code> برای هر تست؛ <code>setUpBeforeClass()</code> یک‌بار برای کلاس.</li>
+      <li><code>assertSame</code> (مقایسه‌ی دقیق با <code>===</code>) را به <code>assertEquals</code> (<code>==</code>) ترجیح دهید تا خطاهای type پنهان نماند.</li>
+      <li>پیکربندی در <code>phpunit.xml</code>: testsuiteها، متغیرهای محیطی تست (مثل <code>DB_CONNECTION</code>)، و source برای coverage.</li>
+    </ul>
+
+    <h3>Pest</h3>
+    <pre><code class="language-php">&lt;?php
+// tests/Pest.php
+pest()-&gt;extend(Tests\TestCase::class)
+    -&gt;use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+    -&gt;in('Feature');
+
+// tests/Unit/SluggerTest.php
+use App\Support\Slugger;
+
+beforeEach(function () {
+    $this-&gt;slugger = new Slugger();
+});
+
+describe('slug', function () {
+    it('creates url-safe slugs', function (string $title, string $expected) {
+        expect($this-&gt;slugger-&gt;slug($title))-&gt;toBe($expected);
+    })-&gt;with([
+        'simple'        =&gt; ['Hello World', 'hello-world'],
+        'special chars' =&gt; ['PHP &amp; Laravel!', 'php-laravel'],
+    ]);
+
+    it('rejects empty titles', fn () =&gt; $this-&gt;slugger-&gt;slug(''))
+        -&gt;throws(InvalidArgumentException::class);
+});
+
+// Feature test با Pest
+it('lists only the authenticated user orders', function () {
+    $user = User::factory()-&gt;has(Order::factory()-&gt;count(2))-&gt;create();
+    Order::factory()-&gt;count(3)-&gt;create(); // سفارش‌های کاربران دیگر
+
+    $this-&gt;actingAs($user)
+        -&gt;getJson('/api/orders')
+        -&gt;assertOk()
+        -&gt;assertJsonCount(2, 'data');
+});
+
+// Architecture test
+arch('controllers do not use the DB facade directly')
+    -&gt;expect('App\Http\Controllers')
+    -&gt;not-&gt;toUse('Illuminate\Support\Facades\DB');</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>PHPUnit</th><th>Pest</th></tr></thead>
+      <tbody>
+        <tr><td>سبک</td><td>کلاس و متد، xUnit</td><td>تابعی (<code>it</code>/<code>test</code>)، expectation API زنجیره‌ای</td></tr>
+        <tr><td>داده‌ی پارامتری</td><td>DataProvider</td><td>Dataset (<code>-&gt;with()</code>)، datasetهای مشترک</td></tr>
+        <tr><td>امکانات اضافه</td><td>—</td><td>arch testing، higher-order tests، plugins، mutation testing داخلی در نسخه‌های جدید</td></tr>
+        <tr><td>زیرساخت</td><td>هسته</td><td>روی PHPUnit اجرا می‌شود؛ assertionهای PHPUnit و Laravel در دسترس‌اند</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>انتخاب بین PHPUnit و Pest بیشتر سلیقه و قرارداد تیمی است، نه قابلیت. مهم‌تر از چارچوب، اصول تست خوب است. اجرای موازی: <code>php artisan test --parallel</code> (Laravel برای هر process دیتابیس تست جدا می‌سازد).</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="laravel-testing" data-title="تست در Laravel">
+    <h2>تست در Laravel</h2>
+
+    <h3>HTTP / Feature test</h3>
+    <pre><code class="language-php">&lt;?php
+
+use App\Models\Product;
+use App\Models\User;
+use Laravel\Sanctum\Sanctum;
+
+it('creates an order for the authenticated customer', function () {
+    $user = User::factory()-&gt;create();
+    $product = Product::factory()-&gt;create(['price_cents' =&gt; 2_500, 'stock' =&gt; 10]);
+    Sanctum::actingAs($user, ['orders:create']);
+
+    $response = $this-&gt;postJson('/api/orders', [
+        'items' =&gt; [['product_id' =&gt; $product-&gt;id, 'quantity' =&gt; 2]],
+    ]);
+
+    $response-&gt;assertCreated()
+        -&gt;assertJsonPath('data.total_cents', 5_000)
+        -&gt;assertJsonStructure(['data' =&gt; ['id', 'status', 'total_cents', 'items']]);
+
+    $this-&gt;assertDatabaseHas('orders', ['user_id' =&gt; $user-&gt;id, 'total_cents' =&gt; 5_000]);
+    expect($product-&gt;fresh()-&gt;stock)-&gt;toBe(8);
+});
+
+it('validates quantity', function () {
+    $this-&gt;actingAs(User::factory()-&gt;create())
+        -&gt;postJson('/api/orders', ['items' =&gt; [['product_id' =&gt; 1, 'quantity' =&gt; 0]]])
+        -&gt;assertUnprocessable()
+        -&gt;assertJsonValidationErrors(['items.0.quantity']);
+});
+
+it('forbids viewing another customer order', function () {
+    $order = Order::factory()-&gt;create();
+
+    $this-&gt;actingAs(User::factory()-&gt;create())
+        -&gt;getJson("/api/orders/{$order-&gt;id}")
+        -&gt;assertForbidden();
+});
+
+it('requires authentication', function () {
+    $this-&gt;getJson('/api/orders')-&gt;assertUnauthorized();
+});</code></pre>
+    <p>assertionهای پرکاربرد: <code>assertOk</code>، <code>assertCreated</code>، <code>assertNoContent</code>، <code>assertForbidden</code>، <code>assertNotFound</code>، <code>assertUnprocessable</code>، <code>assertJson</code>، <code>assertJsonPath</code>، <code>assertJsonCount</code>، <code>assertRedirect</code>، <code>assertSessionHasErrors</code>؛ برای دیتابیس: <code>assertDatabaseHas</code>، <code>assertDatabaseMissing</code>، <code>assertDatabaseCount</code>، <code>assertModelExists</code>، <code>assertSoftDeleted</code>.</p>
+
+    <h3>استراتژی‌های دیتابیس</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Trait</th><th>چه می‌کند</th><th>کاربرد / محدودیت</th></tr></thead>
+      <tbody>
+        <tr><td><code>RefreshDatabase</code></td><td>در ابتدای اجرا (اگر لازم باشد) migrationها را اجرا می‌کند و سپس هر تست را در یک <strong>transaction</strong> می‌پیچد که در پایان rollback می‌شود. برای SQLite in-memory، migration در هر تست اجرا می‌شود.</td><td>پیش‌فرض توصیه‌شده؛ سریع و schema همیشه به‌روز.</td></tr>
+        <tr><td><code>DatabaseTransactions</code></td><td>فقط transaction و rollback؛ migration اجرا <strong>نمی‌کند</strong>.</td><td>وقتی schema را خودتان آماده کرده‌اید (مثلاً دیتابیس تست از قبل migrate شده).</td></tr>
+        <tr><td><code>DatabaseMigrations</code></td><td>قبل از هر تست migrate و بعد از آن rollback.</td><td>کند؛ برای مواردی که transaction ممکن نیست.</td></tr>
+        <tr><td><code>DatabaseTruncation</code></td><td>جداول را بعد از تست truncate می‌کند.</td><td>تست‌های مرورگر (Dusk) که در process جدا اجرا می‌شوند و transaction تست را نمی‌بینند.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>محدودیت‌های رویکرد transaction: اگر کد تحت تست از <strong>connection دیگری</strong> استفاده کند یا در <strong>process دیگری</strong> اجرا شود (مرورگر Dusk، worker صف واقعی)، داده‌های commit‌نشده‌ی تست را نمی‌بیند. همچنین دستورات DDL در MySQL باعث commit ضمنی (implicit commit) می‌شوند. در این موارد از DatabaseMigrations یا DatabaseTruncation استفاده کنید.</p></div>
+    <div class="callout note"><p>SQLite in-memory سریع است ولی رفتارش با MySQL/PostgreSQL production یکسان نیست (نوع ستون‌ها، foreign key، توابع JSON، collation). برای اطمینان، حداقل در CI تست‌ها را روی همان موتور دیتابیس production اجرا کنید.</p></div>
+
+    <h3>Model Factory</h3>
+    <pre><code class="language-php">// database/factories/OrderFactory.php
+public function definition(): array
+{
+    return [
+        'user_id'     =&gt; User::factory(),
+        'status'      =&gt; OrderStatus::Pending,
+        'total_cents' =&gt; fake()-&gt;numberBetween(1_000, 100_000),
+    ];
+}
+
+public function paid(): static
+{
+    return $this-&gt;state(fn () =&gt; ['status' =&gt; OrderStatus::Paid, 'paid_at' =&gt; now()]);
+}
+
+// استفاده
+$order  = Order::factory()-&gt;paid()-&gt;create();
+$orders = Order::factory()-&gt;count(3)-&gt;for($user)-&gt;create();
+$user   = User::factory()-&gt;has(Order::factory()-&gt;count(2)-&gt;paid())-&gt;create();
+$draft  = Order::factory()-&gt;make();   // بدون ذخیره در دیتابیس</code></pre>
+    <p>factoryها Arrange را کوتاه و خوانا می‌کنند. تنها فیلدهایی را که برای سناریو <strong>مهم</strong>اند صریحاً در تست مقداردهی کنید تا خواننده بفهمد کدام داده نتیجه را تعیین می‌کند.</p>
+
+    <h3>Fakeهای داخلی Laravel</h3>
+    <pre><code class="language-php">use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\{Bus, Event, Http, Mail, Notification, Queue, Storage};
+
+it('places an order and triggers side effects', function () {
+    Mail::fake();
+    Queue::fake();
+    Notification::fake();
+    Storage::fake('s3');
+    Http::preventStrayRequests();
+    Http::fake([
+        'api.gateway.test/charges' =&gt; Http::response(['id' =&gt; 'ch_123', 'status' =&gt; 'succeeded'], 201),
+    ]);
+
+    $user = User::factory()-&gt;create();
+    // Event::fake را بعد از factoryها صدا بزنید تا eventهای مدل (مثلاً تولید UUID) اجرا شوند
+    Event::fake([OrderPlaced::class]);
+
+    $this-&gt;actingAs($user)-&gt;postJson('/api/orders', validOrderPayload())-&gt;assertCreated();
+
+    Mail::assertQueued(OrderConfirmation::class, fn ($mail) =&gt; $mail-&gt;hasTo($user-&gt;email));
+    Queue::assertPushed(GenerateInvoicePdf::class);
+    Event::assertDispatched(OrderPlaced::class);
+    Notification::assertNothingSent();
+    Http::assertSent(fn (Request $request) =&gt;
+        $request-&gt;url() === 'https://api.gateway.test/charges'
+        &amp;&amp; $request['amount'] === 5_000
+    );
+});</code></pre>
+    <ul>
+      <li><code>Mail::assertSent</code> برای mailable معمولی و <code>Mail::assertQueued</code> برای mailableی که <code>ShouldQueue</code> را پیاده‌سازی می‌کند.</li>
+      <li><code>Queue::fake()</code> jobها را اجرا نمی‌کند؛ خود منطق job را در تست جداگانه با فراخوانی مستقیم <code>handle()</code> یا <code>dispatchSync</code> تست کنید.</li>
+      <li><code>Event::fake()</code> بدون آرگومان همه‌ی eventها، شامل eventهای مدل Eloquent را متوقف می‌کند؛ بهتر است فقط eventهای مورد نظر را fake کنید.</li>
+      <li><code>Http::preventStrayRequests()</code> هر درخواست HTTP fake‌نشده را به خطا تبدیل می‌کند؛ از تماس ناخواسته با سرویس واقعی جلوگیری می‌کند.</li>
+      <li>این fakeها در اصطلاح test double ترکیبی از <strong>fake و spy</strong>اند: رفتار را جایگزین و فراخوانی‌ها را ثبت می‌کنند.</li>
+    </ul>
+
+    <h3>احراز هویت و زمان</h3>
+    <pre><code class="language-php">$this-&gt;actingAs($admin);                       // session guard
+$this-&gt;actingAs($user, 'api');                 // guard مشخص
+Sanctum::actingAs($user, ['orders:read']);     // token abilities
+
+$this-&gt;freezeTime();                           // ثابت کردن now()
+$this-&gt;travel(31)-&gt;days();                     // جلو بردن زمان
+$this-&gt;travelTo(now()-&gt;endOfMonth());
+expect($subscription-&gt;fresh()-&gt;isExpired())-&gt;toBeTrue();</code></pre>
+    <div class="callout exam"><p>در سؤال «فرق RefreshDatabase و DatabaseTransactions»: هر دو هر تست را در transaction اجرا و rollback می‌کنند؛ تفاوت اصلی این است که <strong>RefreshDatabase مسئولیت migrate کردن schema را هم دارد</strong> (یک‌بار در هر اجرای suite)، اما DatabaseTransactions فرض می‌کند schema آماده است. هر دو در سناریوهای چند process (Dusk) کار نمی‌کنند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="coverage-mutation" data-title="Coverage و Mutation Testing">
+    <h2>Coverage و Mutation Testing</h2>
+    <p><strong>Code coverage</strong> نشان می‌دهد چه بخشی از کد هنگام اجرای تست‌ها <strong>اجرا شده است</strong>. یک معیار white-box است و پاسخ می‌دهد «کجا تست نداریم»، نه «تست‌ها چقدر خوب‌اند».</p>
+    <h3>انواع coverage</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>تعریف</th><th>قدرت</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Line / Statement</strong></td><td>درصد خطوط/دستوراتی که حداقل یک‌بار اجرا شده‌اند</td><td>ضعیف‌ترین</td></tr>
+        <tr><td><strong>Function / Method</strong></td><td>درصد توابعی که حداقل یک‌بار فراخوانی شده‌اند</td><td>بسیار ضعیف</td></tr>
+        <tr><td><strong>Branch / Decision</strong></td><td>هر شاخه‌ی هر تصمیم (true و false هر <code>if</code>) حداقل یک‌بار</td><td>قوی‌تر از line</td></tr>
+        <tr><td><strong>Condition</strong></td><td>هر شرط اتمی داخل یک تصمیم مرکب، هم true و هم false شده باشد</td><td>مکمل branch</td></tr>
+        <tr><td><strong>Path</strong></td><td>هر مسیر یکتای اجرا از ابتدا تا انتهای تابع</td><td>قوی‌ترین؛ با حلقه‌ها و شرط‌های زیاد انفجاری</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code class="language-php">public function shippingCost(Order $order): int
+{
+    $cost = 1_000;
+    if ($order-&gt;customer-&gt;isPremium()) {   // تصمیم A
+        $cost = 0;
+    }
+    if ($order-&gt;isExpress()) {              // تصمیم B
+        $cost += 2_000;
+    }
+    return $cost;
+}</code></pre>
+    <ul>
+      <li><strong>Line ۱۰۰٪</strong> با یک تست: مشتری premium + express (همه‌ی خطوط اجرا می‌شوند).</li>
+      <li><strong>Branch ۱۰۰٪</strong> با دو تست: (premium، express) و (غیر premium، غیر express)؛ هر تصمیم هر دو شاخه را دیده است.</li>
+      <li><strong>Path ۱۰۰٪</strong> با چهار تست: هر چهار ترکیب A×B. فقط این سطح تضمین می‌کند حالت «premium + express» با «غیر premium + express» مقایسه شده است.</li>
+    </ul>
+    <pre><code class="language-bash"># نیاز به Xdebug (line، branch و path) یا PCOV (فقط line؛ سریع‌تر)
+php artisan test --coverage --min=80
+XDEBUG_MODE=coverage ./vendor/bin/phpunit --coverage-html build/coverage
+XDEBUG_MODE=coverage ./vendor/bin/phpunit --path-coverage --coverage-text</code></pre>
+
+    <h3>محدودیت‌های coverage</h3>
+    <ul>
+      <li><strong>اجرا شدن ≠ تست شدن:</strong> تستی بدون assert هم coverage را بالا می‌برد.</li>
+      <li>نیازمندی‌های <strong>پیاده‌نشده</strong> را نشان نمی‌دهد.</li>
+      <li>ترکیب داده‌ها و مقادیر مرزی را نمی‌سنجد (یک خط می‌تواند برای ورودی ۹۹ درست و برای ۱۰۰ غلط باشد).</li>
+      <li><strong>Goodhart's law:</strong> وقتی coverage هدف شود، تیم تست‌های بی‌ارزش برای بالا بردن عدد می‌نویسد.</li>
+      <li>کاربرد درست: پیدا کردن <strong>کد تست‌نشده‌ی پرریسک</strong>، و جلوگیری از کاهش coverage در PRها (به‌جای هدف مطلق ۱۰۰٪).</li>
+    </ul>
+
+    <h3>Mutation Testing</h3>
+    <p><strong>Mutation testing</strong> کیفیت <em>تست‌ها</em> را می‌سنجد: ابزار تغییرات کوچکی (<strong>mutant</strong>) در کد production ایجاد می‌کند (مثلاً <code>&gt;=</code> را به <code>&gt;</code>، <code>+</code> را به <code>-</code>، <code>true</code> را به <code>false</code> تبدیل یا یک فراخوانی متد را حذف می‌کند) و تست‌ها را دوباره اجرا می‌کند:</p>
+    <ul>
+      <li>اگر حداقل یک تست fail شود، mutant <strong>killed</strong> است (خوب: تست‌ها تغییر را تشخیص دادند).</li>
+      <li>اگر همه‌ی تست‌ها pass شوند، mutant <strong>escaped/survived</strong> است (بد: تست‌ها این رفتار را واقعاً نمی‌سنجند).</li>
+      <li><strong>MSI (Mutation Score Indicator)</strong> = درصد mutantهای killed (و نیز timeout/error) از کل mutantها.</li>
+    </ul>
+    <pre><code class="language-php">// کد اصلی
+if ($subtotal &gt;= 10_000) { return 5; }
+
+// mutant تولیدشده توسط ابزار
+if ($subtotal &gt; 10_000) { return 5; }
+
+// اگر هیچ تستی با subtotal دقیقاً 10_000 وجود نداشته باشد، این mutant زنده می‌ماند
+// ← نشانه‌ی نبود تست مقدار مرزی (BVA)</code></pre>
+    <pre><code class="language-bash">composer require --dev infection/infection
+vendor/bin/infection --threads=4 --min-msi=70 --min-covered-msi=85
+# فقط فایل‌های تغییرکرده در PR (برای سرعت)
+vendor/bin/infection --git-diff-filter=AM --git-diff-base=origin/main</code></pre>
+    <ul>
+      <li><strong>Infection</strong> ابزار اصلی mutation testing در PHP است و با PHPUnit و Pest کار می‌کند؛ Pest هم در نسخه‌های جدید قابلیت mutation testing داخلی دارد.</li>
+      <li><strong>Covered Code MSI</strong> فقط mutantهای کدی را که تحت پوشش تست است در نظر می‌گیرد.</li>
+      <li><strong>هزینه:</strong> کند است (کل suite برای هر mutant)؛ معمولاً روی کد دامنه‌ی حیاتی یا فقط فایل‌های تغییرکرده‌ی PR اجرا می‌شود.</li>
+      <li><strong>Equivalent mutant:</strong> تغییری که رفتار را عوض نمی‌کند و هیچ تستی نمی‌تواند آن را بکشد؛ باید نادیده گرفته شود.</li>
+    </ul>
+    <div class="callout exam"><p>جمع‌بندی: coverage می‌گوید کدام کد <strong>اجرا شده</strong>؛ mutation testing می‌گوید کدام رفتار <strong>واقعاً assert شده</strong>. ۱۰۰٪ coverage با MSI پایین یعنی تست‌هایی که کد را اجرا می‌کنند ولی نتیجه را درست بررسی نمی‌کنند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="flaky-legacy" data-title="تست‌های ناپایدار و کد Legacy">
+    <h2>تست‌های ناپایدار و کد Legacy</h2>
+    <h3>Flaky test</h3>
+    <p><strong>تست ناپایدار (flaky)</strong> تستی است که بدون هیچ تغییری در کد، گاهی pass و گاهی fail می‌شود. خطرش فراتر از یک تست است: تیم یاد می‌گیرد «قرمز شدن CI را نادیده بگیرد» و آن‌وقت fail واقعی هم دیده نمی‌شود.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>علت رایج</th><th>مثال</th><th>راه‌حل</th></tr></thead>
+      <tbody>
+        <tr><td>وابستگی به زمان</td><td>تست «انقضای امروز» نزدیک نیمه‌شب fail می‌شود</td><td><code>freezeTime()</code>، <code>travelTo()</code>، تزریق Clock</td></tr>
+        <tr><td>وابستگی به ترتیب / وضعیت مشترک</td><td>static property، cache یا singleton که بین تست‌ها پاک نمی‌شود</td><td>reset در <code>setUp</code>/<code>tearDown</code>؛ اجرای تست‌ها با ترتیب تصادفی (<code>--order-by=random</code>) برای کشف</td></tr>
+        <tr><td>داده‌ی تصادفی</td><td>Faker گاهی مقدار مرزی یا تکراری تولید می‌کند (ایمیل unique)</td><td>مقدار صریح برای فیلدهای مهم؛ seed ثابت</td></tr>
+        <tr><td>فرض درباره‌ی ID یا ترتیب</td><td><code>assertJsonPath('data.0.id', 1)</code> در حالی که ترتیب بدون <code>orderBy</code> تضمین نشده</td><td>ترتیب صریح؛ مقایسه با ID مدل ساخته‌شده</td></tr>
+        <tr><td>شبکه و سرویس بیرونی</td><td>فراخوانی واقعی API</td><td><code>Http::fake()</code> و <code>preventStrayRequests()</code></td></tr>
+        <tr><td>همزمانی و async</td><td>منتظر ماندن با <code>sleep</code> در تست مرورگر</td><td>انتظار برای شرط (<code>waitFor</code>) به‌جای زمان ثابت</td></tr>
+        <tr><td>اجرای موازی</td><td>دو process روی یک فایل یا دیتابیس مشترک</td><td>منابع جدا برای هر process (Laravel برای هر process دیتابیس تست جدا می‌سازد)</td></tr>
+      </tbody>
+    </table></div>
+    <h4>رویکرد تیمی</h4>
+    <ol>
+      <li>تست flaky را <strong>جدی</strong> بگیرید؛ گاهی نشانه‌ی باگ واقعی همزمانی در کد production است.</li>
+      <li>تشخیص: اجرای مکرر (مثلاً در یک حلقه‌ی shell یا با <code>-&gt;repeat(100)</code> در Pest)، اجرای تکی در برابر کل suite، ترتیب تصادفی.</li>
+      <li><strong>قرنطینه</strong>ی موقت (گروه جدا و ticket با مالک) تا CI قابل اعتماد بماند؛ نه حذف بی‌صدا.</li>
+      <li>رفع علت ریشه‌ای؛ retry خودکار فقط مشکل را پنهان می‌کند.</li>
+    </ol>
+
+    <h3>تست کد Legacy</h3>
+    <p>Michael Feathers کد legacy را این‌طور تعریف می‌کند: <strong>«کدی که تست ندارد»</strong>. مشکل اصلی: برای تغییر امن به تست نیاز داریم و برای نوشتن تست اغلب باید کد را تغییر دهیم (dilemma). روش پیشنهادی:</p>
+    <ol>
+      <li><strong>نقاط تغییر</strong> را مشخص کنید (کجا باید تغییر دهیم).</li>
+      <li><strong>نقاط تست</strong> را پیدا کنید (از کجا می‌توان رفتار را مشاهده کرد؛ اغلب از بیرونی‌ترین لایه، مثل HTTP).</li>
+      <li><strong>وابستگی‌ها را بشکنید</strong> با کمترین و امن‌ترین تغییر (ایجاد <strong>seam</strong>).</li>
+      <li><strong>Characterization test</strong> بنویسید: تستی که رفتار <em>فعلی</em> را (حتی اگر عجیب باشد) ثبت می‌کند، نه رفتار «درست» را.</li>
+      <li>تغییر و refactor را زیر پوشش این تست‌ها انجام دهید.</li>
+    </ol>
+    <dl class="terms">
+      <dt>Seam</dt><dd>جایی که می‌توان رفتار را بدون ویرایش همان نقطه تغییر داد؛ مثلاً پارامتر constructor، binding در container، یا facade قابل fake.</dd>
+      <dt>Characterization / Golden Master</dt><dd>خروجی فعلی سیستم برای مجموعه‌ای از ورودی‌ها ذخیره و در تست با خروجی جدید مقایسه می‌شود (approval/snapshot testing).</dd>
+      <dt>Sprout Method / Class</dt><dd>کد جدید را در متد یا کلاس جدید و تست‌شده بنویسید و فقط از کد قدیمی صدایش بزنید.</dd>
+      <dt>Wrap Method</dt><dd>متد قدیمی را تغییر نام دهید و متد جدیدی با نام قبلی بسازید که رفتار جدید را قبل یا بعد از فراخوانی قدیمی اضافه می‌کند.</dd>
+    </dl>
+    <pre><code class="language-php">// قبل: وابستگی پنهان و غیرقابل تست
+class InvoiceService
+{
+    public function send(int $id): void
+    {
+        $invoice = DB::table('invoices')-&gt;find($id);
+        $pdf = (new PdfRenderer())-&gt;render($invoice);   // new داخل متد
+        (new SmtpMailer())-&gt;send($invoice-&gt;email, $pdf); // ایمیل واقعی!
+    }
+}
+
+// بعد: ایجاد seam با تزریق وابستگی (Parameterize Constructor)
+class InvoiceService
+{
+    public function __construct(
+        private readonly PdfRenderer $renderer,
+        private readonly Mailer $mailer,   // interface
+    ) {}
+    // ...
+}
+// حالا در تست: $this-&gt;mock(Mailer::class) یا یک fake؛ container در Laravel وابستگی‌ها را خودکار تزریق می‌کند</code></pre>
+    <div class="callout tip"><p>در Laravel، feature testهای HTTP بهترین نقطه‌ی شروع برای legacy هستند: بدون تغییر کد داخلی، رفتار بیرونی endpointها را ثبت می‌کنند. facadeها (<code>Mail::fake()</code>، <code>Http::fake()</code>) و <code>$this-&gt;instance()</code>/<code>$this-&gt;mock()</code> هم seamهای آماده‌ای فراهم می‌کنند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="contract-regression" data-title="Contract، Regression و Smoke">
+    <h2>Contract، Regression و Smoke</h2>
+    <h3>Contract Testing</h3>
+    <p>در سیستم‌های توزیع‌شده (microservice، فرانت جدا، اپ موبایل)، unit test هر طرف ممکن است سبز باشد ولی دو طرف درباره‌ی شکل پیام توافق نداشته باشند. تست E2E بین همه‌ی سرویس‌ها کند و شکننده است. <strong>Contract testing</strong> بررسی می‌کند هر طرف به <strong>قرارداد مشترک</strong> پایبند است، بدون اینکه همه‌ی سرویس‌ها هم‌زمان بالا باشند.</p>
+    <ul>
+      <li><strong>Consumer-Driven Contract (CDC):</strong> مصرف‌کننده در تست‌های خود انتظاراتش از provider را ثبت می‌کند (درخواست‌ها و حداقل پاسخ مورد نیاز)؛ این انتظارات به فایل قرارداد (pact) تبدیل و در pipeline provider در برابر سرویس واقعی <strong>verify</strong> می‌شود. ابزار معروف: <strong>Pact</strong> (با پیاده‌سازی PHP). مزیت: provider می‌داند کدام فیلدها واقعاً استفاده می‌شوند و تغییرات breaking قبل از deploy کشف می‌شوند.</li>
+      <li><strong>Schema-based (provider-driven):</strong> provider یک spec (مثلاً OpenAPI) منتشر می‌کند و در تست‌های provider، پاسخ‌های واقعی با spec اعتبارسنجی می‌شوند (مثلاً با <code>league/openapi-psr7-validator</code>)؛ مصرف‌کننده هم mock خود را از همان spec می‌سازد.</li>
+    </ul>
+    <pre class="diagram">Consumer (Mobile/SPA)                     Provider (Laravel API)
+  tests vs. Pact mock ──► pact.json ──► broker ──► verify against real API
+                                                     │
+                       can-i-deploy? ◄───────────────┘</pre>
+
+    <h3>Regression Testing</h3>
+    <p><strong>Regression test</strong> یعنی اجرای مجدد تست‌ها بعد از هر تغییر برای اطمینان از اینکه قابلیت‌های <strong>قبلاً سالم</strong> خراب نشده‌اند. در عمل، suite خودکار کامل که در CI روی هر PR اجرا می‌شود، همان regression suite است.</p>
+    <ul>
+      <li>قاعده‌ی طلایی: <strong>هر باگ = یک تست</strong>. اول تستی بنویسید که باگ را بازتولید کند و fail شود، سپس رفع کنید.</li>
+      <li>اولویت‌بندی بر اساس ریسک وقتی suite بزرگ است (بخش‌های تغییرکرده و حیاتی اول).</li>
+    </ul>
+
+    <h3>Smoke و Sanity Testing</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Smoke test</h4><ul>
+        <li>تست <strong>سطحی و گسترده</strong> از مسیرهای حیاتی بعد از build یا deploy: «آیا سیستم اصلاً بالا آمده و کار می‌کند؟»</li>
+        <li>سریع (چند دقیقه یا کمتر)؛ اگر fail شود، تست‌های بعدی یا انتشار متوقف می‌شود.</li>
+        <li>مثال: صفحه‌ی اصلی ۲۰۰ می‌دهد، login کار می‌کند، endpoint سلامت (<code>/up</code> در Laravel 11+) سبز است، یک سفارش تستی ساخته می‌شود.</li>
+      </ul></div>
+      <div class="card"><h4>Sanity test</h4><ul>
+        <li>تست <strong>محدود و عمیق</strong> روی یک قابلیت یا رفع باگ مشخص.</li>
+        <li>بعد از یک تغییر کوچک: «آیا همین مورد درست شد و اطرافش سالم است؟»</li>
+        <li>معمولاً بدون مستندسازی کامل و سریع.</li>
+      </ul></div>
+    </div>
+    <pre><code class="language-bash"># smoke test ساده بعد از deploy (در pipeline)
+curl -fsS https://staging.example.com/up &gt; /dev/null || exit 1
+curl -fsS -o /dev/null -w "%{http_code}" https://staging.example.com/login | grep -q 200 || exit 1</code></pre>
+
+    <h3>Acceptance و UAT</h3>
+    <p><strong>Acceptance testing</strong> تأیید می‌کند که سیستم <strong>معیارهای پذیرش</strong> (acceptance criteria) نیازمندی را برآورده می‌کند. ممکن است خودکار باشد (سناریوهای BDD) یا توسط کاربر/مشتری انجام شود (<strong>UAT</strong>). alpha testing درون سازمان و beta testing با کاربران واقعی محدود انجام می‌شود.</p>
+    <div class="callout exam"><p>تفاوت smoke و regression: smoke «گسترده و سطحی» و سریع است تا تصمیم بگیریم build ارزش تست بیشتر یا deploy را دارد یا نه؛ regression «جامع» است و هدفش کشف اثر جانبی تغییرات روی قابلیت‌های موجود است. smoke معمولاً زیرمجموعه‌ی کوچکی از regression suite است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-testing-1">
+      <summary>هرم تست را رسم و توضیح دهید. چرا تعداد تست‌های E2E باید کم باشد؟ Testing Trophy چه نقدی به هرم دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> هرم تست (Mike Cohn) راهنمایی برای توزیع تست‌هاست: پایه‌ی پهن از <strong>unit test</strong>، میانه‌ای از <strong>integration/feature test</strong> و رأس باریکی از <strong>E2E/UI test</strong>.</p>
+        <pre class="diagram">      /\      E2E (کم)
+     /──\     Integration / Feature
+    /────\    Unit (زیاد)</pre>
+        <p><strong>چرا E2E کم؟</strong></p>
+        <ul>
+          <li><strong>کند:</strong> مرورگر، شبکه و کل stack؛ ثانیه‌ها به ازای هر تست.</li>
+          <li><strong>شکننده (flaky):</strong> زمان‌بندی، داده‌ی مشترک، سرویس‌های بیرونی.</li>
+          <li><strong>تشخیص مبهم:</strong> fail شدن، محل خطا را مشخص نمی‌کند.</li>
+          <li><strong>نگهداری پرهزینه:</strong> با تغییر UI می‌شکند.</li>
+        </ul>
+        <p>پس منطق ترکیبی و حالت‌های متعدد در پایین تست می‌شوند و E2E فقط برای مسیرهای حیاتی (ثبت‌نام، پرداخت) است. ضدالگوی مقابل «بستنی قیفی» است.</p>
+        <p><strong>Testing Trophy</strong> (Kent C. Dodds): static analysis در پایه، و <strong>بیشترین سهم برای integration</strong>. نقد آن به هرم: unit testهای ریز اغلب به جزئیات پیاده‌سازی وابسته‌اند و اطمینان کمی درباره‌ی کارکرد واقعی اجزا با هم می‌دهند؛ integration test بهترین نسبت اطمینان به هزینه را دارد.</p>
+        <p><strong>در Laravel:</strong> feature testهای HTTP (داخل process، سریع) ستون اصلی، unit test برای منطق دامنه‌ی پیچیده، چند Dusk/Playwright برای مسیرهای حیاتی، و PHPStan و Pint در پایه. نسبت‌ها قانون نیستند؛ هدف بیشترین اطمینان با کمترین هزینه است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-2">
+      <summary>تفاوت unit test، integration test، feature test و E2E test را با مثال در یک پروژه‌ی Laravel توضیح دهید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Unit:</strong> یک واحد منطق در انزوا، بدون دیتابیس و شبکه؛ بسیار سریع. مثال: <code>DiscountPolicy::discountFor(10_000)</code> برابر ۵۰۰ است؛ یا value object <code>Money</code>. در Laravel معمولاً از <code>PHPUnit\Framework\TestCase</code> ارث می‌برد و اپلیکیشن را boot نمی‌کند.</li>
+          <li><strong>Integration:</strong> همکاری کد با یک زیرساخت یا جزء واقعی. مثال: یک query scope پیچیده یا Repository که روی MySQL تست واقعاً اجرا می‌شود؛ یا adapter درگاه پرداخت در برابر sandbox.</li>
+          <li><strong>Feature (functional):</strong> یک قابلیت کامل از ورودی سیستم (HTTP) تا خروجی، با کل اپلیکیشن داخل process تست و سرویس‌های بیرونی fake:
+            <pre><code class="language-php">$this-&gt;actingAs($user)-&gt;postJson('/api/orders', $payload)-&gt;assertCreated();
+$this-&gt;assertDatabaseHas('orders', ['user_id' =&gt; $user-&gt;id]);</code></pre>
+          </li>
+          <li><strong>E2E:</strong> کل جریان از دید کاربر با رابط واقعی (مرورگر) روی برنامه‌ی در حال اجرا؛ مثلاً با Laravel Dusk: ورود، افزودن به سبد، پرداخت، و دیدن صفحه‌ی تأیید. شامل JavaScript فرانت هم می‌شود.</li>
+        </ul>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Unit</th><th>Integration</th><th>Feature</th><th>E2E</th></tr></thead>
+          <tbody>
+            <tr><td>سرعت</td><td>خیلی بالا</td><td>متوسط</td><td>متوسط</td><td>پایین</td></tr>
+            <tr><td>اطمینان از کل سیستم</td><td>کم</td><td>متوسط</td><td>بالا (بک‌اند)</td><td>بیشترین</td></tr>
+            <tr><td>دقت تشخیص محل خطا</td><td>بیشترین</td><td>بالا</td><td>متوسط</td><td>کم</td></tr>
+            <tr><td>پایداری</td><td>بالا</td><td>بالا</td><td>بالا</td><td>پایین‌تر</td></tr>
+          </tbody>
+        </table></div>
+        <p>مرز «unit» بین مکتب classical (واحد = رفتار، فقط وابستگی‌های بیرونی جایگزین می‌شوند) و London (واحد = کلاس، همه‌ی همکاران mock) محل بحث است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-3">
+      <summary>تکنیک‌های افراز هم‌ارز (EP) و تحلیل مقادیر مرزی (BVA) را تعریف کنید و برای فیلد «سن» که باید بین ۱۸ تا ۶۵ (شامل هر دو) باشد، test caseها را طراحی کنید.</summary>
+      <div class="answer">
+        <p><strong>EP:</strong> دامنه‌ی ورودی به کلاس‌هایی تقسیم می‌شود که سیستم با همه‌ی اعضای هر کلاس یکسان رفتار می‌کند؛ از هر کلاس (معتبر و نامعتبر) یک نماینده تست می‌شود. هدف: کاهش تعداد تست بدون از دست دادن پوشش منطقی.</p>
+        <p><strong>BVA:</strong> چون خطاها در مرزها متمرکزند (off-by-one، <code>&lt;</code> به‌جای <code>&lt;=</code>)، مقادیر روی مرز و کنار آن تست می‌شوند.</p>
+        <p><strong>کلاس‌ها برای سن ۱۸ تا ۶۵:</strong></p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>کلاس</th><th>بازه</th><th>نماینده</th><th>انتظار</th></tr></thead>
+          <tbody>
+            <tr><td>نامعتبر (کم)</td><td>&lt; 18</td><td>10</td><td>رد</td></tr>
+            <tr><td>معتبر</td><td>18 … 65</td><td>40</td><td>قبول</td></tr>
+            <tr><td>نامعتبر (زیاد)</td><td>&gt; 65</td><td>80</td><td>رد</td></tr>
+            <tr><td>نامعتبر (نوع)</td><td>غیرعدد، اعشاری، خالی</td><td><code>"abc"</code>، <code>20.5</code>، <code>null</code></td><td>رد</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>مقادیر مرزی (دومقداری):</strong> 17، 18، 65، 66. (سه‌مقداری: 17، 18، 19، 64، 65، 66.)</p>
+        <pre><code class="language-php">it('validates age boundaries', function (mixed $age, bool $valid) {
+    $validator = Validator::make(['age' =&gt; $age], ['age' =&gt; ['required', 'integer', 'between:18,65']]);
+    expect($validator-&gt;passes())-&gt;toBe($valid);
+})-&gt;with([
+    [17, false], [18, true], [40, true], [65, true], [66, false],
+    ['abc', false], [20.5, false], [null, false],
+]);</code></pre>
+        <p><strong>نتیجه:</strong> به‌جای صدها مقدار، حدود ۸ تست با احتمال بالای کشف خطا. اگر برنامه‌نویس <code>&gt; 18</code> نوشته باشد، تست 18 fail می‌شود. محدودیت: این تکنیک‌ها تعامل بین چند فیلد را پوشش نمی‌دهند (برای آن جدول تصمیم یا pairwise).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-4">
+      <summary>جدول تصمیم (Decision Table) چیست و چه زمانی از آن استفاده می‌شود؟ برای قاعده‌ی «وام فقط به متقاضی بالای ۱۸ سال با درآمد ثابت تأیید می‌شود؛ اگر ضامن داشته باشد، درآمد ثابت لازم نیست» جدول را بسازید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> تکنیک black-box برای منطقی که خروجی‌اش به <strong>ترکیب چند شرط</strong> وابسته است. همه‌ی ترکیب‌ها (2ⁿ برای n شرط بولی) فهرست و برای هر کدام اقدام مورد انتظار تعیین می‌شود. هر ستون یک test case است.</p>
+        <p><strong>مزیت:</strong> هیچ ترکیبی جا نمی‌ماند، و ترکیب‌های مبهم یا متناقض در نیازمندی <strong>قبل از کدنویسی</strong> آشکار می‌شوند.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>شرط</th><th>R1</th><th>R2</th><th>R3</th><th>R4</th><th>R5</th><th>R6</th><th>R7</th><th>R8</th></tr></thead>
+          <tbody>
+            <tr><td>سن ≥ 18</td><td>T</td><td>T</td><td>T</td><td>T</td><td>F</td><td>F</td><td>F</td><td>F</td></tr>
+            <tr><td>درآمد ثابت</td><td>T</td><td>T</td><td>F</td><td>F</td><td>T</td><td>T</td><td>F</td><td>F</td></tr>
+            <tr><td>ضامن</td><td>T</td><td>F</td><td>T</td><td>F</td><td>T</td><td>F</td><td>T</td><td>F</td></tr>
+            <tr><td><strong>تأیید</strong></td><td>✔</td><td>✔</td><td>✔</td><td>✘</td><td>✘</td><td>✘</td><td>✘</td><td>✘</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>ساده‌سازی:</strong> R5 تا R8 نتیجه‌ی یکسان دارند (سن زیر ۱۸ ← رد، بقیه‌ی شرط‌ها «–»)، پس یک قاعده‌ی ادغام‌شده با یک یا دو تست نماینده. R1 و R2 هم («درآمد ثابت ← تأیید، ضامن مهم نیست») ادغام‌پذیرند. حداقل تست‌ها: R1 (یا R2)، R3، R4، و یک تست برای سن زیر ۱۸.</p>
+        <p><strong>ترکیب با BVA:</strong> برای شرط سن، مرزهای 17 و 18 را هم جداگانه تست کنید.</p>
+        <p><strong>کاربرد:</strong> قواعد قیمت‌گذاری، مجوزها (نقش × مالکیت × وضعیت)، قواعد ارسال و تخفیف. اگر تعداد شرط‌ها زیاد شود، جدول بزرگ می‌شود و می‌توان با ادغام یا pairwise آن را کنترل کرد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-5">
+      <summary>تست انتقال وضعیت (State Transition) را توضیح دهید. برای یک اشتراک (Subscription) با وضعیت‌های trial، active، past_due و cancelled، مدل و test caseها را طراحی کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> تکنیک black-box برای سیستم‌هایی که خروجی‌شان به <strong>وضعیت فعلی و ترتیب رویدادها</strong> بستگی دارد. مدل شامل وضعیت‌ها، رویدادها، انتقال‌ها و اقدام‌هاست. تست باید انتقال‌های معتبر و <strong>انتقال‌های نامعتبر</strong> را پوشش دهد.</p>
+        <pre class="diagram">              payment_ok                payment_failed
+  [trial] ─────────────────► [active] ─────────────────► [past_due]
+     │                        │    ▲                         │    │
+     │ cancel          cancel │    └────── payment_ok ───────┘    │ grace_period_ends
+     ▼                        ▼                                   ▼
+  [cancelled] ◄──────────────────────────────────────────────────┘
+  (وضعیت پایانی: هیچ رویدادی از cancelled خارج نمی‌کند)</pre>
+        <p><strong>جدول انتقال (خلاصه):</strong></p>
+        <ul>
+          <li>trial + payment_ok ← active؛ trial + cancel ← cancelled</li>
+          <li>active + payment_failed ← past_due؛ active + cancel ← cancelled</li>
+          <li>past_due + payment_ok ← active؛ past_due + grace_period_ends ← cancelled</li>
+          <li>cancelled + هر رویداد ← نامعتبر (وضعیت پایانی)</li>
+        </ul>
+        <p><strong>test caseها:</strong></p>
+        <ol>
+          <li><strong>پوشش 0-switch:</strong> هر یک از ۶ انتقال معتبر حداقل یک‌بار.</li>
+          <li><strong>انتقال‌های نامعتبر:</strong> مثلاً cancelled + payment_ok (نباید فعال شود)، trial + grace_period_ends.</li>
+          <li><strong>دنباله‌ها (1-switch):</strong> active ← past_due ← active (بازیابی پرداخت)؛ trial ← active ← past_due ← cancelled.</li>
+          <li><strong>اقدام‌ها:</strong> ارسال ایمیل هشدار در ورود به past_due (با <code>Mail::fake()</code>)، قطع دسترسی در cancelled.</li>
+          <li><strong>زمان:</strong> پایان grace period با <code>$this-&gt;travel(8)-&gt;days()</code>.</li>
+        </ol>
+        <p><strong>مزیت:</strong> مدل وضعیت، انتقال‌های فراموش‌شده و حالت‌های غیرقانونی را آشکار می‌کند؛ در کد هم بهتر است انتقال‌ها در یک جا (enum یا state machine) متمرکز باشند و انتقال نامعتبر exception بدهد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-6">
+      <summary>Pairwise testing چیست و چرا مؤثر است؟ محدودیت آن را بیان کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> تکنیک طراحی تست ترکیبی که در آن، به‌جای همه‌ی ترکیب‌های پارامترها، مجموعه‌ای از تست‌ها انتخاب می‌شود که <strong>هر جفت مقدار از هر دو پارامتر</strong> حداقل یک‌بار با هم ظاهر شوند.</p>
+        <p><strong>چرا مؤثر است:</strong> مشاهدات تجربی نشان می‌دهند بیشتر خطاها با یک پارامتر یا تعامل دو پارامتر ایجاد می‌شوند. pairwise این تعاملات را با تعداد تست بسیار کمتر پوشش می‌دهد.</p>
+        <p><strong>مثال:</strong> مرورگر (۳) × پرداخت (۲) × نوع کاربر (۲) = ۱۲ ترکیب؛ با pairwise ۶ تست کافی است:</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>مرورگر</th><th>پرداخت</th><th>کاربر</th></tr></thead>
+          <tbody>
+            <tr><td>Chrome</td><td>کارت</td><td>مهمان</td></tr>
+            <tr><td>Chrome</td><td>کیف پول</td><td>عضو</td></tr>
+            <tr><td>Firefox</td><td>کارت</td><td>عضو</td></tr>
+            <tr><td>Firefox</td><td>کیف پول</td><td>مهمان</td></tr>
+            <tr><td>Safari</td><td>کارت</td><td>مهمان</td></tr>
+            <tr><td>Safari</td><td>کیف پول</td><td>عضو</td></tr>
+          </tbody>
+        </table></div>
+        <p>با رشد پارامترها صرفه‌جویی بزرگ می‌شود: ۴ پارامتر سه‌مقداری = ۸۱ ترکیب، ولی ۹ تست pairwise. ابزارهایی مثل PICT مجموعه را تولید و قیدها (ترکیب‌های غیرممکن) را اعمال می‌کنند.</p>
+        <p><strong>کاربرد در بک‌اند:</strong> ترکیب feature flagها، نسخه‌های PHP/دیتابیس در CI matrix، گزینه‌های پیکربندی، پارامترهای فیلتر API.</p>
+        <p><strong>محدودیت‌ها:</strong></p>
+        <ul>
+          <li>خطاهای وابسته به تعامل <strong>سه پارامتر یا بیشتر</strong> را تضمین نمی‌کند (می‌توان n-wise با n=3 استفاده کرد).</li>
+          <li>انتخاب مقادیر هر پارامتر همچنان به EP/BVA نیاز دارد.</li>
+          <li>ترکیب‌های پرریسک شناخته‌شده باید جداگانه و صریحاً تست شوند.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-7">
+      <summary>Black-box testing و White-box testing را مقایسه کنید. کدام نوع خطاها را هر کدام بهتر پیدا می‌کنند؟</summary>
+      <div class="answer">
+        <p><strong>Black-box:</strong> طراحی تست بر اساس <strong>مشخصات و رفتار بیرونی</strong>، بدون نگاه به کد. تکنیک‌ها: EP، BVA، جدول تصمیم، انتقال وضعیت، pairwise، use case.</p>
+        <p><strong>White-box:</strong> طراحی تست بر اساس <strong>ساختار داخلی</strong> کد: شاخه‌ها، مسیرها، حلقه‌ها. معیارها: statement، branch، condition و path coverage.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Black-box</th><th>White-box</th></tr></thead>
+          <tbody>
+            <tr><td>دانش لازم</td><td>نیازمندی</td><td>کد</td></tr>
+            <tr><td>خطاهایی که پیدا می‌کند</td><td>نیازمندی پیاده‌نشده یا اشتباه، خطای رابط، مرزها</td><td>شاخه‌ی تست‌نشده، کد مرده، خطای منطقی داخلی، استثناهای مدیریت‌نشده</td></tr>
+            <tr><td>نقطه‌ی کور</td><td>مسیرهای داخلی پیچیده</td><td>نیازمندی‌ای که اصلاً کد ندارد</td></tr>
+            <tr><td>وابستگی به پیاده‌سازی</td><td>کم؛ با refactor نمی‌شکند</td><td>زیاد؛ با تغییر کد باید بازبینی شود</td></tr>
+            <tr><td>زمان طراحی</td><td>از روی مشخصات، حتی قبل از کد</td><td>بعد از وجود کد</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>Gray-box:</strong> ترکیبی؛ تست از بیرون با استفاده از دانش داخلی (مثلاً feature test که پس از درخواست HTTP، جدول دیتابیس را بررسی می‌کند).</p>
+        <p><strong>جمع‌بندی:</strong> مکمل‌اند. رویکرد عملی: test caseها را با black-box از مشخصات طراحی کنید (رفتارمحور و مقاوم در برابر refactor)، سپس با گزارش coverage (white-box) شاخه‌های تست‌نشده‌ی پرریسک را پیدا و تکمیل کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-8">
+      <summary>TDD چیست؟ چرخه‌ی Red-Green-Refactor را با یک مثال توضیح دهید. مزایا و محدودیت‌های TDD چیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> TDD روشی برای <strong>توسعه و طراحی</strong> است که در آن قبل از کد production، تستی نوشته می‌شود که fail شود؛ کد فقط به اندازه‌ی پاس شدن آن تست نوشته می‌شود و سپس طراحی بهبود می‌یابد.</p>
+        <ol>
+          <li><strong>Red:</strong> تست کوچکی برای رفتار بعدی بنویسید و ببینید <em>به دلیل درست</em> fail می‌شود.</li>
+          <li><strong>Green:</strong> ساده‌ترین کدی که تست را پاس کند (حتی hardcode).</li>
+          <li><strong>Refactor:</strong> حذف تکرار و بهبود نام‌ها و ساختار، در حالی که همه‌ی تست‌ها سبز می‌مانند.</li>
+        </ol>
+        <pre><code class="language-php">// Red
+it('charges no shipping for orders of $50 or more', function () {
+    expect((new ShippingCalculator())-&gt;costFor(5_000))-&gt;toBe(0);
+});
+// Green
+public function costFor(int $subtotal): int { return 0; }
+// Red بعدی: هزینه‌ی زیر 50 دلار
+it('charges $5 below $50', fn () =&gt; expect((new ShippingCalculator())-&gt;costFor(4_999))-&gt;toBe(500));
+// Green
+public function costFor(int $subtotal): int { return $subtotal &gt;= 5_000 ? 0 : 500; }
+// Refactor: استخراج ثابت‌ها FREE_SHIPPING_THRESHOLD و FLAT_RATE</code></pre>
+        <p><strong>مزایا:</strong> کد از ابتدا قابل تست با وابستگی‌های صریح (بازخورد طراحی)، API از دید مصرف‌کننده، coverage معنادار به‌صورت طبیعی، گام‌های کوچک و debug کمتر، اطمینان برای refactor، و مستند اجرایی.</p>
+        <p><strong>محدودیت‌ها:</strong> کندی اولیه و منحنی یادگیری؛ کم‌ارزش در کار اکتشافی، prototype و UI؛ خطر تست‌های وابسته به پیاده‌سازی اگر بیش از حد mock شود؛ و TDD جای تست‌های integration/E2E و طراحی معماری را نمی‌گیرد.</p>
+        <p><strong>نکته:</strong> هدف TDD «داشتن تست» نیست، بلکه <strong>طراحی هدایت‌شده با بازخورد</strong> است؛ تست‌ها محصول جانبی ارزشمند آن‌اند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-9">
+      <summary>BDD چیست و چه تفاوتی با TDD دارد؟ یک سناریوی Given/When/Then برای «بازنشانی رمز عبور» بنویسید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> BDD رویکردی است که توسعه را حول <strong>رفتار قابل مشاهده‌ی سیستم از دید کسب‌وکار</strong> سازمان می‌دهد. نیازمندی‌ها در گفت‌وگوی تیمی (توسعه‌دهنده، QA، محصول؛ «Three Amigos») به‌صورت <strong>مثال‌های مشخص</strong> با زبان مشترک نوشته و سپس به تست‌های پذیرش خودکار تبدیل می‌شوند (Gherkin؛ ابزار PHP: Behat).</p>
+        <pre><code class="language-plaintext">Feature: Password reset
+  Scenario: Reset link expires after 60 minutes
+    Given a registered user "sara@example.com"
+    And she requested a password reset link 61 minutes ago
+    When she opens the reset link and submits a new password
+    Then she sees the error "This password reset token is invalid."
+    And her password is not changed
+
+  Scenario: Successful reset
+    Given a registered user "sara@example.com" with a valid reset link
+    When she submits the new password "N3w-Secure-Pass!"
+    Then she can log in with "N3w-Secure-Pass!"
+    And all her other sessions are logged out</code></pre>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>TDD</th><th>BDD</th></tr></thead>
+          <tbody>
+            <tr><td>سؤال اصلی</td><td>آیا کد را درست می‌سازیم؟</td><td>آیا چیز درست را می‌سازیم؟</td></tr>
+            <tr><td>زبان</td><td>کد تست</td><td>زبان طبیعی ساخت‌یافته</td></tr>
+            <tr><td>مخاطب</td><td>توسعه‌دهنده</td><td>کل تیم و ذی‌نفعان</td></tr>
+            <tr><td>سطح</td><td>unit/integration</td><td>acceptance/feature</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>رابطه:</strong> مکمل‌اند؛ سناریوی BDD بیرونی‌ترین تست را تعریف می‌کند (outside-in) و داخل آن با TDD واحدها ساخته می‌شوند. Given/When/Then همان Arrange/Act/Assert در سطح کسب‌وکار است و حتی در Pest با نام‌گذاری رفتاری قابل استفاده است.</p>
+        <p><strong>ریسک:</strong> اگر Gherkin بدون گفت‌وگو و فقط توسط توسعه‌دهنده نوشته شود، فقط یک لایه‌ی سربار اضافه می‌کند؛ ارزش BDD در <strong>کشف مشترک نیازمندی</strong> است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-10">
+      <summary>انواع Test Double (Dummy، Stub، Spy، Mock، Fake) را تعریف و با مثال مقایسه کنید. تفاوت اصلی Stub و Mock چیست؟</summary>
+      <div class="answer">
+        <p><strong>Test double</strong> هر شیء جایگزین یک وابستگی واقعی در تست است (Meszaros).</p>
+        <ul>
+          <li><strong>Dummy:</strong> فقط برای پر کردن پارامتر؛ استفاده نمی‌شود. مثال: Logger در مسیری که log نمی‌کند.</li>
+          <li><strong>Stub:</strong> پاسخ از پیش تعیین‌شده برمی‌گرداند. مثال: <code>ExchangeRates::rate()</code> همیشه 1.1.</li>
+          <li><strong>Spy:</strong> stubی که فراخوانی‌ها را ثبت می‌کند تا <em>پس از اجرا</em> بررسی شوند: <code>$spy-&gt;shouldHaveReceived('record')-&gt;once()</code>.</li>
+          <li><strong>Mock:</strong> با <strong>انتظارات از پیش</strong> برنامه‌ریزی می‌شود و تعامل نادرست تست را fail می‌کند: <code>expects($this-&gt;once())-&gt;method('charge')-&gt;with(12900)</code>.</li>
+          <li><strong>Fake:</strong> پیاده‌سازی کارکردی ساده‌شده: repository درون‌حافظه، <code>Storage::fake()</code>، SQLite in-memory.</li>
+        </ul>
+        <p><strong>Stub در برابر Mock:</strong></p>
+        <ul>
+          <li>stub <strong>ورودی غیرمستقیم</strong> سیستم تحت تست را کنترل می‌کند و ما <strong>وضعیت/خروجی</strong> را assert می‌کنیم (state verification).</li>
+          <li>mock <strong>خروجی غیرمستقیم</strong> (فراخوانی سیستم به بیرون) را با انتظارات بررسی می‌کند (behavior verification).</li>
+        </ul>
+        <p><strong>راهنمای انتخاب:</strong></p>
+        <ul>
+          <li>Queryها را stub کنید و روی فراخوانی‌شان assert نزنید.</li>
+          <li>Commandهای دارای اثر جانبی بیرونی (ایمیل، پرداخت) را با mock/spy یا fake بسنجید.</li>
+          <li>fake را برای زیرساخت ترجیح دهید؛ کمتر به جزئیات پیاده‌سازی وابسته است.</li>
+          <li>چیزی را که مالکش نیستید mock نکنید؛ پشت adapter خودتان پنهانش کنید.</li>
+        </ul>
+        <p><strong>خطر over-mocking:</strong> تست‌ها به پیاده‌سازی گره می‌خورند، با refactor می‌شکنند و ممکن است باگ‌های یکپارچگی را نبینند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-11">
+      <summary>تفاوت RefreshDatabase، DatabaseTransactions و DatabaseMigrations در Laravel چیست؟ یک سناریو: تست‌های Dusk شما داده‌هایی را که در تست ساخته‌اید نمی‌بینند. چرا؟</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>RefreshDatabase:</strong> اگر لازم باشد، یک‌بار در شروع اجرای suite migrationها را اجرا می‌کند و سپس هر تست را در یک transaction می‌پیچد که در پایان rollback می‌شود. سریع است و schema همیشه به‌روز است؛ گزینه‌ی پیش‌فرض. (برای SQLite in-memory، migration در هر تست تکرار می‌شود.)</li>
+          <li><strong>DatabaseTransactions:</strong> فقط transaction و rollback؛ migrate نمی‌کند. فرض می‌کند schema از قبل آماده است.</li>
+          <li><strong>DatabaseMigrations:</strong> برای هر تست migrate و سپس rollback؛ کند ولی بدون اتکا به transaction.</li>
+          <li><strong>DatabaseTruncation:</strong> جداول را پاک (truncate) می‌کند؛ مناسب تست‌های مرورگر.</li>
+        </ul>
+        <p><strong>سناریوی Dusk:</strong> در Dusk، مرورگر واقعی درخواست‌ها را به سرور برنامه می‌فرستد که در <strong>process جداگانه</strong> با <strong>connection دیتابیس جداگانه</strong> اجرا می‌شود. داده‌هایی که تست داخل یک transaction <strong>commit‌نشده</strong> ساخته، به دلیل isolation تراکنش، برای connection دیگر قابل مشاهده نیستند. بنابراین RefreshDatabase/DatabaseTransactions با Dusk کار نمی‌کنند.</p>
+        <p><strong>راه‌حل:</strong> استفاده از <code>DatabaseMigrations</code> یا <code>DatabaseTruncation</code> در تست‌های Dusk، و یک دیتابیس تست جدا (مثلاً با <code>.env.dusk.local</code>).</p>
+        <p><strong>موارد مشابه:</strong> هر کدی که از connection دیگری استفاده کند (مثلاً connection جدا برای گزارش‌گیری)، worker واقعی صف در process دیگر، یا دستورات DDL در MySQL که commit ضمنی ایجاد می‌کنند، با استراتژی transaction مشکل‌دار می‌شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-12">
+      <summary>برای endpoint ثبت سفارش که ایمیل تأیید می‌فرستد، یک job تولید فاکتور dispatch می‌کند و به درگاه پرداخت درخواست HTTP می‌زند، یک feature test در Laravel بنویسید. چه چیزهایی را fake می‌کنید و چرا؟</summary>
+      <div class="answer">
+        <p><strong>اصل:</strong> کد خودمان (controller، validation، منطق، دیتابیس) واقعی اجرا شود؛ <strong>مرزهای بیرونی و اثرات جانبی</strong> (ایمیل، صف، HTTP بیرونی) fake شوند تا تست سریع، قطعی و بدون اثر واقعی باشد.</p>
+        <pre><code class="language-php">it('places an order', function () {
+    Mail::fake();
+    Queue::fake();
+    Http::preventStrayRequests();
+    Http::fake(['api.gateway.test/*' =&gt; Http::response(['id' =&gt; 'ch_1', 'status' =&gt; 'succeeded'], 201)]);
+
+    $user = User::factory()-&gt;create();
+    $product = Product::factory()-&gt;create(['price_cents' =&gt; 2_500, 'stock' =&gt; 5]);
+
+    $this-&gt;actingAs($user)
+        -&gt;postJson('/api/orders', ['items' =&gt; [['product_id' =&gt; $product-&gt;id, 'quantity' =&gt; 2]]])
+        -&gt;assertCreated()
+        -&gt;assertJsonPath('data.total_cents', 5_000);
+
+    $this-&gt;assertDatabaseHas('orders', ['user_id' =&gt; $user-&gt;id, 'status' =&gt; 'paid']);
+    Mail::assertQueued(OrderConfirmation::class, fn ($m) =&gt; $m-&gt;hasTo($user-&gt;email));
+    Queue::assertPushed(GenerateInvoicePdf::class);
+    Http::assertSent(fn ($request) =&gt; $request['amount'] === 5_000);
+});</code></pre>
+        <p><strong>چرا هر fake:</strong></p>
+        <ul>
+          <li><code>Mail::fake</code>: ایمیل واقعی ارسال نشود و بتوان گیرنده و نوع را assert کرد (<code>assertQueued</code> چون mailable صف‌پذیر است).</li>
+          <li><code>Queue::fake</code>: job اجرا نشود؛ منطق خود job در تست جداگانه تست می‌شود. این تست فقط «dispatch شدن» را می‌سنجد.</li>
+          <li><code>Http::fake</code> + <code>preventStrayRequests</code>: بدون شبکه و قطعی؛ می‌توان پاسخ‌های خطا را هم شبیه‌سازی کرد.</li>
+        </ul>
+        <p><strong>تست‌های تکمیلی:</strong> پاسخ ناموفق یا timeout درگاه (<code>Http::response([], 500)</code> یا شبیه‌سازی خطای اتصال) ← سفارش ثبت نشود یا وضعیت failed؛ موجودی ناکافی ← ۴۲۲؛ کاربر مهمان ← ۴۰۱؛ و validation با BVA روی quantity.</p>
+        <p><strong>نکته:</strong> اگر از <code>Event::fake()</code> استفاده می‌کنید، آن را بعد از ساخت factoryها صدا بزنید یا فقط eventهای مشخص را fake کنید تا eventهای مدل مختل نشوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-13">
+      <summary>Code coverage چیست؟ انواع line، branch و path coverage را با مثال مقایسه کنید. آیا ۱۰۰٪ coverage یعنی کد بدون باگ است؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> درصد کدی که هنگام اجرای تست‌ها <strong>اجرا شده</strong>؛ معیار white-box که نشان می‌دهد کجا تست نداریم.</p>
+        <pre><code class="language-php">function fee(bool $premium, bool $express): int {
+    $fee = 1000;
+    if ($premium) { $fee = 0; }
+    if ($express) { $fee += 2000; }
+    return $fee;
+}</code></pre>
+        <ul>
+          <li><strong>Line/Statement:</strong> هر خط حداقل یک‌بار اجرا شود. یک تست (true، true) ← ۱۰۰٪.</li>
+          <li><strong>Branch:</strong> هر شاخه‌ی هر تصمیم (true و false). دو تست (true، true) و (false، false) ← ۱۰۰٪.</li>
+          <li><strong>Path:</strong> هر مسیر یکتا: ۴ ترکیب ← ۴ تست. با حلقه‌ها و شرط‌های زیاد تعداد مسیرها انفجاری می‌شود.</li>
+          <li>(Condition coverage: هر شرط اتمی در شرط مرکب مثل <code>$a &amp;&amp; $b</code> هر دو مقدار را بگیرد.)</li>
+        </ul>
+        <p>در PHP، PCOV فقط line coverage می‌دهد؛ Xdebug branch و path coverage را هم پشتیبانی می‌کند (<code>--path-coverage</code> در PHPUnit).</p>
+        <p><strong>آیا ۱۰۰٪ یعنی بی‌باگ؟ خیر:</strong></p>
+        <ul>
+          <li>اجرا شدن ≠ بررسی شدن؛ تستی بدون assert هم coverage می‌دهد.</li>
+          <li>نیازمندی‌های پیاده‌نشده دیده نمی‌شوند.</li>
+          <li>مقادیر داده (مرزها) و ترکیب‌ها سنجیده نمی‌شوند.</li>
+          <li>هدف‌گذاری روی عدد (Goodhart) تست‌های بی‌ارزش می‌سازد.</li>
+        </ul>
+        <p><strong>استفاده‌ی درست:</strong> ابزاری برای یافتن کد پرریسک تست‌نشده و جلوگیری از کاهش coverage در PR. برای سنجش کیفیت تست‌ها، mutation testing (Infection) معیار بهتری است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-14">
+      <summary>Mutation testing چیست و چه چیزی را می‌سنجد که coverage نمی‌سنجد؟ مفاهیم mutant، killed، escaped و MSI را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> روشی برای سنجش <strong>کیفیت تست‌ها</strong>. ابزار (در PHP: <strong>Infection</strong>) تغییرات کوچکی در کد production ایجاد می‌کند و بررسی می‌کند آیا تست‌ها این تغییر را تشخیص می‌دهند.</p>
+        <ul>
+          <li><strong>Mutant:</strong> نسخه‌ی تغییریافته‌ی کد؛ مثلاً <code>&gt;=</code> ← <code>&gt;</code>، <code>+</code> ← <code>-</code>، <code>true</code> ← <code>false</code>، حذف یک فراخوانی، تغییر مقدار بازگشتی.</li>
+          <li><strong>Killed:</strong> حداقل یک تست fail شد؛ تست‌ها این رفتار را می‌سنجند.</li>
+          <li><strong>Escaped (survived):</strong> همه‌ی تست‌ها pass شدند؛ شکافی در assertionها یا test caseها وجود دارد.</li>
+          <li><strong>MSI:</strong> درصد mutantهای تشخیص داده‌شده از کل. <strong>Covered Code MSI</strong> فقط کد تحت پوشش را حساب می‌کند.</li>
+        </ul>
+        <pre><code class="language-php">// کد: if ($qty &gt;= 10) { $discount = 5; }
+// mutant: if ($qty &gt; 10) { ... }
+// تست‌ها فقط qty=5 و qty=20 را دارند ← mutant زنده می‌ماند
+// اصلاح: افزودن تست مرزی qty=10 (BVA)</code></pre>
+        <p><strong>تفاوت با coverage:</strong> coverage فقط می‌گوید خط <em>اجرا شده</em>؛ mutation می‌گوید آیا تست‌ها به <em>تغییر رفتار</em> آن خط حساس‌اند. پروژه‌ای با ۱۰۰٪ coverage و تست‌های بدون assert، MSI نزدیک صفر خواهد داشت.</p>
+        <p><strong>هزینه و عمل:</strong> کند است (اجرای تست‌ها برای هر mutant)؛ پس روی کد دامنه‌ی حیاتی یا فقط فایل‌های تغییرکرده‌ی PR (<code>--git-diff-filter</code>) اجرا شود، با آستانه‌ی <code>--min-msi</code> در CI. «equivalent mutant»ها (تغییرهایی که رفتار را عوض نمی‌کنند) قابل کشتن نیستند و باید نادیده گرفته شوند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-15">
+      <summary>یک سناریو: یک تست در CI گاهی pass و گاهی fail می‌شود. علل احتمالی چیست و چه رویکردی برای رفع آن دارید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> این یک <strong>flaky test</strong> است: نتیجه‌ی غیرقطعی بدون تغییر کد. خطرش این است که تیم fail شدن CI را عادی بداند و خطاهای واقعی نادیده گرفته شوند.</p>
+        <p><strong>علل رایج:</strong></p>
+        <ul>
+          <li><strong>زمان:</strong> وابستگی به <code>now()</code>، نیمه‌شب، منطقه‌ی زمانی، پایان ماه.</li>
+          <li><strong>وضعیت مشترک و ترتیب:</strong> static، singleton، cache یا داده‌ای که از تست قبلی مانده.</li>
+          <li><strong>داده‌ی تصادفی:</strong> Faker گاهی مقدار مرزی یا تکراری تولید می‌کند.</li>
+          <li><strong>فرض درباره‌ی ترتیب یا ID:</strong> query بدون <code>orderBy</code>، ID ثابت.</li>
+          <li><strong>شبکه و سرویس بیرونی</strong> واقعی.</li>
+          <li><strong>همزمانی/async:</strong> <code>sleep</code> ثابت در تست مرورگر، race condition.</li>
+          <li><strong>اجرای موازی:</strong> منابع مشترک بین processها.</li>
+        </ul>
+        <p><strong>رویکرد:</strong></p>
+        <ol>
+          <li><strong>بازتولید:</strong> اجرای مکرر، اجرای تکی در برابر کل suite، ترتیب تصادفی (<code>--order-by=random</code>)، و مقایسه‌ی محیط CI با محلی (timezone، نسخه‌ها).</li>
+          <li><strong>رفع علت:</strong> <code>freezeTime()</code>/<code>travelTo()</code>، مقدار صریح به‌جای Faker برای فیلدهای مهم، <code>orderBy</code> صریح، <code>Http::fake()</code> و <code>preventStrayRequests()</code>، reset وضعیت در <code>tearDown</code>، انتظار برای شرط به‌جای <code>sleep</code>.</li>
+          <li><strong>قرنطینه‌ی موقت</strong> با ticket و مالک تا CI قابل اعتماد بماند؛ نه حذف یا نادیده گرفتن.</li>
+          <li><strong>retry خودکار</strong> فقط مُسکّن است و می‌تواند باگ واقعی همزمانی در production را پنهان کند.</li>
+        </ol>
+        <p><strong>پیشگیری:</strong> رعایت FIRST، به‌خصوص Independent و Repeatable.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-16">
+      <summary>یک کلاس legacy بزرگ بدون تست دارید که باید در آن تغییر ایجاد کنید. چه رویکردی دارید؟ characterization test و seam را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>چالش:</strong> طبق تعریف Michael Feathers، legacy یعنی «کد بدون تست». برای تغییر امن به تست نیاز داریم، و برای تست‌پذیر کردن اغلب باید کد را تغییر دهیم.</p>
+        <p><strong>رویکرد گام‌به‌گام:</strong></p>
+        <ol>
+          <li><strong>نقاط تغییر و نقاط تست</strong> را مشخص کنید؛ اغلب بیرونی‌ترین لایه (endpoint HTTP یا command) بهترین نقطه‌ی مشاهده است.</li>
+          <li><strong>Characterization test:</strong> تست‌هایی که رفتار <em>فعلی</em> را ثبت می‌کنند، حتی اگر عجیب یا اشتباه باشد. روش: تست با یک assert نادرست بنویسید، خروجی واقعی را ببینید و آن را به‌عنوان مقدار مورد انتظار ثبت کنید. برای خروجی‌های بزرگ از golden master/snapshot استفاده کنید.</li>
+          <li><strong>شکستن وابستگی‌ها با کمترین تغییر امن:</strong> ایجاد <strong>seam</strong>، یعنی جایی که بتوان رفتار را بدون ویرایش همان نقطه عوض کرد: تزریق وابستگی در constructor به‌جای <code>new</code>، استخراج interface، استفاده از container و facade قابل fake در Laravel.</li>
+          <li><strong>تغییر جدید با تست:</strong> <strong>sprout method/class</strong> (کد جدید در واحد تازه و تست‌شده) یا <strong>wrap method</strong>.</li>
+          <li><strong>Refactor تدریجی</strong> زیر پوشش تست‌ها (قانون پیشاهنگ: کد را کمی بهتر از قبل رها کنید).</li>
+        </ol>
+        <pre><code class="language-php">// قبل
+$mailer = new SmtpMailer();          // غیرقابل جایگزینی
+// بعد: seam با constructor injection
+public function __construct(private readonly Mailer $mailer) {}
+// در تست
+$this-&gt;mock(Mailer::class)-&gt;shouldReceive('send')-&gt;once();</code></pre>
+        <p><strong>نکات:</strong> باگ‌هایی که در characterization پیدا می‌شوند را فوراً اصلاح نکنید؛ ثبت و جداگانه تصمیم‌گیری کنید (ممکن است کسی به آن رفتار وابسته باشد). refactorهای بزرگ را با ابزارهای خودکار IDE و در گام‌های کوچک انجام دهید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-17">
+      <summary>کد تست زیر (در ابتدای پاسخ آمده است) چه مشکلاتی دارد؟ آن را بازنویسی کنید.</summary>
+      <div class="answer">
+        <pre><code class="language-php">public function test_orders()
+{
+    $this-&gt;post('/api/orders', ['product_id' =&gt; 1, 'qty' =&gt; 2]);
+    $order = Order::first();
+    $this-&gt;assertEquals(true, $order != null);
+    $this-&gt;assertEquals('2026-11-07', $order-&gt;created_at-&gt;toDateString());
+    $response = $this-&gt;get('/api/orders/1');
+    $this-&gt;assertTrue($response-&gt;status() == 200);
+    sleep(2);
+    $this-&gt;assertEquals(1, Mail::sent()-&gt;count());
+}</code></pre>
+        <p><strong>مشکلات:</strong></p>
+        <ol>
+          <li><strong>نام مبهم</strong> (<code>test_orders</code>) و <strong>چند رفتار</strong> در یک تست (ایجاد، نمایش، ایمیل).</li>
+          <li><strong>Arrange ناقص:</strong> فرض وجود محصول با ID ثابت ۱ و کاربر احراز هویت‌شده؛ وابسته به داده‌ی قبلی یا ترتیب (نقض Independent).</li>
+          <li><strong>ID ثابت</strong> <code>/api/orders/1</code>؛ با auto-increment و اجرای موازی شکننده است.</li>
+          <li><strong>تاریخ hardcode</strong>؛ فقط امروز pass می‌شود (نقض Repeatable).</li>
+          <li><strong>assertionهای ضعیف:</strong> <code>assertEquals(true, ...)</code> و <code>assertTrue(status == 200)</code> پیام خطای بی‌فایده می‌دهند.</li>
+          <li><strong>sleep</strong> کند و غیرقطعی است، و ایمیل fake نشده است (ممکن است ایمیل واقعی ارسال شود).</li>
+          <li><code>post</code> به‌جای <code>postJson</code> برای API؛ پاسخ ایجاد بررسی نشده است.</li>
+        </ol>
+        <p><strong>بازنویسی:</strong></p>
+        <pre><code class="language-php">it('creates an order for the authenticated user', function () {
+    Mail::fake();
+    $this-&gt;freezeTime();
+    $user = User::factory()-&gt;create();
+    $product = Product::factory()-&gt;create(['stock' =&gt; 5]);
+
+    $response = $this-&gt;actingAs($user)-&gt;postJson('/api/orders', [
+        'items' =&gt; [['product_id' =&gt; $product-&gt;id, 'quantity' =&gt; 2]],
+    ]);
+
+    $response-&gt;assertCreated();
+    $order = Order::findOrFail($response-&gt;json('data.id'));
+    expect($order-&gt;user_id)-&gt;toBe($user-&gt;id)
+        -&gt;and($order-&gt;created_at-&gt;equalTo(now()))-&gt;toBeTrue();
+    Mail::assertQueued(OrderConfirmation::class);
+});
+
+it('shows an order to its owner', function () {
+    $order = Order::factory()-&gt;create();
+
+    $this-&gt;actingAs($order-&gt;user)
+        -&gt;getJson("/api/orders/{$order-&gt;id}")
+        -&gt;assertOk()
+        -&gt;assertJsonPath('data.id', $order-&gt;id);
+});</code></pre>
+      </div>
+    </details>
+
+    <details class="qa" id="q-testing-18">
+      <summary>Contract testing چیست و چه مشکلی را حل می‌کند؟ تفاوت آن با E2E و ارتباطش با regression و smoke testing را بیان کنید.</summary>
+      <div class="answer">
+        <p><strong>مشکل:</strong> در سیستم‌های توزیع‌شده (API لاراولی با اپ موبایل، SPA یا سرویس‌های دیگر)، تست‌های هر طرف ممکن است سبز باشند ولی طرفین درباره‌ی شکل درخواست/پاسخ ناهماهنگ باشند (تغییر نام فیلد، تغییر نوع). E2E بین همه‌ی سرویس‌ها کند، شکننده و نیازمند محیط کامل است.</p>
+        <p><strong>Contract testing:</strong> هر طرف را <strong>جداگانه</strong> در برابر یک قرارداد مشترک تست می‌کند.</p>
+        <ul>
+          <li><strong>Consumer-driven (Pact):</strong> consumer در تست‌هایش، در برابر mock، انتظاراتش را تعریف می‌کند ← فایل pact ← provider در pipeline خود با API واقعی آن را verify می‌کند. provider می‌فهمد کدام فیلدها واقعاً استفاده می‌شوند و تغییر breaking قبل از deploy کشف می‌شود.</li>
+          <li><strong>Schema-based:</strong> OpenAPI به‌عنوان قرارداد؛ پاسخ‌های واقعی provider در تست با spec اعتبارسنجی می‌شوند و consumer از همان spec mock می‌سازد.</li>
+        </ul>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Contract</th><th>E2E</th></tr></thead>
+          <tbody>
+            <tr><td>محیط</td><td>هر سرویس جدا</td><td>همه‌ی سرویس‌ها با هم</td></tr>
+            <tr><td>سرعت/پایداری</td><td>بالا</td><td>پایین</td></tr>
+            <tr><td>چه چیزی را می‌سنجد</td><td>سازگاری رابط</td><td>جریان کامل کسب‌وکار</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>ارتباط با سایر انواع:</strong></p>
+        <ul>
+          <li><strong>Regression:</strong> اجرای مجدد suite پس از هر تغییر برای اطمینان از سالم ماندن قابلیت‌های قبلی؛ contract testها بخشی از regression suite provider هستند و از regression در رابط جلوگیری می‌کنند. قاعده: هر باگ رفع‌شده = یک تست regression.</li>
+          <li><strong>Smoke:</strong> تست سطحی و سریع مسیرهای حیاتی بعد از deploy (endpoint سلامت <code>/up</code>، login، یک سفارش تستی) برای تصمیم «ادامه یا rollback». جایگزین contract یا regression نیست.</li>
+        </ul>
+      </div>
+    </details>
+
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>مبانی</h4>
+      <ul>
+        <li>تست وجود باگ را نشان می‌دهد، نه نبودش؛ تست کامل غیرممکن ← طراحی تست + ریسک.</li>
+        <li>Verification: درست ساختن؛ Validation: ساختن چیز درست.</li>
+        <li>Error ← Defect ← Failure.</li>
+        <li>ارزش تست: اطمینان برای refactor، بازخورد سریع، مستند اجرایی، بازخورد طراحی، جلوگیری از regression.</li>
+        <li>۷ اصل: وجود خطا، exhaustive ممکن نیست، تست زودهنگام، تجمع خطا، پارادوکس آفت‌کش، وابسته به زمینه، مغالطه‌ی نبود خطا.</li>
+      </ul>
+      <h4>سطوح و هرم</h4>
+      <ul>
+        <li>Unit (انزوا، سریع) ← Integration (زیرساخت واقعی) ← Feature (HTTP تا DB) ← E2E (مرورگر) ← Acceptance (معیار کسب‌وکار).</li>
+        <li>هرم: unit زیاد، E2E کم؛ دلیل: سرعت، پایداری، هزینه، دقت تشخیص.</li>
+        <li>ضدالگو: بستنی قیفی. Trophy: static + بیشترین integration.</li>
+        <li>Classical (واحد = رفتار) در برابر London (واحد = کلاس، mock همه).</li>
+        <li>Black-box: از مشخصات؛ White-box: از ساختار کد؛ مکمل‌اند.</li>
+      </ul>
+      <h4>طراحی تست</h4>
+      <ul>
+        <li>EP: کلاس‌های معتبر و نامعتبر، یک نماینده از هر کدام.</li>
+        <li>BVA: روی و کنار هر مرز (۱۸–۶۵ ← 17، 18، 65، 66).</li>
+        <li>جدول تصمیم: ترکیب شرط‌ها، 2ⁿ ستون، ادغام don't care.</li>
+        <li>انتقال وضعیت: انتقال‌های معتبر و نامعتبر؛ 0-switch و 1-switch.</li>
+        <li>Pairwise: هر جفت مقدار یک‌بار؛ ۸۱ ← ۹؛ تعامل ۳تایی را تضمین نمی‌کند.</li>
+        <li>Error guessing: null، خالی، Unicode/ارقام فارسی، صفر/منفی، double submit، timezone.</li>
+      </ul>
+      <h4>روش‌ها و ساختار</h4>
+      <ul>
+        <li>TDD: Red ← Green ← Refactor؛ روش طراحی است.</li>
+        <li>BDD: Given/When/Then، زبان مشترک، Three Amigos، Behat.</li>
+        <li>AAA: Arrange، Act (یک عمل)، Assert.</li>
+        <li>FIRST: Fast، Independent، Repeatable، Self-validating، Timely.</li>
+        <li>رفتار را تست کنید نه پیاده‌سازی؛ DAMP در تست؛ بدون sleep و منطق شرطی.</li>
+      </ul>
+      <h4>Test doubleها</h4>
+      <ul>
+        <li>Dummy: پرکننده. Stub: پاسخ آماده. Spy: ثبت و بررسی پس از اجرا. Mock: انتظارات از پیش. Fake: پیاده‌سازی ساده.</li>
+        <li>Stub ← state verification؛ Mock ← behavior verification.</li>
+        <li>Query را stub، Command بیرونی را mock/spy کنید.</li>
+        <li>چیزی را که مالکش نیستید mock نکنید ← adapter.</li>
+        <li>Over-mocking ← تست شکننده و false positive.</li>
+      </ul>
+      <h4>PHPUnit / Pest / Laravel</h4>
+      <ul>
+        <li>PHPUnit: <code>#[Test]</code>، <code>#[DataProvider]</code> (public static)، <code>assertSame</code>.</li>
+        <li>Pest: <code>it()</code>، <code>expect()</code>، <code>-&gt;with()</code>، <code>beforeEach</code>، <code>describe</code>، <code>arch()</code>.</li>
+        <li>RefreshDatabase: migrate یک‌بار + transaction؛ DatabaseTransactions: فقط transaction؛ Dusk ← DatabaseMigrations/Truncation.</li>
+        <li>Factory: <code>state</code>، <code>for</code>، <code>has</code>، <code>make</code> در برابر <code>create</code>.</li>
+        <li>Fakeها: Mail (assertSent/assertQueued)، Queue، Bus، Event (بعد از factory)، Notification، Storage، Http + preventStrayRequests.</li>
+        <li><code>actingAs</code>، <code>Sanctum::actingAs</code>، <code>freezeTime</code>، <code>travel</code>.</li>
+        <li><code>assertCreated</code>، <code>assertUnprocessable</code>، <code>assertJsonValidationErrors</code>، <code>assertForbidden</code>، <code>assertDatabaseHas</code>.</li>
+      </ul>
+      <h4>کیفیت تست و نگهداری</h4>
+      <ul>
+        <li>Coverage: line &lt; branch &lt; path؛ اجرا شدن ≠ تست شدن.</li>
+        <li>PCOV فقط line؛ Xdebug: branch و path.</li>
+        <li>Mutation (Infection): killed خوب، escaped بد، MSI؛ کند ← فقط کد حیاتی یا diff.</li>
+        <li>Flaky: زمان، وضعیت مشترک، تصادف، ترتیب، شبکه، async ← رفع علت، قرنطینه، نه retry.</li>
+        <li>Legacy = کد بدون تست؛ characterization test، seam، sprout/wrap method.</li>
+        <li>Contract: Pact (consumer-driven) یا OpenAPI (schema-based).</li>
+        <li>Regression: هر باگ = یک تست. Smoke: سطحی و سریع بعد از deploy. Sanity: محدود و عمیق.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

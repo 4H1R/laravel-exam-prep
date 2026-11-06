@@ -1,0 +1,1413 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documentation — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="documentation">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>Documentation</h1>
+    <p class="lead">چرا و برای چه کسی مستند می‌نویسیم، انواع مستندات نرم‌افزار (comment، PHPDoc، README، مستندات API با OpenAPI و Scribe، مدل C4، ADR، CHANGELOG، runbook)، چارچوب Diátaxis، docs-as-code و راه‌های همگام نگه داشتن مستندات با کد.</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="why-docs" data-title="چرا و برای چه کسی">
+    <h2>چرا و برای چه کسی</h2>
+    <p><strong>مستندات (Documentation)</strong> هر نوشته‌ای است که دانش لازم برای استفاده، توسعه، نگهداری یا اجرای یک سیستم را به انسان منتقل می‌کند؛ دانشی که از خود کد قابل استخراج نیست یا استخراجش پرهزینه است. کد به ما می‌گوید سیستم <em>چه کاری</em> و <em>چگونه</em> انجام می‌دهد؛ مستندات معمولاً باید بگوید <strong>چرا</strong>، <strong>برای چه کسی</strong>، <strong>چطور از آن استفاده کنیم</strong> و <strong>چه گزینه‌هایی کنار گذاشته شد</strong>.</p>
+
+    <h3>مخاطبان مختلف، نیازهای مختلف</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>مخاطب</th><th>سؤال اصلی او</th><th>نوع مستند مناسب</th></tr></thead>
+      <tbody>
+        <tr><td>توسعه‌دهنده‌ی جدید تیم</td><td>چطور پروژه را بالا بیاورم و از کجا شروع کنم؟</td><td>README، راهنمای onboarding، CONTRIBUTING</td></tr>
+        <tr><td>توسعه‌دهنده‌ی فعلی (و «خودِ شش ماه بعد»)</td><td>چرا این کد این‌طور نوشته شده؟</td><td>comment «چرا»، ADR، پیام commit و PR</td></tr>
+        <tr><td>مصرف‌کننده‌ی API (فرانت‌اند، موبایل، شریک تجاری)</td><td>چه endpointی، با چه ورودی و خروجی و خطاهایی؟</td><td>OpenAPI، مستند API تولیدشده، نمونه‌ی درخواست</td></tr>
+        <tr><td>تیم عملیات / on-call</td><td>ساعت ۳ بامداد صف پر شده؛ چه کنم؟</td><td>Runbook، مستند deploy و پیکربندی</td></tr>
+        <tr><td>معمار و مدیر فنی</td><td>اجزای سیستم چیست و چطور به هم وصل‌اند؟</td><td>نمودار C4، مستند معماری</td></tr>
+        <tr><td>مشتری یا کاربر نهایی</td><td>در این نسخه چه تغییری کرده است؟</td><td>CHANGELOG، release notes، راهنمای کاربر</td></tr>
+        <tr><td>ممیز امنیتی / انطباق (compliance)</td><td>داده‌ی شخصی کجا ذخیره و چطور محافظت می‌شود؟</td><td>مستند معماری، سیاست‌ها، ADR</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>هزینه‌ی نبودن مستندات</h3>
+    <ul>
+      <li><strong>Onboarding کند:</strong> عضو جدید هفته‌ها وقت و وقت همکاران را صرف «پرسیدن» می‌کند.</li>
+      <li><strong>Bus factor پایین:</strong> دانش فقط در ذهن یک یا دو نفر است و با رفتن آن‌ها از دست می‌رود.</li>
+      <li><strong>تصمیم‌های تکراری:</strong> تیم دوباره درباره‌ی موضوعی بحث می‌کند که قبلاً تصمیمش گرفته شده، چون دلیل تصمیم ثبت نشده است.</li>
+      <li><strong>حوادث طولانی‌تر:</strong> بدون runbook، زمان بازیابی (MTTR) بالا می‌رود.</li>
+      <li><strong>یکپارچه‌سازی پرخطا:</strong> مصرف‌کنندگان API رفتار را حدس می‌زنند و باگ‌های یکپارچه‌سازی زیاد می‌شود.</li>
+    </ul>
+
+    <h3>مستندات بد از نبودنش بدتر است</h3>
+    <p>مستند قدیمی و نادرست (<strong>doc rot</strong>) اعتماد را از بین می‌برد: وقتی کسی دو بار با README اشتباه به بن‌بست برسد، دیگر هیچ مستندی را نمی‌خواند. بنابراین هدف «زیاد نوشتن» نیست؛ هدف <strong>مستند کم، دقیق، قابل یافتن و به‌روز</strong> است که مالک دارد و همراه کد تغییر می‌کند.</p>
+
+    <div class="callout exam"><p>در پاسخ به «چرا مستندسازی مهم است؟» فقط نگویید «برای فهم کد». مخاطب‌محور جواب دهید: مستندسازی ابزاری برای <strong>انتقال دانش</strong> است که هزینه‌ی onboarding، bus factor، زمان رفع حادثه و خطاهای یکپارچه‌سازی را کاهش می‌دهد؛ و هر مستند باید برای یک مخاطب و یک نیاز مشخص نوشته شود.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="code-comments" data-title="Comment در کد: چرا، نه چه">
+    <h2>Comment در کد: چرا، نه چه</h2>
+    <p>قاعده‌ی اصلی: <strong>کد «چه» و «چگونه» را بیان می‌کند؛ comment باید «چرا» را بگوید.</strong> commentی که فقط کد را به زبان انسانی تکرار می‌کند ارزشی اضافه نمی‌کند، با تغییر کد کهنه می‌شود و به نویز تبدیل می‌شود.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>comment بد (تکرار «چه»)</h4>
+<pre><code class="language-php">// increment i by one
+$i++;
+
+// get the user by id
+$user = User::find($id);
+
+// loop over orders
+foreach ($orders as $order) { /* ... */ }</code></pre>
+      </div>
+      <div class="card"><h4>comment خوب (توضیح «چرا»)</h4>
+<pre><code class="language-php">// Gateway may process a timed-out request anyway,
+// so we reuse the idempotency key on retry to avoid
+// charging the customer twice. See ADR-0007.
+$charge = $gateway-&gt;charge($order, key: $order-&gt;payment_key);
+
+// Intentionally not eager loading: this job processes
+// one order at a time and memory is the constraint.</code></pre>
+      </div>
+    </div>
+
+    <h3>چه زمانی comment لازم است؟</h3>
+    <ul>
+      <li><strong>دلیل یک تصمیم غیربدیهی:</strong> «چرا از این الگوریتم/کتابخانه استفاده شد» یا «چرا این راه‌حل ساده‌تر کار نمی‌کند».</li>
+      <li><strong>محدودیت‌ها و workaroundها:</strong> باگ یک کتابخانه‌ی بیرونی، محدودیت API شریک، رفتار عجیب یک مرورگر؛ همراه با لینک issue.</li>
+      <li><strong>قواعد کسب‌وکار</strong> که از کد بدیهی نیستند: «طبق قانون مالیات، گرد کردن باید در سطح هر ردیف انجام شود».</li>
+      <li><strong>هشدار</strong>: «ترتیب این دو فراخوانی مهم است چون…»، «این متد در یک تراکنش اجرا می‌شود».</li>
+      <li><strong>Regex یا الگوریتم پیچیده</strong>: توضیح هدف و یک نمونه‌ی ورودی/خروجی.</li>
+      <li><strong>API عمومی</strong> (کلاس‌ها و متدهایی که دیگران مصرف می‌کنند) از طریق docblock.</li>
+    </ul>
+
+    <h3>commentهایی که نباید بنویسید</h3>
+    <ul>
+      <li><strong>کد comment‌شده (commented-out code):</strong> Git تاریخچه را دارد؛ آن را حذف کنید.</li>
+      <li><strong>تاریخچه‌ی تغییرات</strong> بالای فایل («۱۴۰۲/۰۳/۱۰ علی: افزودن فیلد»): کار Git است.</li>
+      <li><strong>commentهای اجباری بی‌محتوا</strong> روی هر getter و setter.</li>
+      <li><strong>commentی که بیانگر کد بد است:</strong> اگر برای توضیح یک تکه کد comment طولانی لازم است، اول بپرسید آیا با نام‌گذاری بهتر یا extract method قابل حذف است.</li>
+    </ul>
+
+    <h3>TODO و FIXME</h3>
+    <pre><code class="language-php">// TODO(PAY-412): remove fallback after all merchants migrate to API v2 (planned Q1).
+// FIXME: race condition when two workers process the same refund; tracked in PAY-398.</code></pre>
+    <p>TODO بدون شناسه‌ی issue و مالک، عملاً «هرگز» انجام نمی‌شود. برخی تیم‌ها با یک قاعده‌ی lint، TODO بدون شماره‌ی ticket را رد می‌کنند.</p>
+
+    <div class="callout tip"><p>آزمون سریع: «اگر این comment را حذف کنم، خواننده‌ی بعدی چیزی از دست می‌دهد که از کد قابل فهم نیست؟» اگر جواب منفی است، comment زائد است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="self-documenting" data-title="کد خودمستند در برابر comment">
+    <h2>کد خودمستند در برابر comment</h2>
+    <p><strong>Self-documenting code</strong> کدی است که با نام‌گذاری دقیق، توابع کوچک، typeهای صریح و ساختار روشن، هدف خود را بدون comment بیان می‌کند. این اولین خط دفاع است؛ comment مکمل آن است، نه جایگزینش.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>قبل</h4>
+<pre><code class="language-php">// check if user can get discount
+if ($u-&gt;created_at &lt; now()-&gt;subYear()
+    &amp;&amp; $u-&gt;orders()-&gt;count() &gt; 10
+    &amp;&amp; ! $u-&gt;is_blocked) {
+    $p = $p * 0.9; // 10% off
+}</code></pre>
+      </div>
+      <div class="card"><h4>بعد</h4>
+<pre><code class="language-php">if ($customer-&gt;isEligibleForLoyaltyDiscount()) {
+    $price = $price-&gt;applyDiscount(
+        LoyaltyDiscount::PERCENT
+    );
+}
+
+// in Customer model
+public function isEligibleForLoyaltyDiscount(): bool
+{
+    return $this-&gt;isMemberForAtLeast(years: 1)
+        &amp;&amp; $this-&gt;completedOrdersCount() &gt; 10
+        &amp;&amp; ! $this-&gt;is_blocked;
+}</code></pre>
+      </div>
+    </div>
+
+    <h3>ابزارهای خودمستندسازی در PHP مدرن</h3>
+    <ul>
+      <li><strong>نام‌گذاری:</strong> متغیر و متد با نام دامنه (<code>$invoice</code> نه <code>$data</code>؛ <code>markAsPaid()</code> نه <code>update()</code>).</li>
+      <li><strong>Type declarations:</strong> typeهای native برای پارامتر، خروجی و property، به‌همراه <code>declare(strict_types=1)</code>.</li>
+      <li><strong>Enum</strong> به‌جای رشته و عدد جادویی: <code>OrderStatus::Paid</code> به‌جای <code>'p'</code> یا <code>2</code>.</li>
+      <li><strong>Value Object</strong>: <code>Money</code>، <code>Email</code>؛ قواعد را در خود نوع کپسوله می‌کند.</li>
+      <li><strong>Named arguments</strong>: <code>retry(times: 3, sleepMilliseconds: 200)</code> به‌جای <code>retry(3, 200)</code>.</li>
+      <li><strong>readonly</strong> و constructor property promotion برای اعلام صریح تغییرناپذیری.</li>
+      <li><strong>تست‌ها</strong> به‌عنوان مستندات اجرایی: نام تست مثل <code>it_rejects_coupon_after_expiry_date</code> قاعده‌ی کسب‌وکار را مستند می‌کند و برخلاف comment، اگر کهنه شود fail می‌شود.</li>
+    </ul>
+
+    <h3>محدودیت‌های کد خودمستند</h3>
+    <p>کد هرچقدر هم تمیز باشد، نمی‌تواند این‌ها را بگوید:</p>
+    <ul>
+      <li><strong>چرا</strong> این رویکرد انتخاب شد و گزینه‌های دیگر چرا رد شدند.</li>
+      <li><strong>تصویر کلان</strong>: معماری، جریان داده بین سرویس‌ها، وابستگی‌های بیرونی.</li>
+      <li><strong>نحوه‌ی استفاده</strong> برای کسی که به کد دسترسی ندارد (مصرف‌کننده‌ی API).</li>
+      <li><strong>دانش عملیاتی</strong>: نحوه‌ی deploy، پیکربندی، واکنش به حادثه.</li>
+    </ul>
+    <div class="callout exam"><p>جمع‌بندی برای پاسخ تشریحی: «کد خودمستند و comment رقیب نیستند. با نام‌گذاری، type، enum و توابع کوچک، نیاز به commentهای "چه" را حذف می‌کنیم؛ comment را برای "چرا"، محدودیت‌ها و هشدارها نگه می‌داریم؛ و دانش سطح بالاتر (معماری، تصمیم‌ها، عملیات) را در مستندات جداگانه مثل README، ADR و runbook ثبت می‌کنیم.» جمله‌ی «کد خوب نیازی به مستندات ندارد» یک ساده‌سازی نادرست است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="phpdoc" data-title="PHPDoc و Docblock">
+    <h2>PHPDoc و Docblock</h2>
+    <p><strong>PHPDoc</strong> قالب استاندارد (de facto) برای comment ساخت‌یافته در PHP است که با <code>/** ... */</code> شروع می‌شود. پیش‌نویس‌های PSR-5 و PSR-19 آن را توصیف می‌کنند ولی هیچ‌کدام به‌طور رسمی پذیرفته نشده‌اند؛ با این حال IDEها (PhpStorm)، ابزارهای static analysis (PHPStan، Psalm) و تولیدکننده‌های مستندات (phpDocumentor) آن را می‌فهمند.</p>
+
+    <h3>وقتی type native کافی است، docblock تکراری ننویسید</h3>
+    <div class="grid-2">
+      <div class="card"><h4>زائد</h4>
+<pre><code class="language-php">/**
+ * Get the user name.
+ *
+ * @param int $id
+ * @return string
+ */
+public function name(int $id): string</code></pre>
+      </div>
+      <div class="card"><h4>مفید</h4>
+<pre><code class="language-php">/**
+ * @param list&lt;int&gt; $ids
+ * @return Collection&lt;int, User&gt;
+ *
+ * @throws ModelNotFoundException
+ *         if any id does not exist.
+ */
+public function findMany(array $ids): Collection</code></pre>
+      </div>
+    </div>
+    <p>از PHP 7 و به‌خصوص PHP 8 به بعد، typeهای native (union، nullable، <code>mixed</code>، <code>never</code>، intersection، DNF) بخش بزرگی از نقش docblock را گرفته‌اند. docblock امروز بیشتر برای چیزهایی است که سیستم type خود PHP نمی‌تواند بیان کند.</p>
+
+    <h3>تگ‌های پرکاربرد</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>تگ</th><th>کاربرد</th></tr></thead>
+      <tbody>
+        <tr><td><code>@param</code> / <code>@return</code></td><td>type دقیق‌تر از native: <code>list&lt;string&gt;</code>، <code>array&lt;string, int&gt;</code>، <code>non-empty-string</code>، <code>positive-int</code></td></tr>
+        <tr><td><code>@throws</code></td><td>exceptionهایی که فراخواننده باید مدیریت کند (PHP، checked exception ندارد)</td></tr>
+        <tr><td><code>@var</code></td><td>type یک property یا متغیر محلی وقتی static analysis نمی‌تواند استنتاج کند</td></tr>
+        <tr><td><code>@template</code></td><td>Generics: <code>@template T</code> و استفاده در <code>@param class-string&lt;T&gt;</code> و <code>@return T</code></td></tr>
+        <tr><td><code>@property</code> / <code>@method</code></td><td>اعلام propertyها و متدهای جادویی (مثل attributeهای Eloquent یا <code>__call</code>)</td></tr>
+        <tr><td><code>@deprecated</code></td><td>اعلام منسوخ شدن، همراه با جایگزین و نسخه‌ی حذف</td></tr>
+        <tr><td><code>@see</code> / <code>@link</code></td><td>ارجاع به کلاس، متد، ADR یا مستند بیرونی</td></tr>
+        <tr><td><code>@internal</code></td><td>بخشی از API عمومی نیست؛ مصرف‌کنندگان نباید به آن وابسته شوند</td></tr>
+        <tr><td><code>@phpstan-*</code> / <code>@psalm-*</code></td><td>نسخه‌ی خاص ابزار برای typeهای پیشرفته‌تر</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>نمونه‌ی کامل: Generics و array shape</h3>
+    <pre><code class="language-php">&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Support;
+
+/**
+ * Simple typed repository for read models.
+ *
+ * @template TModel of \Illuminate\Database\Eloquent\Model
+ */
+final class ReadRepository
+{
+    /**
+     * @param class-string&lt;TModel&gt; $modelClass
+     */
+    public function __construct(private readonly string $modelClass) {}
+
+    /**
+     * Returns a summary row per model for the admin dashboard.
+     *
+     * @return list&lt;array{id: int, label: string, created_at: string}&gt;
+     */
+    public function summaries(int $limit = 50): array
+    {
+        // ...
+    }
+
+    /**
+     * @deprecated since 3.2, use {@see self::summaries()} instead. Will be removed in 4.0.
+     */
+    public function legacySummary(): array
+    {
+        return $this-&gt;summaries();
+    }
+}</code></pre>
+
+    <h3>Eloquent و docblock</h3>
+    <pre><code class="language-php">/**
+ * @property int $id
+ * @property string $email
+ * @property OrderStatus $status
+ * @property-read \Illuminate\Database\Eloquent\Collection&lt;int, Order&gt; $orders
+ */
+class Customer extends Model
+{
+    /** @return HasMany&lt;Order, $this&gt; */
+    public function orders(): HasMany
+    {
+        return $this-&gt;hasMany(Order::class);
+    }
+}</code></pre>
+    <p>attributeهای Eloquent جادویی‌اند و IDE و PHPStan بدون <code>@property</code> آن‌ها را نمی‌شناسند. ابزارهایی مثل <strong>barryvdh/laravel-ide-helper</strong> این docblockها را از روی schema تولید می‌کنند و <strong>Larastan</strong> (افزونه‌ی PHPStan برای Laravel) بخش زیادی را خودکار استنتاج می‌کند.</p>
+
+    <div class="callout warn"><p>docblock نادرست از نبودنش بدتر است: اگر <code>@return User</code> بنویسید ولی متد <code>null</code> هم برگرداند، IDE و همکاران گمراه می‌شوند. اجرای PHPStan در CI (در سطح مناسب) باعث می‌شود docblockها با کد واقعی تطبیق داده شوند و «مستند اجرایی» شوند.</p></div>
+    <div class="callout note"><p>از PHP 8.4، attribute <code>#[\Deprecated]</code> برای توابع، متدها و ثابت‌های کلاس اضافه شده که برخلاف تگ <code>@deprecated</code>، هنگام فراخوانی در runtime هشدار deprecation تولید می‌کند. تگ docblock همچنان برای ابزارها و نسخه‌های قدیمی‌تر رایج است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="readme" data-title="README و CONTRIBUTING">
+    <h2>README و CONTRIBUTING</h2>
+    <p><strong>README</strong> «در ورودی» پروژه است: اولین فایلی که یک توسعه‌دهنده‌ی جدید، یک reviewer یا خود شما بعد از مدت‌ها می‌بینید. یک README خوب ظرف چند دقیقه به سه سؤال جواب می‌دهد: <strong>این چیست؟ چرا وجود دارد؟ چطور اجرایش کنم؟</strong></p>
+
+    <h3>ساختار پیشنهادی README برای یک سرویس Laravel</h3>
+    <pre><code class="language-plaintext"># Billing Service
+
+سرویس صدور فاکتور و پرداخت برای پلتفرم فروشگاهی. اشتراک‌ها را صورت‌حساب می‌کند،
+با درگاه پرداخت یکپارچه است و رویداد InvoicePaid را منتشر می‌کند.
+
+## فهرست
+## پیش‌نیازها
+- PHP 8.3+ (extensions: intl, bcmath, redis)
+- Composer 2, Node 20+
+- Docker (برای MySQL و Redis محلی)
+
+## راه‌اندازی سریع
+    cp .env.example .env
+    docker compose up -d
+    composer install
+    php artisan key:generate
+    php artisan migrate --seed
+    php artisan serve
+
+## اجرای تست‌ها
+    php artisan test --parallel
+    ./vendor/bin/phpstan analyse
+
+## پیکربندی
+جدول متغیرهای محیطی ← docs/configuration.md
+
+## معماری
+نمای کلی و نمودار C4 ← docs/architecture.md ؛ تصمیم‌ها ← docs/adr/
+
+## Deploy
+خودکار از main به staging؛ production با tag. جزئیات ← docs/deploy.md
+
+## عیب‌یابی رایج
+- خطای "No application encryption key" ← php artisan key:generate
+
+## مالکیت و تماس
+تیم Payments — کانال #team-payments ؛ on-call در PagerDuty
+
+## مشارکت
+CONTRIBUTING.md را ببینید.</code></pre>
+
+    <h3>اصول README خوب</h3>
+    <ul>
+      <li><strong>Quick start قابل اجرا:</strong> دستورات باید روی یک ماشین تمیز واقعاً کار کنند. بهترین آزمون: یک عضو جدید فقط با README پروژه را بالا بیاورد و هر جا گیر کرد، README را اصلاح کند.</li>
+      <li><strong>کوتاه و پیونددار:</strong> README نقشه است، نه دایرة‌المعارف؛ جزئیات به <code>docs/</code> لینک شوند.</li>
+      <li><strong>بالای صفحه مهم‌ترین چیزها:</strong> توضیح یک‌خطی، badgeهای وضعیت CI و نسخه.</li>
+      <li><strong>اطلاعات مالکیت:</strong> چه تیمی مسئول است و کجا سؤال بپرسیم.</li>
+      <li>برای library: نصب (<code>composer require</code>)، مثال حداقلی، نسخه‌های پشتیبانی‌شده‌ی PHP/Laravel، لایسنس.</li>
+    </ul>
+
+    <h3>فایل‌های همراه رایج</h3>
+    <dl class="terms">
+      <dt>CONTRIBUTING.md</dt><dd>نحوه‌ی مشارکت: branching، قالب commit (مثلاً Conventional Commits)، اجرای تست و lint، فرایند PR و review.</dd>
+      <dt>CHANGELOG.md</dt><dd>تغییرات قابل توجه هر نسخه برای انسان‌ها.</dd>
+      <dt>LICENSE</dt><dd>مجوز استفاده (برای پروژه‌های متن‌باز ضروری).</dd>
+      <dt>SECURITY.md</dt><dd>نحوه‌ی گزارش محرمانه‌ی آسیب‌پذیری و نسخه‌های تحت پشتیبانی امنیتی.</dd>
+      <dt>CODEOWNERS</dt><dd>مالکان هر مسیر؛ برای درخواست خودکار review.</dd>
+      <dt>.env.example</dt><dd>فهرست همه‌ی متغیرهای محیطی با مقادیر نمونه‌ی بی‌خطر.</dd>
+    </dl>
+    <div class="callout exam"><p>اگر پرسیدند «README یک پروژه باید شامل چه بخش‌هایی باشد؟»، حداقل این‌ها را بگویید: توضیح هدف، پیش‌نیازها، راه‌اندازی محلی، اجرای تست، پیکربندی/env، نحوه‌ی deploy (یا لینک)، معماری کلی (یا لینک)، عیب‌یابی رایج، مالکیت و تماس، نحوه‌ی مشارکت. و تأکید کنید که دستورات باید قابل اجرا و تست‌شده باشند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="api-docs" data-title="مستندات API: OpenAPI و Scribe">
+    <h2>مستندات API: OpenAPI و Scribe</h2>
+    <p>برای API، مستندات بخشی از <strong>قرارداد (contract)</strong> بین تولیدکننده و مصرف‌کننده است. <strong>OpenAPI Specification</strong> (نام قبلی: Swagger Specification) استانداردی مستقل از زبان برای توصیف REST/HTTP API در قالب YAML یا JSON است. «Swagger» امروز بیشتر به مجموعه ابزارها (Swagger UI، Swagger Editor، Codegen) اشاره دارد. نسخه‌ی 3.1 با JSON Schema هم‌راستا شده است.</p>
+
+    <h3>یک API doc خوب چه چیزهایی دارد؟</h3>
+    <ul>
+      <li>احراز هویت (نوع توکن، header، نحوه‌ی گرفتن توکن) و مجوزها.</li>
+      <li>هر endpoint: متد، مسیر، پارامترهای path/query/body با type، الزامی/اختیاری بودن و قیدها.</li>
+      <li>نمونه‌ی واقعی درخواست و پاسخ (موفق و خطا).</li>
+      <li><strong>قالب خطا</strong> و کدهای وضعیت (مثلاً ۴۲۲ برای validation با ساختار <code>errors</code> در Laravel).</li>
+      <li>pagination، فیلتر، مرتب‌سازی، rate limit، idempotency.</li>
+      <li>نسخه‌بندی و سیاست deprecation؛ changelog API.</li>
+    </ul>
+
+    <h3>نمونه‌ی OpenAPI</h3>
+    <pre><code class="language-yaml">openapi: 3.1.0
+info:
+  title: Billing API
+  version: 2.3.0
+servers:
+  - url: https://api.example.com/v2
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Invoice:
+      type: object
+      required: [id, status, amount, currency]
+      properties:
+        id:       { type: integer, example: 1042 }
+        status:   { type: string, enum: [draft, open, paid, void] }
+        amount:   { type: integer, description: Amount in minor units (cents), example: 12900 }
+        currency: { type: string, example: EUR }
+    ValidationError:
+      type: object
+      properties:
+        message: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+security:
+  - bearerAuth: []
+paths:
+  /invoices/{invoice}:
+    get:
+      summary: Get a single invoice
+      tags: [Invoices]
+      parameters:
+        - name: invoice
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: The invoice
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '403': { description: Invoice belongs to another customer }
+        '404': { description: Invoice not found }</code></pre>
+
+    <h3>Design-first در برابر Code-first</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Design-first (Spec-first)</h4><ul>
+        <li>اول فایل OpenAPI نوشته و با مصرف‌کنندگان review می‌شود، بعد پیاده‌سازی.</li>
+        <li>فرانت و بک می‌توانند موازی کار کنند (mock server از روی spec).</li>
+        <li>طراحی API آگاهانه‌تر و سازگارتر.</li>
+        <li>خطر واگرایی spec و کد؛ نیاز به contract test یا validation پاسخ‌ها در تست.</li>
+      </ul></div>
+      <div class="card"><h4>Code-first</h4><ul>
+        <li>مستند از روی کد (route، FormRequest، Resource، annotation/attribute) تولید می‌شود.</li>
+        <li>همگامی بهتر با پیاده‌سازی؛ سربار کمتر.</li>
+        <li>طراحی API ممکن است تحت تأثیر جزئیات پیاده‌سازی قرار گیرد.</li>
+        <li>کیفیت مستند به کیفیت annotationها و استنتاج ابزار بستگی دارد.</li>
+      </ul></div>
+    </div>
+
+    <h3>ابزارهای Laravel</h3>
+    <ul>
+      <li><strong>Scribe</strong> (<code>knuckleswtf/scribe</code>): از routeها، قوانین validation در FormRequest و docblock یا PHP attributeها مستند می‌سازد؛ خروجی آن صفحه‌ی HTML، مجموعه‌ی Postman و فایل OpenAPI است. می‌تواند با فراخوانی واقعی endpoint (در محیط امن) نمونه‌ی پاسخ تولید کند.</li>
+      <li><strong>Scramble</strong> (<code>dedoc/scramble</code>): بدون annotation و با تحلیل static کد (FormRequest، API Resource، type خروجی) OpenAPI تولید می‌کند.</li>
+      <li><strong>L5-Swagger</strong>: Swagger UI را با <code>zircote/swagger-php</code> ترکیب می‌کند؛ spec با annotation یا attributeهای <code>OpenApi\Attributes</code> روی کد نوشته می‌شود.</li>
+    </ul>
+    <pre><code class="language-php">/**
+ * Get a single invoice
+ *
+ * Returns the invoice if it belongs to the authenticated customer.
+ *
+ * @group Invoices
+ * @authenticated
+ *
+ * @urlParam invoice integer required The invoice ID. Example: 1042
+ *
+ * @response 200 {"data": {"id": 1042, "status": "paid", "amount": 12900, "currency": "EUR"}}
+ * @response 403 {"message": "This action is unauthorized."}
+ */
+public function show(Invoice $invoice): InvoiceResource
+{
+    $this-&gt;authorize('view', $invoice);
+
+    return new InvoiceResource($invoice);
+}</code></pre>
+    <pre><code class="language-bash">php artisan scribe:generate     # تولید مستندات در public/docs یا resources/views/scribe</code></pre>
+
+    <div class="callout tip"><p>تولید مستند را در CI اجرا کنید: اگر spec تولیدشده با نسخه‌ی commit‌شده فرق داشت، build fail شود (یعنی کسی API را تغییر داده ولی مستند را به‌روز نکرده است). lint کردن spec با ابزاری مثل <strong>Spectral</strong> و بررسی تغییرات breaking بین دو نسخه‌ی spec (با ابزارهای OpenAPI diff) هم رایج است.</p></div>
+    <div class="callout exam"><p>مزیت کلیدی OpenAPI نسبت به یک صفحه‌ی ویکی: <strong>قابل پردازش با ماشین</strong> است. از یک spec می‌توان مستند تعاملی (Swagger UI، Redoc)، SDK کلاینت، mock server، اعتبارسنجی درخواست/پاسخ در تست و contract testing تولید کرد. پس مستند به جزئی از toolchain تبدیل می‌شود، نه یک فایل جانبی.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="architecture-docs" data-title="مستندات معماری و مدل C4">
+    <h2>مستندات معماری و مدل C4</h2>
+    <p>مستند معماری به سؤال «سیستم از چه اجزایی تشکیل شده، اجزا چطور با هم و با دنیای بیرون ارتباط دارند و چرا این‌طور طراحی شده» جواب می‌دهد. مشکل رایج نمودارهای معماری این است که سطح انتزاع در آن‌ها قاطی است (در یک نمودار هم «کاربر» هست، هم «کلاس OrderService» و هم «سرور AWS») و راهنما (legend) ندارند.</p>
+
+    <h3>مدل C4</h3>
+    <p><strong>C4 model</strong> (از Simon Brown) معماری را در چهار سطح بزرگ‌نمایی توصیف می‌کند؛ مثل نقشه که از کشور به شهر و خیابان می‌رسد:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>سطح</th><th>چه چیزی را نشان می‌دهد</th><th>مخاطب</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. System Context</strong></td><td>سیستم شما به‌صورت یک جعبه، کاربران (personas) و سیستم‌های بیرونی که با آن تعامل دارند</td><td>همه، حتی افراد غیرفنی</td></tr>
+        <tr><td><strong>2. Container</strong></td><td>واحدهای قابل اجرا/استقرار: وب‌اپ Laravel، worker صف، SPA، MySQL، Redis، S3؛ و پروتکل ارتباطشان</td><td>توسعه‌دهندگان، DevOps، معماران</td></tr>
+        <tr><td><strong>3. Component</strong></td><td>اجزای اصلی داخل یک container: ماژول‌ها، سرویس‌ها، controllerها و مسئولیتشان</td><td>توسعه‌دهندگان همان container</td></tr>
+        <tr><td><strong>4. Code</strong></td><td>کلاس‌ها و جزئیات (UML class diagram)؛ معمولاً از کد یا IDE تولید می‌شود و اغلب لازم نیست</td><td>توسعه‌دهندگان</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>«Container» در C4 به معنی Docker container نیست؛ هر چیزی است که <strong>جداگانه اجرا یا مستقر می‌شود</strong> و داده نگه می‌دارد یا کد اجرا می‌کند (اپلیکیشن، دیتابیس، صف، فضای ذخیره‌سازی فایل).</p></div>
+
+    <pre class="diagram">                 [Customer]                      [Support Agent]
+                     │ HTTPS                           │ HTTPS
+                     ▼                                 ▼
+          ┌──────────────────────┐         ┌──────────────────────┐
+          │   SPA (Vue/Inertia)  │         │  Admin Panel (Laravel)│
+          └──────────┬───────────┘         └──────────┬───────────┘
+                     │ JSON/HTTPS                      │
+                     ▼                                 ▼
+          ┌──────────────────────────────────────────────────────┐
+          │              API Application (Laravel 12)            │
+          └───────┬──────────────┬──────────────┬────────────────┘
+                  │ SQL          │ enqueue      │ HTTPS
+                  ▼              ▼              ▼
+             [MySQL 8]      [Redis Queue] ─► [Queue Worker]  ─► [Payment Gateway (external)]
+                                                    │
+                                                    ▼ SMTP
+                                             [Email Provider (external)]
+
+  Level 2 — Container diagram (legend: [] = container / external system)</pre>
+
+    <h3>اصول نمودار خوب</h3>
+    <ul>
+      <li>عنوان، سطح و تاریخ/نسخه داشته باشد؛ legend برای شکل‌ها و رنگ‌ها.</li>
+      <li>هر فلش جهت و برچسب داشته باشد: «چه چیزی، با چه پروتکلی» (مثلاً «Reads/writes — SQL/TCP»).</li>
+      <li>در هر نمودار فقط یک سطح انتزاع.</li>
+      <li>هر جعبه: نام، نوع فناوری و یک جمله مسئولیت.</li>
+    </ul>
+
+    <h3>Diagrams as code</h3>
+    <p>به‌جای فایل تصویری که فقط یک نفر می‌تواند ویرایشش کند، نمودار به‌صورت متن در repo نگه داشته می‌شود تا قابل diff و review باشد و همراه کد تغییر کند. ابزارهای رایج: <strong>Mermaid</strong> (که GitHub و GitLab مستقیماً در Markdown رندر می‌کنند)، <strong>PlantUML</strong> (با کتابخانه‌ی C4-PlantUML) و <strong>Structurizr DSL</strong> (مخصوص C4، یک مدل و چند view).</p>
+    <pre><code class="language-plaintext">```mermaid
+sequenceDiagram
+    participant C as Customer SPA
+    participant A as API (Laravel)
+    participant Q as Redis Queue
+    participant G as Payment Gateway
+    C-&gt;&gt;A: POST /orders/{id}/pay
+    A-&gt;&gt;G: charge (idempotency key)
+    G--&gt;&gt;A: 201 charged
+    A-&gt;&gt;Q: dispatch SendReceipt
+    A--&gt;&gt;C: 202 Accepted
+```</code></pre>
+    <h3>انواع دیگر نمودار</h3>
+    <ul>
+      <li><strong>Sequence diagram:</strong> ترتیب پیام‌ها در یک سناریو (پرداخت، OAuth).</li>
+      <li><strong>ERD:</strong> مدل داده و روابط جداول.</li>
+      <li><strong>Deployment diagram:</strong> نگاشت containerها روی زیرساخت (سرورها، Kubernetes، region).</li>
+      <li><strong>State diagram:</strong> چرخه‌ی وضعیت یک موجودیت (سفارش: pending ← paid ← shipped).</li>
+    </ul>
+    <div class="callout note"><p><strong>arc42</strong> یک قالب رایج برای سند معماری کامل است (اهداف، قیود، context، building blocks، runtime، deployment، تصمیم‌ها، ریسک‌ها، واژه‌نامه) و به‌خوبی با C4 (برای نمودارها) و ADR (برای بخش تصمیم‌ها) ترکیب می‌شود.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="adr" data-title="Architecture Decision Record">
+    <h2>Architecture Decision Record</h2>
+    <p><strong>ADR</strong> سندی کوتاه است که <strong>یک تصمیم مهم معماری</strong> را همراه با زمینه، گزینه‌ها و پیامدهایش ثبت می‌کند. «مهم» یعنی تصمیمی که برگرداندنش پرهزینه است یا روی ساختار، ویژگی‌های کیفی (کارایی، امنیت، مقیاس‌پذیری)، وابستگی‌ها یا شیوه‌ی کار تیم اثر دارد. قالب کلاسیک آن را Michael Nygard معرفی کرد.</p>
+
+    <h3>چرا ADR؟</h3>
+    <ul>
+      <li>پاسخ به سؤال همیشگی «<strong>چرا</strong> این کار را این‌طور کردیم؟» بعد از رفتن افراد.</li>
+      <li>جلوگیری از بحث‌های تکراری و تغییرات ناآگاهانه («Chesterton's fence»: قبل از برداشتن حصار بدانید چرا گذاشته شده).</li>
+      <li>onboarding: خواندن ADRها تاریخچه‌ی فکری سیستم را نشان می‌دهد.</li>
+      <li>تصمیم‌گیری بهتر: نوشتن گزینه‌ها و پیامدها، تفکر را شفاف و قابل review می‌کند.</li>
+    </ul>
+
+    <h3>ویژگی‌ها</h3>
+    <ul>
+      <li><strong>کوتاه</strong> (معمولاً یک تا دو صفحه)، یک تصمیم در هر ADR.</li>
+      <li><strong>شماره‌گذاری ترتیبی</strong> و نگهداری در repo: <code>docs/adr/0007-use-idempotency-keys-for-payments.md</code>.</li>
+      <li><strong>وضعیت:</strong> Proposed، Accepted، Deprecated، Superseded by ADR-00XX.</li>
+      <li><strong>تغییرناپذیر</strong> پس از پذیرش: اگر تصمیم عوض شد، ADR جدید می‌نویسید که ADR قبلی را supersede می‌کند؛ ADR قدیمی را بازنویسی نمی‌کنید، چون تاریخچه‌ی تصمیم ارزشمند است.</li>
+      <li>review از طریق PR مثل کد.</li>
+    </ul>
+
+    <h3>نمونه‌ی ADR</h3>
+    <pre><code class="language-plaintext"># ADR-0007: استفاده از Idempotency Key برای درخواست‌های پرداخت
+
+- وضعیت: Accepted
+- تاریخ: 2026-09-14
+- تصمیم‌گیرندگان: تیم Payments (علی ر.، سارا م.)، معمار فنی
+- مرتبط: PAY-318 ، ADR-0003 (پردازش پرداخت در queue)
+
+## زمینه (Context)
+درگاه پرداخت در ساعات اوج گاهی بعد از ۳۰ ثانیه timeout می‌دهد، در حالی که
+تراکنش را پردازش کرده است. Job پرداخت ما در صورت timeout تا ۳ بار retry می‌شود.
+در ماه گذشته ۴۲ مورد شارژ دوباره‌ی مشتری گزارش شد. درگاه از header
+Idempotency-Key پشتیبانی می‌کند و کلید را ۲۴ ساعت نگه می‌دارد.
+
+## گزینه‌های بررسی‌شده
+1. حذف retry خودکار و بررسی دستی موارد timeout
+   - ساده، ولی بار پشتیبانی زیاد و تجربه‌ی بد کاربر
+2. پرسیدن وضعیت تراکنش از درگاه قبل از هر retry
+   - API وضعیت درگاه با تأخیر به‌روز می‌شود؛ race condition باقی می‌ماند
+3. ارسال Idempotency-Key ثابت به ازای هر تلاش پرداخت (انتخاب‌شده)
+
+## تصمیم (Decision)
+برای هر PaymentAttempt یک UUID تولید و در جدول payment_attempts ذخیره می‌کنیم
+و در همه‌ی retryهای همان تلاش، همین مقدار را به‌عنوان Idempotency-Key می‌فرستیم.
+بازه‌ی retry باید کمتر از ۲۴ ساعت باشد.
+
+## پیامدها (Consequences)
+مثبت:
+- شارژ تکراری ناشی از retry حذف می‌شود.
+- retry امن می‌شود و می‌توانیم backoff طولانی‌تری داشته باشیم.
+منفی / ریسک:
+- وابستگی به رفتار درگاه؛ در صورت تغییر درگاه باید پشتیبانی idempotency بررسی شود.
+- نیاز به migration جدید و نگهداری کلید.
+پیگیری:
+- افزودن متریک "duplicate charge prevented" و هشدار.
+- به‌روزرسانی runbook «پرداخت ناموفق».</code></pre>
+
+    <div class="callout exam"><p>بخش‌های ضروری ADR را حفظ کنید: <strong>عنوان (تصمیم به‌صورت جمله)، وضعیت، زمینه، تصمیم، پیامدها</strong> و در قالب‌های کامل‌تر مثل MADR: <strong>گزینه‌های بررسی‌شده با مزایا و معایب</strong>. نکته‌ای که ممتحن دوست دارد بشنود: پیامدهای <em>منفی</em> را هم باید صادقانه نوشت؛ هر تصمیم معماری یک trade-off است.</p></div>
+    <div class="callout tip"><p>چه چیزی ADR لازم دارد؟ انتخاب دیتابیس یا message broker، الگوی ارتباط بین سرویس‌ها (sync در برابر async)، استراتژی احراز هویت، تصمیم monolith در برابر microservice، قرارداد نسخه‌بندی API، کتابخانه‌ی اصلی‌ای که جایگزینی‌اش سخت است. نام‌گذاری یک متغیر یا انتخاب بین دو helper ساده ADR لازم ندارد.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="changelog" data-title="CHANGELOG و Release Notes">
+    <h2>CHANGELOG و Release Notes</h2>
+    <p><strong>CHANGELOG</strong> فایلی است که فهرست مرتب و زمان‌دار <strong>تغییرات قابل توجه</strong> هر نسخه را برای انسان‌ها نگه می‌دارد. قرارداد <strong>Keep a Changelog</strong> رایج‌ترین قالب آن است و معمولاً همراه با <strong>Semantic Versioning</strong> به کار می‌رود.</p>
+
+    <h3>اصول Keep a Changelog</h3>
+    <ul>
+      <li>CHANGELOG برای <strong>انسان‌ها</strong> نوشته می‌شود، نه ماشین؛ پس <strong>dump کردن <code>git log</code> نیست</strong>. commitهایی مثل «fix typo» یا «refactor test» برای کاربر معنا ندارند.</li>
+      <li>هر نسخه یک بخش دارد؛ <strong>جدیدترین نسخه بالا</strong>.</li>
+      <li>تاریخ انتشار به قالب ISO 8601: <code>YYYY-MM-DD</code>.</li>
+      <li>یک بخش <code>[Unreleased]</code> در بالای فایل برای تغییراتی که هنوز منتشر نشده‌اند.</li>
+      <li>تغییرات بر اساس نوع گروه‌بندی می‌شوند: <strong>Added</strong>، <strong>Changed</strong>، <strong>Deprecated</strong>، <strong>Removed</strong>، <strong>Fixed</strong>، <strong>Security</strong>.</li>
+      <li>نسخه‌ها به diff یا release مربوط لینک می‌شوند.</li>
+    </ul>
+    <pre><code class="language-plaintext"># Changelog
+
+All notable changes to this project will be documented in this file.
+The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
+
+## [Unreleased]
+### Added
+- Export invoices as CSV from the admin panel.
+
+## [2.4.0] - 2026-10-28
+### Added
+- `GET /api/v2/invoices/{id}/pdf` endpoint for downloading invoices (#412).
+### Changed
+- Payment retries now use exponential backoff (max 5 attempts).
+### Deprecated
+- `GET /api/v2/invoices/{id}/download`; use `/pdf` instead. Will be removed in 3.0.0.
+### Fixed
+- Tax rounding is now applied per line item instead of per order (#398).
+### Security
+- Upgrade `league/commonmark` to fix a vulnerability in its embed extension.
+
+## [2.3.1] - 2026-10-02
+### Fixed
+- Prevent double charge when the payment gateway times out (#318).
+
+[Unreleased]: https://git.example.com/billing/compare/v2.4.0...HEAD
+[2.4.0]: https://git.example.com/billing/compare/v2.3.1...v2.4.0
+[2.3.1]: https://git.example.com/billing/compare/v2.3.0...v2.3.1</code></pre>
+
+    <h3>ارتباط با SemVer</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>دسته در CHANGELOG</th><th>اثر معمول بر نسخه</th></tr></thead>
+      <tbody>
+        <tr><td>Removed، یا Changed ناسازگار</td><td>MAJOR</td></tr>
+        <tr><td>Added، Deprecated، Changed سازگار</td><td>MINOR</td></tr>
+        <tr><td>Fixed، Security (بدون تغییر API)</td><td>PATCH</td></tr>
+      </tbody>
+    </table></div>
+    <p>نکته‌ی مهم <strong>Deprecated</strong>: قبل از حذف یک قابلیت (MAJOR)، در یک نسخه‌ی MINOR آن را deprecated اعلام کنید تا مصرف‌کنندگان فرصت مهاجرت داشته باشند. این همان سیاستی است که در PHPDoc با <code>@deprecated</code> و در API با header یا مستند deprecation دنبال می‌شود.</p>
+
+    <h3>خودکارسازی</h3>
+    <ul>
+      <li>اگر تیم از <strong>Conventional Commits</strong> استفاده کند، ابزارهایی مثل release-please یا semantic-release می‌توانند پیش‌نویس CHANGELOG و نسخه‌ی بعدی را خودکار بسازند؛ ولی بهتر است یک انسان متن نهایی را برای خوانایی ویرایش کند.</li>
+      <li>روش دیگر: هر PR یک قطعه‌ی کوچک changelog (changelog fragment) اضافه می‌کند و هنگام release این قطعه‌ها ادغام می‌شوند؛ از conflict روی یک فایل مشترک جلوگیری می‌کند.</li>
+      <li>چک CI: PRهایی که کد را تغییر داده‌اند ولی CHANGELOG یا fragment ندارند (با امکان برچسب «skip-changelog» برای تغییرات داخلی).</li>
+    </ul>
+    <div class="callout note"><p><strong>Release notes</strong> با CHANGELOG فرق ظریفی دارد: release notes معمولاً برای کاربر نهایی یا مشتری و با لحن محصولی نوشته می‌شود (برجسته‌سازی قابلیت‌ها، راهنمای مهاجرت)، در حالی که CHANGELOG فهرست کامل و فنی تغییرات قابل توجه برای توسعه‌دهندگان و مصرف‌کنندگان API است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="runbooks-onboarding" data-title="Runbook و Onboarding">
+    <h2>Runbook و Onboarding</h2>
+    <h3>Runbook</h3>
+    <p><strong>Runbook</strong> دستورالعمل گام‌به‌گام برای انجام یک عملیات یا واکنش به یک وضعیت مشخص در production است؛ برای کسی نوشته می‌شود که ممکن است نیمه‌شب، تحت فشار و بدون آشنایی عمیق با آن سرویس، با هشدار روبه‌رو شود. هدف آن کاهش <strong>MTTR</strong> (میانگین زمان بازیابی) و وابستگی به افراد خاص است.</p>
+    <pre><code class="language-plaintext"># Runbook: صف payments عقب افتاده است (QueueBacklogHigh)
+
+## هشدار
+QueueBacklogHigh: بیش از ۵۰۰ job در صف "payments" به مدت ۱۰ دقیقه.
+
+## اثر بر کاربر
+پرداخت‌ها ثبت می‌شوند ولی رسید و فعال‌سازی اشتراک با تأخیر انجام می‌شود.
+شدت: SEV-2 اگر بیش از ۳۰ دقیقه طول بکشد.
+
+## تشخیص
+1. داشبورد Horizon: /horizon ← وضعیت supervisor "payments" را ببینید.
+2. آیا workerها در حال اجرا هستند؟
+       kubectl get pods -l app=billing-worker
+3. نرخ failed jobs:
+       php artisan queue:failed | head
+4. وضعیت درگاه پرداخت: status.gateway.example
+
+## اقدام‌ها
+- workerها متوقف‌اند ← restart:
+      kubectl rollout restart deployment/billing-worker
+- درگاه کند است ← افزایش timeout لازم نیست؛ jobها با backoff retry می‌شوند.
+  فقط پایش کنید و در کانال #incidents اطلاع دهید.
+- jobها با خطای یکسان fail می‌شوند ← آخرین deploy را بررسی و در صورت لزوم rollback:
+      ./deploy rollback billing
+
+## ارجاع (Escalation)
+اگر ظرف ۳۰ دقیقه حل نشد: on-call تیم Payments (PagerDuty) و سپس مدیر فنی.
+
+## پس از حادثه
+ثبت در incident log؛ در صورت نیاز postmortem بدون سرزنش (blameless).</code></pre>
+    <ul>
+      <li>هر هشدار (alert) باید به runbook خود لینک داشته باشد.</li>
+      <li>دستورات کپی‌پذیر و دقیق؛ از «سرویس را بررسی کنید» بدون گفتن «چطور» پرهیز کنید.</li>
+      <li>بعد از هر حادثه، runbook را به‌روز کنید؛ اگر قدمی اشتباه یا ناقص بود، همان‌جا اصلاح شود.</li>
+      <li>گام‌های تکراری و قابل اعتماد runbook کاندیدای خودکارسازی‌اند (<strong>runbook automation</strong>).</li>
+    </ul>
+
+    <h3>Postmortem</h3>
+    <p>پس از هر حادثه‌ی جدی، سند <strong>postmortem</strong> با رویکرد <strong>blameless</strong> نوشته می‌شود: خلاصه، timeline، اثر، علت ریشه‌ای (root cause) و عوامل مؤثر، چه چیزی خوب کار کرد، چه چیزی بد بود، و action itemهای دارای مالک و موعد. هدف یادگیری سیستمی است، نه پیدا کردن مقصر.</p>
+
+    <h3>مستندات Onboarding</h3>
+    <p>هدف: عضو جدید در کمترین زمان «اولین تغییر واقعی» خود را به production برساند.</p>
+    <ul>
+      <li><strong>روز اول:</strong> دسترسی‌ها (repo، CI، staging، ابزار مانیتورینگ)، راه‌اندازی محیط محلی (لینک به README)، ابزارها و قراردادهای تیم.</li>
+      <li><strong>نقشه‌ی سیستم:</strong> نمودار C4 سطح ۱ و ۲، فهرست سرویس‌ها و مالکانشان، واژه‌نامه‌ی دامنه (مثلاً تفاوت «Order» و «Invoice» در کسب‌وکار ما).</li>
+      <li><strong>روش کار:</strong> workflow گیت، فرایند PR و review، Definition of Done، نحوه‌ی deploy و on-call.</li>
+      <li><strong>مسیر یادگیری:</strong> چند «good first issue»، ADRهای کلیدی برای خواندن، یک همراه (buddy).</li>
+      <li>از عضو جدید بخواهید هر جا گیر کرد مستند را اصلاح کند؛ او بهترین تست‌کننده‌ی onboarding است.</li>
+    </ul>
+    <div class="callout exam"><p>تفاوت runbook با مستند معماری: runbook <strong>عمل‌محور</strong> (how-to در Diátaxis) است و برای لحظه‌ی بحران طراحی می‌شود: کوتاه، گام‌به‌گام، با دستورات دقیق و مسیر escalation. مستند معماری <strong>فهم‌محور</strong> (explanation) است.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="config-docs" data-title="مستندسازی env و پیکربندی">
+    <h2>مستندسازی env و پیکربندی</h2>
+    <p>یکی از رایج‌ترین علل خرابی deploy و «روی سیستم من کار می‌کرد»، متغیر محیطی مستندنشده است. پیکربندی باید <strong>کامل، با مقدار نمونه‌ی امن، با توضیح و قابل اعتبارسنجی</strong> مستند شود.</p>
+
+    <h3>.env.example به‌عنوان مستند زنده</h3>
+    <pre><code class="language-ini"># ---------------------------------------------------------------
+# Payment gateway
+# ---------------------------------------------------------------
+# Base URL of the gateway API. Use the sandbox URL outside production.
+PAYMENT_GATEWAY_URL=https://sandbox.gateway.example/api
+
+# Secret API key (required). Get it from the team vault: payments/gateway.
+PAYMENT_GATEWAY_KEY=
+
+# Request timeout in seconds. Keep below the queue job timeout (60s).
+PAYMENT_GATEWAY_TIMEOUT=30
+
+# Disk used for generated invoice PDFs: "local" or "s3".
+INVOICE_PDF_DISK=s3</code></pre>
+    <ul>
+      <li>هر متغیر جدید در همان PR به <code>.env.example</code> اضافه شود (قابل بررسی در review یا CI).</li>
+      <li>هیچ secret واقعی در <code>.env.example</code> نباشد؛ فقط محل دریافت آن (vault یا secret manager).</li>
+      <li>برای هر متغیر: معنا، الزامی/اختیاری، مقدار پیش‌فرض، مقادیر مجاز و واحد (ثانیه؟ میلی‌ثانیه؟).</li>
+    </ul>
+
+    <h3>در Laravel: config به‌عنوان لایه‌ی مستند</h3>
+    <pre><code class="language-php">// config/payments.php
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Gateway timeout
+    |--------------------------------------------------------------------------
+    | Seconds to wait for the gateway. Must be lower than the queue job
+    | timeout, otherwise the worker kills the job before we can retry.
+    */
+    'timeout' =&gt; (int) env('PAYMENT_GATEWAY_TIMEOUT', 30),
+
+    'key' =&gt; env('PAYMENT_GATEWAY_KEY'),
+];</code></pre>
+    <ul>
+      <li><code>env()</code> فقط در فایل‌های <code>config/</code> فراخوانی شود و در بقیه‌ی کد از <code>config('payments.timeout')</code> استفاده شود؛ چون بعد از <code>php artisan config:cache</code>، فایل <code>.env</code> دیگر بارگذاری نمی‌شود و <code>env()</code> خارج از config مقدار <code>null</code> برمی‌گرداند.</li>
+      <li>commentهای بالای هر کلید در config همان سبکی است که خود Laravel در فایل‌های config پیش‌فرض استفاده می‌کند.</li>
+    </ul>
+
+    <h3>اعتبارسنجی پیکربندی در زمان boot</h3>
+    <p>مستندی که اجرا می‌شود بهتر از مستندی است که فقط خوانده می‌شود: اگر یک متغیر الزامی نیست، برنامه زود و با پیام واضح شکست بخورد (fail fast).</p>
+    <pre><code class="language-php">// app/Providers/AppServiceProvider.php
+public function boot(): void
+{
+    if ($this-&gt;app-&gt;environment('production') &amp;&amp; blank(config('payments.key'))) {
+        throw new \RuntimeException(
+            'PAYMENT_GATEWAY_KEY is not set. See docs/configuration.md#payment-gateway'
+        );
+    }
+}</code></pre>
+
+    <h3>جدول پیکربندی در docs</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>متغیر</th><th>الزامی</th><th>پیش‌فرض</th><th>توضیح</th></tr></thead>
+      <tbody>
+        <tr><td><code>PAYMENT_GATEWAY_URL</code></td><td>بله</td><td>—</td><td>آدرس API درگاه؛ در غیر production از sandbox استفاده شود</td></tr>
+        <tr><td><code>PAYMENT_GATEWAY_KEY</code></td><td>بله</td><td>—</td><td>secret؛ از vault (<code>payments/gateway</code>)</td></tr>
+        <tr><td><code>PAYMENT_GATEWAY_TIMEOUT</code></td><td>خیر</td><td><code>30</code></td><td>ثانیه؛ کمتر از timeout job صف</td></tr>
+        <tr><td><code>INVOICE_PDF_DISK</code></td><td>خیر</td><td><code>s3</code></td><td><code>local</code> یا <code>s3</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><p>مستند کردن «مقادیر production» در wiki یا README یک ریسک امنیتی است. مستند باید بگوید <em>کجا</em> مقدار نگه‌داری می‌شود و <em>چه کسی</em> به آن دسترسی دارد، نه خود مقدار را.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="diataxis" data-title="چارچوب Diátaxis">
+    <h2>چارچوب Diátaxis</h2>
+    <p><strong>Diátaxis</strong> (از Daniele Procida) چارچوبی برای سازمان‌دهی مستندات است و می‌گوید مستندات فنی چهار نوع متفاوت دارد که به چهار نیاز متفاوت پاسخ می‌دهند؛ مخلوط کردن آن‌ها در یک صفحه رایج‌ترین علت مستندات گیج‌کننده است.</p>
+
+    <pre class="diagram">                         عمل (Action)
+                              ▲
+             Tutorials        │        How-to guides
+          (یادگیری‌محور)      │      (هدف/وظیفه‌محور)
+                              │
+  یادگیری (Study) ◄───────────┼───────────► کار (Work)
+                              │
+            Explanation       │        Reference
+           (فهم‌محور)         │      (اطلاعات‌محور)
+                              ▼
+                         شناخت (Cognition)</pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>نوع</th><th>جهت‌گیری</th><th>به چه سؤالی پاسخ می‌دهد</th><th>مثال در پروژه‌ی Laravel</th><th>ویژگی نوشتار</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Tutorial</strong></td><td>یادگیری</td><td>«من تازه‌کارم؛ دستم را بگیر»</td><td>«ساخت اولین ماژول در کدبیس ما: از migration تا feature test»</td><td>مسیر تضمین‌شده و قابل تکرار، نتیجه‌ی ملموس، حداقل توضیح و انتخاب</td></tr>
+        <tr><td><strong>How-to guide</strong></td><td>هدف</td><td>«چطور کار X را انجام دهم؟»</td><td>«چطور یک درگاه پرداخت جدید اضافه کنم»، runbookها</td><td>گام‌های عملی برای کاربری که می‌داند چه می‌خواهد؛ فرض می‌کند پیش‌زمینه دارد</td></tr>
+        <tr><td><strong>Reference</strong></td><td>اطلاعات</td><td>«دقیقاً X چیست؟»</td><td>مستند OpenAPI، جدول env، فهرست دستورات artisan سفارشی</td><td>دقیق، کامل، ساختار یکنواخت، بدون نظر و توضیح اضافه؛ معمولاً قابل تولید از کد</td></tr>
+        <tr><td><strong>Explanation</strong></td><td>فهم</td><td>«چرا این‌طور است؟»</td><td>«چرا پرداخت‌ها را در queue پردازش می‌کنیم»، مستند معماری، ADR</td><td>زمینه، تاریخچه، گزینه‌ها و trade-offها؛ دیدگاه‌دار</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>چرا این تفکیک مهم است؟</h3>
+    <ul>
+      <li><strong>Tutorial</strong>ی که مدام توضیح نظری می‌دهد، یادگیرنده را از مسیر خارج می‌کند؛ توضیح باید به explanation لینک شود.</li>
+      <li><strong>How-to</strong> با reference فرق دارد: how-to فقط قدم‌های لازم برای یک هدف را می‌گوید، reference همه‌ی گزینه‌ها را.</li>
+      <li><strong>Reference</strong>ی که پر از آموزش است، برای کسی که فقط دنبال یک پارامتر است، کند و خسته‌کننده می‌شود.</li>
+      <li>مستندات Laravel خودش نمونه‌ی ترکیبی است: صفحات اصلی ترکیبی از how-to و explanation هستند و API reference جداگانه‌ای از کد تولید می‌شود.</li>
+    </ul>
+    <div class="callout exam"><p>اگر سؤال آمد «مستندات یک پروژه را چطور سازمان‌دهی می‌کنید؟»، Diátaxis چارچوب خوبی برای جواب است: چهار نوع، دو محور (عمل/شناخت و یادگیری/کار)، و برای هر نوع یک مثال از پروژه‌ی خودتان. سپس بگویید reference تا حد امکان از کد تولید شود (OpenAPI، PHPDoc) و explanation شامل معماری و ADRها باشد.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="docs-as-code" data-title="Docs-as-code و همگام‌سازی">
+    <h2>Docs-as-code و همگام‌سازی</h2>
+    <p><strong>Docs-as-code</strong> یعنی با مستندات همان رفتاری را داشته باشیم که با کد داریم: در قالب متنی ساده (Markdown، AsciiDoc، OpenAPI YAML)، <strong>در همان repo کنار کد</strong>، تحت version control، با review در Pull Request، و با ساخت، تست و انتشار خودکار در CI.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>مزایا</h4><ul>
+        <li>مستند و کد در <strong>یک PR</strong> تغییر می‌کنند؛ reviewer هر دو را می‌بیند.</li>
+        <li>تاریخچه، blame و revert برای مستندات.</li>
+        <li>مستند هر نسخه همراه همان نسخه‌ی کد (branch/tag).</li>
+        <li>ابزارهای خودکار: lint، بررسی لینک، تولید سایت.</li>
+        <li>توسعه‌دهندگان در محیط آشنای خود (IDE، Git) می‌نویسند.</li>
+      </ul></div>
+      <div class="card"><h4>چالش‌ها</h4><ul>
+        <li>برای افراد غیرفنی (محصول، پشتیبانی) سخت‌تر است.</li>
+        <li>جستجوی بین چند repo نیازمند یک پورتال مرکزی (مثلاً سایت مستندات یا developer portal).</li>
+        <li>بدون فرهنگ و قاعده، همچنان کهنه می‌شود؛ ابزار به‌تنهایی کافی نیست.</li>
+      </ul></div>
+    </div>
+
+    <h3>ساختار نمونه</h3>
+    <pre class="diagram">repo/
+├── README.md
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── .env.example
+└── docs/
+    ├── architecture.md        ← C4 (Mermaid/Structurizr)
+    ├── configuration.md
+    ├── deploy.md
+    ├── adr/
+    │   ├── 0001-record-architecture-decisions.md
+    │   └── 0007-use-idempotency-keys-for-payments.md
+    ├── runbooks/
+    │   └── queue-backlog.md
+    └── api/
+        └── openapi.yaml       ← تولید یا بررسی‌شده در CI</pre>
+
+    <h3>راه‌های همگام نگه داشتن مستندات با کد</h3>
+    <ol>
+      <li><strong>Definition of Done:</strong> «مستندات مرتبط به‌روز شده» بخشی از تعریف اتمام هر task باشد.</li>
+      <li><strong>قالب PR</strong> با checklist: «آیا env جدید، endpoint جدید، تغییر رفتار یا تصمیم معماری دارد؟ مستند/ADR/CHANGELOG به‌روز شد؟»</li>
+      <li><strong>تولید reference از کد:</strong> OpenAPI از Scribe/Scramble، مستند کلاس‌ها از PHPDoc؛ هر چیزی که تولیدشدنی است دستی نوشته نشود.</li>
+      <li><strong>چک‌های CI:</strong>
+        <ul>
+          <li>تولید spec و fail شدن build در صورت تفاوت با نسخه‌ی commit‌شده.</li>
+          <li>lint مستندات (markdownlint)، بررسی لینک‌های شکسته، و style linter مثل <strong>Vale</strong> برای اصطلاحات و سبک.</li>
+          <li>lint فایل OpenAPI (Spectral) و تشخیص تغییرات breaking.</li>
+          <li>بررسی اینکه کلیدهای <code>.env.example</code> با متغیرهای استفاده‌شده در <code>config/</code> هم‌خوان باشند.</li>
+        </ul>
+      </li>
+      <li><strong>مستندات اجرایی:</strong> تست‌ها (به‌خصوص feature testهای خوانا)، اعتبارسنجی پاسخ API با spec در تست، doctest برای نمونه‌کدها، اعتبارسنجی config در boot.</li>
+      <li><strong>مالکیت:</strong> CODEOWNERS برای <code>docs/</code>؛ مستند بی‌صاحب کهنه می‌شود.</li>
+      <li><strong>بازبینی دوره‌ای:</strong> تاریخ «آخرین بازبینی» در صفحات و مرور فصلی؛ حذف صفحات منسوخ.</li>
+      <li><strong>نزدیکی به کد:</strong> هرچه مستند به کد نزدیک‌تر باشد (docblock، README پوشه‌ی ماژول)، احتمال به‌روز ماندنش بیشتر است.</li>
+    </ol>
+    <pre><code class="language-yaml"># .github/workflows/docs.yml (نمونه)
+name: docs
+on: [pull_request]
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: '8.3' }
+      - run: composer install --no-interaction --prefer-dist
+      - name: Regenerate API docs and fail if they changed
+        run: |
+          php artisan scribe:generate --no-interaction
+          git diff --exit-code -- docs/api/ || (echo "API docs are outdated. Run scribe:generate." &amp;&amp; exit 1)
+      - name: Lint markdown
+        run: npx markdownlint-cli2 "docs/**/*.md" "README.md"</code></pre>
+    <div class="callout warn"><p>مسیر خروجی Scribe و نام فایل‌ها به پیکربندی <code>config/scribe.php</code> بستگی دارد؛ در CI همان مسیری را بررسی کنید که پروژه‌ی شما واقعاً تولید می‌کند.</p></div>
+    <div class="callout exam"><p>سؤال کلاسیک: «چطور مطمئن می‌شوید مستندات کهنه نمی‌شوند؟» پاسخ قوی سه لایه دارد: <strong>فرایند</strong> (DoD، قالب PR، review، مالک)، <strong>ابزار</strong> (تولید از کد، چک CI، lint و بررسی لینک) و <strong>طراحی</strong> (مستند نزدیک کد، مستند اجرایی مثل تست و اعتبارسنجی config، و حذف مستندات غیرضروری تا سطح نگهداری کم شود).</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="writing-style" data-title="سبک نوشتن فنی">
+    <h2>سبک نوشتن فنی</h2>
+    <p>نوشتن فنی خوب یعنی خواننده با <strong>کمترین تلاش</strong> به آنچه نیاز دارد برسد. چند اصل کلیدی:</p>
+
+    <h3>اصول</h3>
+    <ol>
+      <li><strong>مخاطب و هدف را مشخص کنید:</strong> قبل از نوشتن بپرسید «چه کسی می‌خواند و بعد از خواندن باید چه کاری بتواند بکند؟»</li>
+      <li><strong>مهم‌ترین چیز اول (inverted pyramid):</strong> نتیجه یا دستور اصلی در ابتدا، جزئیات بعد.</li>
+      <li><strong>قابل مرور (scannable):</strong> عنوان‌های گویا، فهرست، جدول، پاراگراف کوتاه. خواننده‌ی فنی می‌خواند تا پیدا کند، نه برای لذت.</li>
+      <li><strong>جمله‌ی کوتاه و فعل معلوم:</strong> «Job را dispatch کنید» به‌جای «لازم است که dispatch شدن Job انجام گیرد».</li>
+      <li><strong>دقت و مشخص بودن:</strong> «timeout را روی ۳۰ ثانیه بگذارید» به‌جای «timeout را مقدار مناسبی بگذارید».</li>
+      <li><strong>اصطلاحات یکسان:</strong> اگر یک‌جا «مشتری» گفتید، جای دیگر «کاربر» نگویید (مگر واقعاً متفاوت باشند). واژه‌نامه‌ی دامنه کمک می‌کند (Ubiquitous Language).</li>
+      <li><strong>مثال واقعی و قابل اجرا:</strong> نمونه‌کد کامل و تست‌شده، با خروجی مورد انتظار.</li>
+      <li><strong>پیش‌فرض نگیرید:</strong> از «فقط»، «به‌سادگی»، «بدیهی است» پرهیز کنید؛ برای خواننده‌ای که گیر کرده تحقیرآمیز است.</li>
+      <li><strong>پیش‌نیازها و فرض‌ها</strong> را صریح بگویید (نسخه‌ی PHP، دسترسی لازم).</li>
+      <li><strong>هشدارها را برجسته کنید:</strong> عملیات مخرب یا غیرقابل بازگشت (مثلاً <code>migrate:fresh</code>) با هشدار واضح.</li>
+    </ol>
+
+    <div class="grid-2">
+      <div class="card"><h4>ضعیف</h4>
+        <p>برای راه‌اندازی، کارهای لازم را انجام دهید و دیتابیس را تنظیم کنید. سپس به‌سادگی برنامه را اجرا کنید. اگر مشکلی بود ممکن است به خاطر تنظیمات باشد.</p>
+      </div>
+      <div class="card"><h4>بهتر</h4>
+        <ol>
+          <li>فایل env را بسازید: <code>cp .env.example .env</code></li>
+          <li>مقدار <code>DB_PASSWORD</code> را از vault (<code>billing/local</code>) بردارید.</li>
+          <li>اجرا کنید: <code>php artisan migrate --seed</code></li>
+        </ol>
+        <p>اگر خطای <code>SQLSTATE[HY000] [2002]</code> دیدید، MySQL بالا نیست: <code>docker compose up -d mysql</code></p>
+      </div>
+    </div>
+
+    <h3>نمونه‌کد در مستندات</h3>
+    <ul>
+      <li>کامل و قابل کپی (importها و namespace در صورت نیاز).</li>
+      <li>کوتاه و متمرکز بر نکته‌ی اصلی؛ کد نامربوط حذف شود.</li>
+      <li>نسخه‌ی مرتبط (PHP/Laravel) مشخص باشد.</li>
+      <li>در صورت امکان در CI اجرا یا تست شود تا با تغییر API نشکند.</li>
+    </ul>
+
+    <h3>مستندات به زبان فارسی و انگلیسی</h3>
+    <p>در تیم‌های فارسی‌زبان، اصطلاحات فنی را به انگلیسی نگه دارید (queue، migration، middleware) تا با کد و منابع بیرونی یکسان بماند، ولی توضیح را روان بنویسید. در مستندات چندزبانه، یک زبان «منبع حقیقت» باشد تا ترجمه‌ها از هم عقب نمانند. شناسه‌ها، نام متغیرها و پیام‌های خطا را ترجمه نکنید.</p>
+    <div class="callout tip"><p>«قانون دو دقیقه»: اگر یک همکار سؤالی پرسید که جوابش در مستندات نبود، بعد از جواب دادن، همان جواب را (در دو دقیقه) به مستند مرتبط اضافه کنید. سؤال‌های تکراری در چت، بهترین نقشه‌ی کمبودهای مستندات‌اند.</p></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-documentation-1">
+      <summary>چرا مستندسازی نرم‌افزار مهم است؟ مخاطبان اصلی مستندات یک سرویس بک‌اند را نام ببرید و برای هر کدام نوع مستند مناسب را پیشنهاد کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف و اهمیت:</strong> مستندات ابزار <strong>انتقال دانشی</strong> است که از خود کد قابل استخراج نیست یا استخراجش پرهزینه است: «چرا»، «چطور استفاده کنم»، «تصویر کلان» و «چطور اجرا و نگهداری کنم». اثرات مستقیم آن:</p>
+        <ul>
+          <li>کاهش زمان <strong>onboarding</strong> و وابستگی به افراد (<strong>bus factor</strong>).</li>
+          <li>جلوگیری از تصمیم‌گیری و بحث تکراری.</li>
+          <li>کاهش <strong>MTTR</strong> در حوادث.</li>
+          <li>کاهش خطای یکپارچه‌سازی برای مصرف‌کنندگان API.</li>
+        </ul>
+        <p><strong>مخاطبان و مستند مناسب:</strong></p>
+        <ul>
+          <li><strong>توسعه‌دهنده‌ی جدید:</strong> README با quick start، راهنمای onboarding، CONTRIBUTING.</li>
+          <li><strong>توسعه‌دهنده‌ی فعلی/آینده:</strong> comment «چرا»، PHPDoc برای API عمومی کلاس‌ها، ADR، پیام commit و PR.</li>
+          <li><strong>مصرف‌کننده‌ی API:</strong> OpenAPI و مستند تعاملی (Scribe، Swagger UI)، CHANGELOG و سیاست deprecation.</li>
+          <li><strong>عملیات/on-call:</strong> runbook، مستند deploy، جدول پیکربندی env.</li>
+          <li><strong>معمار و مدیر:</strong> نمودارهای C4 و مستند معماری.</li>
+        </ul>
+        <p><strong>نکته‌ی مهم:</strong> مستند کهنه از نبودنش بدتر است، چون اعتماد را از بین می‌برد. پس هدف، مستند <strong>کم، دقیق، به‌روز و دارای مالک</strong> است که همراه کد تغییر کند (docs-as-code).</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-2">
+      <summary>جمله‌ی «comment باید چرا را بگوید، نه چه را» را توضیح دهید و با مثال PHP نشان دهید چه commentهایی مفید و چه commentهایی مضرند.</summary>
+      <div class="answer">
+        <p><strong>توضیح:</strong> کد خودش دقیق‌ترین توصیف از «چه» و «چگونه» است. commentی که همان را تکرار کند اطلاعات جدیدی نمی‌دهد و چون کامپایلر آن را بررسی نمی‌کند، با تغییر کد کهنه و گمراه‌کننده می‌شود. ارزش comment در اطلاعاتی است که از کد قابل استنتاج نیست: <strong>دلیل، قید، هشدار و زمینه‌ی کسب‌وکار</strong>.</p>
+        <pre><code class="language-php">// Bad: repeats the code
+// set status to paid
+$order-&gt;status = OrderStatus::Paid;
+
+// Good: explains why
+// Mark as paid before dispatching the job: the receipt job reads
+// the status and would otherwise send a "pending" email (PAY-221).
+$order-&gt;status = OrderStatus::Paid;
+$order-&gt;save();
+SendReceipt::dispatch($order);</code></pre>
+        <p><strong>commentهای مفید:</strong></p>
+        <ul>
+          <li>دلیل تصمیم غیربدیهی و گزینه‌های ردشده.</li>
+          <li>workaround برای باگ کتابخانه یا محدودیت سرویس بیرونی، با لینک issue.</li>
+          <li>قاعده‌ی کسب‌وکار یا الزام قانونی.</li>
+          <li>هشدار درباره‌ی ترتیب، همزمانی یا اثر جانبی.</li>
+          <li>docblock برای API عمومی و typeهای پیشرفته.</li>
+        </ul>
+        <p><strong>commentهای مضر:</strong> تکرار کد، کد comment‌شده (Git تاریخچه را دارد)، تاریخچه‌ی تغییرات در فایل، TODO بدون ticket و مالک، و commentهای نادرست و کهنه.</p>
+        <p><strong>قاعده‌ی تکمیلی:</strong> اگر برای توضیح یک قطعه به comment طولانی نیاز دارید، اول با نام‌گذاری بهتر، extract method، enum یا value object کد را خودمستند کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-3">
+      <summary>«کد خوب نیازی به مستندات ندارد.» این جمله را نقد کنید. کد خودمستند چیست و محدودیت‌هایش کدام است؟</summary>
+      <div class="answer">
+        <p><strong>کد خودمستند</strong> کدی است که با نام‌گذاری دامنه‌محور، توابع کوچک با یک مسئولیت، typeهای صریح، enum به‌جای مقادیر جادویی، value object و named arguments، هدف خود را بدون comment بیان می‌کند.</p>
+        <pre><code class="language-php">// instead of: if ($u-&gt;t == 2 &amp;&amp; $u-&gt;c &gt; 10)
+if ($customer-&gt;isEligibleForLoyaltyDiscount()) { /* ... */ }</code></pre>
+        <p><strong>بخش درست جمله:</strong> کد خوب نیاز به commentهای «چه» را از بین می‌برد و باید اولین اولویت باشد. تست‌های خوانا هم نوعی مستند اجرایی‌اند که برخلاف comment، اگر کهنه شوند fail می‌شوند.</p>
+        <p><strong>بخش نادرست:</strong> کد، هرچقدر هم تمیز، نمی‌تواند این‌ها را منتقل کند:</p>
+        <ul>
+          <li><strong>چرا</strong> این طراحی انتخاب شد و چه گزینه‌هایی رد شدند (ADR).</li>
+          <li><strong>تصویر کلان:</strong> ارتباط سرویس‌ها، جریان داده، وابستگی‌های بیرونی (C4).</li>
+          <li><strong>قرارداد برای کسی که کد را نمی‌بیند:</strong> مصرف‌کننده‌ی API (OpenAPI).</li>
+          <li><strong>دانش عملیاتی:</strong> راه‌اندازی، پیکربندی، deploy، واکنش به حادثه (README، runbook).</li>
+          <li><strong>قیود بیرونی:</strong> قانون، توافق با شریک، رفتار عجیب سرویس ثالث.</li>
+        </ul>
+        <p><strong>جمع‌بندی:</strong> کد خودمستند و مستندات مکمل‌اند؛ کد تمیز سطح نیاز به مستند را پایین می‌آورد ولی آن را صفر نمی‌کند. رویکرد درست: «چه» در کد، «چرا»ی محلی در comment، و دانش سطح سیستم در مستندات جداگانه.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-4">
+      <summary>PHPDoc در PHP مدرن (با وجود type declarationهای native) چه کاربردی دارد؟ چه زمانی docblock زائد است؟ مثال بزنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> PHPDoc قالب de facto برای commentهای ساخت‌یافته (<code>/** */</code>) با تگ‌هایی مثل <code>@param</code>، <code>@return</code>، <code>@throws</code> است که IDE، PHPStan/Psalm و تولیدکننده‌های مستندات آن را می‌فهمند.</p>
+        <p><strong>زائد:</strong> وقتی فقط type native را تکرار می‌کند:</p>
+        <pre><code class="language-php">/** @param int $id  @return string */
+public function name(int $id): string</code></pre>
+        <p><strong>کاربردهای ارزشمند امروز:</strong></p>
+        <ul>
+          <li><strong>typeهای دقیق‌تر از سیستم type PHP:</strong> <code>list&lt;int&gt;</code>، <code>array&lt;string, Money&gt;</code>، array shape (<code>array{id: int, name: string}</code>)، <code>non-empty-string</code>، <code>positive-int</code>.</li>
+          <li><strong>Generics:</strong> <code>@template T</code>، <code>Collection&lt;int, User&gt;</code>، <code>class-string&lt;T&gt;</code>.</li>
+          <li><strong>@throws:</strong> اعلام exceptionهایی که فراخواننده باید مدیریت کند.</li>
+          <li><strong>اعضای جادویی:</strong> <code>@property</code> و <code>@method</code> برای attributeهای Eloquent یا <code>__call</code>.</li>
+          <li><strong>@deprecated</strong> با جایگزین و نسخه‌ی حذف؛ <strong>@internal</strong> برای اعلام اینکه جزء API عمومی نیست.</li>
+          <li><strong>توضیح رفتاری</strong> برای API عمومی کتابخانه: شرایط مرزی، اثرات جانبی، مثال.</li>
+        </ul>
+        <pre><code class="language-php">/**
+ * @param  list&lt;int&gt;  $ids
+ * @return Collection&lt;int, Invoice&gt;
+ * @throws ModelNotFoundException if any id is missing
+ */
+public function findOrFailMany(array $ids): Collection</code></pre>
+        <p><strong>نکته:</strong> با اجرای PHPStan/Larastan در CI، docblockها با کد واقعی تطبیق داده می‌شوند و نادرستی آن‌ها خطا می‌دهد؛ یعنی docblock از «comment» به «مستند اجرایی» تبدیل می‌شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-5">
+      <summary>README یک پروژه‌ی Laravel تیمی باید چه بخش‌هایی داشته باشد؟ چطور مطمئن می‌شوید README واقعاً کار می‌کند؟</summary>
+      <div class="answer">
+        <p><strong>هدف README:</strong> پاسخ سریع به «این چیست، چرا وجود دارد، چطور اجرایش کنم» و نقش نقشه برای بقیه‌ی مستندات.</p>
+        <p><strong>بخش‌های پیشنهادی:</strong></p>
+        <ol>
+          <li>نام و توضیح یک‌خطی هدف؛ badge وضعیت CI.</li>
+          <li><strong>پیش‌نیازها:</strong> نسخه‌ی PHP و extensionها، Composer، Node، Docker.</li>
+          <li><strong>راه‌اندازی محلی</strong> با دستورات دقیق: <code>cp .env.example .env</code>، <code>composer install</code>، <code>php artisan key:generate</code>، <code>migrate --seed</code>.</li>
+          <li><strong>اجرای تست و ابزارهای کیفیت:</strong> <code>php artisan test</code>، PHPStan، Pint.</li>
+          <li><strong>پیکربندی:</strong> لینک به جدول متغیرهای env.</li>
+          <li><strong>معماری:</strong> خلاصه و لینک به C4 و ADRها.</li>
+          <li><strong>Deploy و محیط‌ها:</strong> یا لینک به مستند deploy.</li>
+          <li><strong>عیب‌یابی رایج.</strong></li>
+          <li><strong>مالکیت و تماس:</strong> تیم مسئول، کانال، on-call.</li>
+          <li><strong>مشارکت:</strong> لینک به CONTRIBUTING (branching، قالب commit، PR).</li>
+        </ol>
+        <p><strong>اطمینان از درستی:</strong></p>
+        <ul>
+          <li>عضو جدید فقط با README پروژه را بالا بیاورد و هر جا گیر کرد، README را در یک PR اصلاح کند.</li>
+          <li>دستورات راه‌اندازی را در CI یا در یک اسکریپت (مثلاً <code>make setup</code> یا <code>composer setup</code>) قرار دهید تا README فقط به آن اشاره کند و خود اسکریپت تست شود.</li>
+          <li>استفاده از محیط قابل تکرار (Docker Compose، Laravel Sail) تا تفاوت ماشین‌ها کم شود.</li>
+          <li>بخش «پیش‌نیازها» با تغییر نسخه‌ی PHP در <code>composer.json</code> در همان PR به‌روز شود (checklist PR).</li>
+        </ul>
+        <p>README باید کوتاه بماند و جزئیات را به <code>docs/</code> لینک کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-6">
+      <summary>OpenAPI چیست و چه مزیتی نسبت به مستندسازی API در یک صفحه‌ی wiki دارد؟ رویکردهای design-first و code-first را مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> OpenAPI Specification یک استاندارد مستقل از زبان برای توصیف HTTP API به صورت YAML/JSON است: endpointها، پارامترها، schema بدنه‌ی درخواست و پاسخ، کدهای وضعیت، روش احراز هویت و مثال‌ها. نام قبلی آن Swagger بود و امروز «Swagger» بیشتر به ابزارها (UI، Editor) اشاره دارد.</p>
+        <p><strong>مزیت نسبت به wiki:</strong> <strong>قابل پردازش با ماشین</strong> است، بنابراین از یک منبع حقیقت می‌توان:</p>
+        <ul>
+          <li>مستند تعاملی تولید کرد (Swagger UI، Redoc) که امکان «try it» دارد؛</li>
+          <li>SDK کلاینت و mock server ساخت؛</li>
+          <li>درخواست و پاسخ را در تست‌ها یا middleware اعتبارسنجی کرد (contract testing)؛</li>
+          <li>تغییرات breaking بین نسخه‌ها را خودکار تشخیص داد و spec را lint کرد.</li>
+        </ul>
+        <p>wiki نه اعتبارسنجی می‌شود، نه نسخه‌ی آن با کد گره خورده است، پس سریع کهنه می‌شود.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Design-first</th><th>Code-first</th></tr></thead>
+          <tbody>
+            <tr><td>ترتیب</td><td>spec ← review با مصرف‌کننده ← پیاده‌سازی</td><td>پیاده‌سازی ← تولید spec از کد</td></tr>
+            <tr><td>مزیت</td><td>طراحی آگاهانه، کار موازی فرانت/بک با mock</td><td>همگامی خودکار با کد، سربار کم</td></tr>
+            <tr><td>عیب</td><td>خطر واگرایی spec و کد؛ نیاز به contract test</td><td>طراحی تحت تأثیر پیاده‌سازی؛ وابسته به کیفیت annotation</td></tr>
+            <tr><td>ابزار Laravel</td><td>نوشتن YAML + اعتبارسنجی پاسخ در تست</td><td>Scribe، Scramble، L5-Swagger</td></tr>
+          </tbody>
+        </table></div>
+        <p>برای APIهای عمومی یا بین تیم‌های مختلف، design-first ارزشمندتر است؛ برای API داخلی یک تیم، code-first با چک CI معمولاً کافی است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-7">
+      <summary>در یک پروژه‌ی Laravel چطور مستندات API را تولید و همگام نگه می‌دارید؟ نحوه‌ی کار Scribe را توضیح دهید.</summary>
+      <div class="answer">
+        <p><strong>Scribe</strong> (<code>knuckleswtf/scribe</code>) یک ابزار code-first است که با اجرای <code>php artisan scribe:generate</code>:</p>
+        <ul>
+          <li>routeها را از router Laravel می‌خواند؛</li>
+          <li>پارامترهای بدنه را از <strong>قوانین validation در FormRequest</strong> استخراج می‌کند؛</li>
+          <li>توضیحات، گروه‌ها و مثال‌ها را از docblock (<code>@group</code>، <code>@urlParam</code>، <code>@bodyParam</code>، <code>@response</code>، <code>@authenticated</code>) یا PHP attributeها برمی‌دارد؛</li>
+          <li>در صورت پیکربندی، با فراخوانی endpointها در محیط امن، پاسخ نمونه تولید می‌کند؛</li>
+          <li>خروجی: صفحه‌ی HTML، مجموعه‌ی Postman و فایل OpenAPI.</li>
+        </ul>
+        <pre><code class="language-php">/**
+ * Create an invoice
+ *
+ * @group Invoices
+ * @authenticated
+ * @response 201 {"data": {"id": 1043, "status": "draft"}}
+ * @response 422 {"message": "The amount field is required.", "errors": {"amount": ["The amount field is required."]}}
+ */
+public function store(StoreInvoiceRequest $request): JsonResponse</code></pre>
+        <p><strong>همگام‌سازی:</strong></p>
+        <ol>
+          <li>اجرای <code>scribe:generate</code> در CI و <code>git diff --exit-code</code> روی خروجی؛ اگر کسی endpoint را تغییر داده و مستند را بازتولید نکرده، build fail می‌شود.</li>
+          <li>lint فایل OpenAPI تولیدشده و بررسی breaking change نسبت به نسخه‌ی منتشرشده.</li>
+          <li>استفاده‌ی سازگار از FormRequest و API Resource تا استنتاج ابزار دقیق باشد.</li>
+          <li>checklist PR: «endpoint جدید یا تغییر قرارداد؟ docblock و CHANGELOG به‌روز شد؟»</li>
+          <li>feature test برای ساختار پاسخ (<code>assertJsonStructure</code>) تا قرارداد واقعی هم تست شود.</li>
+        </ol>
+        <p><strong>جایگزین‌ها:</strong> Scramble (استنتاج کامل از کد بدون annotation) و L5-Swagger (با annotation/attributeهای swagger-php). انتخاب بین آن‌ها به میزان کنترل مورد نیاز بر متن مستند و سربار annotation بستگی دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-8">
+      <summary>مدل C4 را توضیح دهید. هر سطح چه چیزی را نشان می‌دهد و برای چه مخاطبی است؟ یک نمودار Container برای یک فروشگاه اینترنتی مبتنی بر Laravel توصیف کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> C4 (از Simon Brown) روشی برای توصیف معماری نرم‌افزار در <strong>چهار سطح بزرگ‌نمایی</strong> است تا هر نمودار فقط یک سطح انتزاع داشته باشد:</p>
+        <ol>
+          <li><strong>System Context:</strong> سیستم به‌صورت یک جعبه، کاربران و سیستم‌های بیرونی. مخاطب: همه، حتی غیرفنی‌ها.</li>
+          <li><strong>Container:</strong> واحدهای جداگانه قابل اجرا/استقرار (اپلیکیشن، دیتابیس، صف، storage) و ارتباطشان. مخاطب: توسعه‌دهندگان و عملیات. (Container به معنی Docker نیست.)</li>
+          <li><strong>Component:</strong> اجزای اصلی داخل یک container و مسئولیتشان. مخاطب: توسعه‌دهندگان آن container.</li>
+          <li><strong>Code:</strong> کلاس‌ها؛ معمولاً از IDE تولید و به‌ندرت دستی نگه‌داری می‌شود.</li>
+        </ol>
+        <p><strong>نمودار Container فروشگاه:</strong></p>
+        <pre class="diagram">[Customer] ─HTTPS─► [Storefront: Laravel + Inertia/Vue]
+[Admin]    ─HTTPS─► [Admin Panel: Laravel/Filament]
+     both ─► [MySQL: orders, products, customers]  (SQL)
+     both ─► [Redis: cache, sessions, queue]
+[Queue Worker: Laravel Horizon] ◄─ Redis
+     ├─► [Payment Gateway] (external, HTTPS)
+     ├─► [Email Provider]  (external, SMTP/API)
+     └─► [S3: invoices, product images]</pre>
+        <p>هر جعبه: نام، فناوری و یک جمله مسئولیت؛ هر فلش: جهت، «چه چیزی» و پروتکل. نمودار باید عنوان، سطح و legend داشته باشد.</p>
+        <p><strong>مزیت C4:</strong> زبان مشترک و سبک، مستقل از ابزار، و حل مشکل نمودارهایی که سطح‌ها را قاطی می‌کنند. با <strong>diagrams-as-code</strong> (Structurizr DSL، PlantUML C4، Mermaid) در repo نگه داشته و در PR review می‌شود. معمولاً سطح ۱ و ۲ بیشترین ارزش را دارند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-9">
+      <summary>ADR چیست؟ ساختار آن را بنویسید و یک ADR نمونه برای تصمیم «استفاده از Redis به‌عنوان queue driver به‌جای database» بنویسید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Architecture Decision Record سند کوتاهی است که <strong>یک تصمیم مهم معماری</strong> را همراه با زمینه، گزینه‌ها و پیامدها ثبت می‌کند. در repo (مثلاً <code>docs/adr/</code>) با شماره‌ی ترتیبی نگه داشته می‌شود، از طریق PR review می‌شود و پس از پذیرش <strong>تغییرناپذیر</strong> است؛ تصمیم جدید با ADR جدیدی که قبلی را <em>supersede</em> می‌کند ثبت می‌شود.</p>
+        <p><strong>ساختار:</strong> عنوان، وضعیت (Proposed/Accepted/Deprecated/Superseded)، تاریخ و تصمیم‌گیرندگان، زمینه، گزینه‌ها، تصمیم، پیامدها (مثبت و منفی).</p>
+        <pre><code class="language-plaintext"># ADR-0012: استفاده از Redis به‌عنوان queue driver
+
+وضعیت: Accepted — 2026-10-05
+
+## زمینه
+صف فعلی database driver است. با رشد سفارش‌ها به ~۲۰۰ job در ثانیه در اوج،
+polling جدول jobs باعث lock contention و کند شدن کوئری‌های اصلی MySQL شده است.
+Redis قبلاً برای cache در زیرساخت موجود است.
+
+## گزینه‌ها
+1. ادامه با database driver + بهینه‌سازی index  — ساده، ولی بار روی DB اصلی می‌ماند
+2. Redis + Laravel Horizon                       — سریع، داشبورد و متریک، زیرساخت آشنا
+3. RabbitMQ / SQS                                 — قابلیت‌های پیشرفته، ولی سربار عملیاتی/هزینه‌ی جدید
+
+## تصمیم
+Redis با Horizon برای همه‌ی صف‌ها؛ instance جدای Redis برای queue (جدا از cache)
+با persistence فعال (AOF).
+
+## پیامدها
++ حذف بار polling از MySQL، throughput بالاتر، پایش با Horizon
+- در صورت از دست رفتن Redis بدون persistence مناسب، jobهای در صف از دست می‌روند
+- نیاز به پایش حافظه‌ی Redis و runbook جدید «Redis queue full»
+- jobها دیگر با تراکنش DB اتمیک نیستند ← استفاده از afterCommit برای dispatch</code></pre>
+        <p><strong>چرا ارزشمند است:</strong> پاسخ به «چرا» برای اعضای آینده، جلوگیری از بحث تکراری، و شفاف‌سازی trade-offها. پیامدهای <strong>منفی</strong> باید صادقانه نوشته شوند؛ ADR بدون معایب احتمالاً تحلیل کاملی نبوده است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-10">
+      <summary>CHANGELOG چیست و طبق Keep a Changelog چه ساختاری دارد؟ چرا dump کردن خروجی <code>git log</code> جایگزین مناسبی برای آن نیست؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> CHANGELOG فهرست زمان‌دار و مرتب <strong>تغییرات قابل توجه</strong> هر نسخه است که برای انسان‌ها (توسعه‌دهندگان، مصرف‌کنندگان API، مشتریان) نوشته می‌شود تا بدانند چه چیزی عوض شده و آیا باید کاری انجام دهند.</p>
+        <p><strong>ساختار Keep a Changelog:</strong></p>
+        <ul>
+          <li>جدیدترین نسخه در بالا؛ بخش <code>[Unreleased]</code> برای تغییرات منتشرنشده.</li>
+          <li>هر نسخه با شماره‌ی SemVer و تاریخ ISO: <code>## [2.4.0] - 2026-10-28</code>.</li>
+          <li>گروه‌بندی: <strong>Added، Changed، Deprecated، Removed، Fixed، Security</strong>.</li>
+          <li>لینک هر نسخه به diff یا release.</li>
+        </ul>
+        <pre><code class="language-plaintext">## [2.4.0] - 2026-10-28
+### Added
+- PDF download endpoint for invoices.
+### Deprecated
+- /invoices/{id}/download; use /pdf. Removal planned for 3.0.0.
+### Fixed
+- Tax rounding per line item (#398).</code></pre>
+        <p><strong>چرا git log کافی نیست:</strong></p>
+        <ul>
+          <li><strong>مخاطب متفاوت:</strong> commitها برای توسعه‌دهندگان همان پروژه‌اند و پر از جزئیات داخلی («fix test»، «refactor») هستند.</li>
+          <li><strong>دانه‌بندی:</strong> یک تغییر قابل توجه ممکن است ده commit باشد.</li>
+          <li><strong>دسته‌بندی و اولویت:</strong> Security و Removed باید برجسته باشند تا کاربر واکنش نشان دهد.</li>
+          <li><strong>اطلاعات اقدام:</strong> راهنمای مهاجرت و جایگزین deprecated‌ها در commit نیست.</li>
+        </ul>
+        <p><strong>ارتباط با SemVer:</strong> Removed/Changed ناسازگار → MAJOR؛ Added/Deprecated → MINOR؛ Fixed → PATCH. با Conventional Commits می‌توان پیش‌نویس CHANGELOG را خودکار ساخت (release-please، semantic-release)، اما متن نهایی بهتر است توسط انسان ویرایش شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-11">
+      <summary>چارچوب Diátaxis را توضیح دهید. چهار نوع مستند آن چیست و چرا نباید آن‌ها را در یک صفحه مخلوط کرد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> Diátaxis چارچوبی برای سازمان‌دهی مستندات فنی است که بر اساس دو محور، چهار نوع مستند با نیازهای متفاوت تعریف می‌کند: محور <strong>عمل در برابر شناخت</strong> و محور <strong>یادگیری (study) در برابر کار (work)</strong>.</p>
+        <ul>
+          <li><strong>Tutorial</strong> (عمل + یادگیری): درس گام‌به‌گام برای تازه‌کار با نتیجه‌ی تضمین‌شده. مثال: «اولین feature در کدبیس ما از migration تا تست».</li>
+          <li><strong>How-to guide</strong> (عمل + کار): دستورالعمل رسیدن به یک هدف مشخص برای کاربری که پیش‌زمینه دارد. مثال: «افزودن یک درگاه پرداخت جدید»، runbookها.</li>
+          <li><strong>Reference</strong> (شناخت + کار): توصیف دقیق و کامل؛ برای جستجو، نه خواندن پیوسته. مثال: OpenAPI، جدول env، PHPDoc.</li>
+          <li><strong>Explanation</strong> (شناخت + یادگیری): زمینه، دلیل و trade-off. مثال: مستند معماری، ADR، «چرا event-driven».</li>
+        </ul>
+        <p><strong>چرا مخلوط نکنیم:</strong> هر نوع برای یک «حالت ذهنی» متفاوت طراحی شده است:</p>
+        <ul>
+          <li>tutorialی که وسط کار وارد بحث نظری می‌شود، تمرکز یادگیرنده را می‌شکند؛</li>
+          <li>how-toای که همه‌ی گزینه‌ها را فهرست می‌کند، کاربر عجول را کند می‌کند؛</li>
+          <li>referenceی که پر از آموزش است، پیدا کردن یک پارامتر را سخت می‌کند؛</li>
+          <li>explanationی که گام‌های عملی دارد، نه آموزش خوبی است و نه دستورالعمل خوب.</li>
+        </ul>
+        <p>به‌جای مخلوط کردن، انواع را به هم <strong>لینک</strong> کنید. در عمل: reference را تا حد امکان از کد تولید کنید، how-toها و runbookها را کوتاه و عملی نگه دارید، و explanation را در مستند معماری و ADRها بنویسید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-12">
+      <summary>Docs-as-code چیست؟ یک سناریو: تیم شما شکایت دارد که مستندات همیشه از کد عقب است. چه اقداماتی انجام می‌دهید؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> docs-as-code یعنی نوشتن مستندات با همان ابزار و فرایند کد: قالب متنی (Markdown، OpenAPI YAML)، نگهداری <strong>در همان repo</strong>، version control، review در PR، و build/تست/انتشار خودکار در CI.</p>
+        <p><strong>اقدامات برای رفع عقب‌ماندگی</strong> (سه لایه):</p>
+        <p><strong>۱. فرایند</strong></p>
+        <ul>
+          <li>انتقال مستندات از wiki جدا به <code>docs/</code> داخل repo تا در همان PR تغییر کنند.</li>
+          <li>افزودن «مستند به‌روز شد» به <strong>Definition of Done</strong> و checklist در قالب PR.</li>
+          <li>reviewerها مستند را هم review کنند؛ CODEOWNERS برای <code>docs/</code> و مالک مشخص هر سند.</li>
+          <li>بازبینی دوره‌ای و حذف صفحات منسوخ.</li>
+        </ul>
+        <p><strong>۲. ابزار و خودکارسازی</strong></p>
+        <ul>
+          <li>تولید reference از کد (Scribe/Scramble برای API، PHPDoc) و fail شدن CI اگر خروجی تولیدشده با نسخه‌ی commit‌شده فرق کند.</li>
+          <li>lint مستندات، بررسی لینک شکسته، Vale برای سبک و اصطلاحات.</li>
+          <li>بررسی هم‌خوانی <code>.env.example</code> با کلیدهای استفاده‌شده.</li>
+        </ul>
+        <p><strong>۳. طراحی مستند</strong></p>
+        <ul>
+          <li>کاهش حجم: فقط چیزهایی که ارزش دارند؛ مستند کمتر یعنی نگهداری کمتر.</li>
+          <li>مستند نزدیک کد: docblock، README ماژول.</li>
+          <li>مستند اجرایی: feature testهای خوانا، اعتبارسنجی پاسخ API با spec، اعتبارسنجی config در boot.</li>
+          <li>quick start در قالب اسکریپت (<code>composer setup</code>) که در CI اجرا می‌شود.</li>
+        </ul>
+        <p><strong>سنجش:</strong> تعداد سؤال‌های تکراری در چت، زمان onboarding، و گزارش‌های «مستند غلط بود».</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-13">
+      <summary>Runbook چیست و چه بخش‌هایی دارد؟ تفاوت آن با postmortem و مستند معماری را بگویید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> runbook دستورالعمل گام‌به‌گام برای انجام یک عملیات یا واکنش به یک هشدار/وضعیت مشخص در production است. برای مهندس on-call نوشته می‌شود که ممکن است تحت فشار و بدون آشنایی عمیق با سرویس کار کند. هدف: کاهش <strong>MTTR</strong> و وابستگی به افراد خاص.</p>
+        <p><strong>بخش‌ها:</strong></p>
+        <ol>
+          <li>نام هشدار/وضعیت و شرط فعال شدن آن.</li>
+          <li>اثر بر کاربر و سطح شدت.</li>
+          <li>گام‌های تشخیص با دستورات دقیق و کپی‌پذیر (داشبورد، log، <code>php artisan queue:failed</code>).</li>
+          <li>اقدام‌های اصلاحی برای هر علت محتمل (restart worker، rollback، غیرفعال کردن feature flag).</li>
+          <li>مسیر escalation و زمان‌بندی آن.</li>
+          <li>اقدامات پس از حادثه و لینک‌های مرتبط.</li>
+        </ol>
+        <p><strong>مقایسه:</strong></p>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Runbook</th><th>Postmortem</th><th>مستند معماری</th></tr></thead>
+          <tbody>
+            <tr><td>زمان</td><td>قبل و حین حادثه</td><td>بعد از حادثه</td><td>همیشه</td></tr>
+            <tr><td>هدف</td><td>عمل سریع و درست</td><td>یادگیری و پیشگیری</td><td>فهم ساختار و دلایل</td></tr>
+            <tr><td>نوع Diátaxis</td><td>How-to</td><td>Explanation (گزارش)</td><td>Explanation</td></tr>
+            <tr><td>محتوا</td><td>گام‌ها و دستورات</td><td>timeline، root cause، action itemها؛ blameless</td><td>C4، جریان داده، ADR</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>نکات:</strong> هر alert به runbook خود لینک شود؛ بعد از هر حادثه، runbook با درس‌های postmortem به‌روز شود؛ گام‌های تکراری کاندیدای خودکارسازی‌اند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-14">
+      <summary>کد و مستند زیر چه مشکلاتی دارند؟ پیشنهاد اصلاح بدهید.
+        <code>// get price</code> بالای متدی که <code>env('TAX_RATE')</code> را در یک Service فراخوانی می‌کند و <code>TAX_RATE</code> در <code>.env.example</code> نیست.</summary>
+      <div class="answer">
+        <pre><code class="language-php">// get price
+public function price(Product $p)
+{
+    return $p-&gt;price * (1 + env('TAX_RATE'));
+}</code></pre>
+        <p><strong>مشکلات:</strong></p>
+        <ol>
+          <li><strong>comment بی‌ارزش:</strong> «get price» همان نام متد است؛ چیزی درباره‌ی اینکه قیمت با مالیات است، واحد مبلغ چیست یا گرد کردن چطور انجام می‌شود نمی‌گوید.</li>
+          <li><strong><code>env()</code> خارج از config:</strong> بعد از <code>php artisan config:cache</code> در production، <code>.env</code> بارگذاری نمی‌شود و <code>env('TAX_RATE')</code> مقدار <code>null</code> برمی‌گرداند؛ نتیجه: قیمت بدون مالیات، بی‌صدا.</li>
+          <li><strong>متغیر مستندنشده:</strong> <code>TAX_RATE</code> در <code>.env.example</code> نیست؛ کسی نمی‌داند باید <code>0.09</code> باشد یا <code>9</code>.</li>
+          <li><strong>نبود type و نام مبهم:</strong> <code>$p</code> و نبود return type.</li>
+          <li>(فنی) محاسبه‌ی پولی با float خطای گرد کردن دارد؛ بهتر است با واحد خرد (integer) یا کتابخانه‌ی Money کار شود.</li>
+        </ol>
+        <p><strong>اصلاح:</strong></p>
+        <pre><code class="language-php">// config/pricing.php
+// VAT rate as a decimal fraction (0.09 = 9%). Required in all environments.
+'tax_rate' =&gt; (float) env('TAX_RATE', 0.09),
+
+// PriceCalculator
+/**
+ * Gross price in minor units (cents). Tax is rounded per item
+ * as required by the tax authority (see ADR-0015).
+ */
+public function grossPrice(Product $product): int
+{
+    $rate = config('pricing.tax_rate');
+
+    return (int) round($product-&gt;price_cents * (1 + $rate));
+}</code></pre>
+        <p>و افزودن به <code>.env.example</code> با comment توضیح واحد، و در صورت نیاز اعتبارسنجی مقدار در boot. تست واحد هم قاعده‌ی گرد کردن را مستند و تضمین می‌کند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-documentation-15">
+      <summary>اصول نوشتن فنی خوب را برای یک مستند داخلی (مثلاً راهنمای deploy) توضیح دهید. یک متن ضعیف را با نسخه‌ی بهبودیافته مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>اصول:</strong></p>
+        <ul>
+          <li><strong>مخاطب‌محوری:</strong> چه کسی می‌خواند و بعد از خواندن باید چه کاری بتواند انجام دهد؟ پیش‌نیازها و دسترسی‌ها صریح.</li>
+          <li><strong>مهم‌ترین چیز اول:</strong> نتیجه یا دستور اصلی ابتدا، جزئیات و پس‌زمینه بعد.</li>
+          <li><strong>قابل مرور:</strong> عنوان گویا، گام‌های شماره‌دار، جدول، پاراگراف کوتاه.</li>
+          <li><strong>دقیق و مشخص:</strong> مقدار، مسیر و دستور دقیق؛ نه «تنظیم مناسب».</li>
+          <li><strong>جمله‌ی کوتاه، فعل معلوم و امری</strong> برای گام‌ها.</li>
+          <li><strong>اصطلاحات یکسان</strong> در کل مستند و هم‌خوان با کد.</li>
+          <li><strong>هشدار برجسته</strong> برای عملیات مخرب و برگشت‌ناپذیر.</li>
+          <li><strong>عیب‌یابی:</strong> خطاهای رایج با پیام دقیق و راه‌حل.</li>
+          <li>پرهیز از «فقط»، «به‌سادگی» و پیش‌فرض‌های ناگفته.</li>
+        </ul>
+        <p><strong>ضعیف:</strong> «برای deploy، تغییرات را push کنید و بعد از اینکه همه‌چیز اوکی شد، migrationها را بزنید. اگر مشکلی بود rollback کنید.»</p>
+        <p><strong>بهتر:</strong></p>
+        <ol>
+          <li>PR را در <code>main</code> merge کنید؛ pipeline به‌طور خودکار روی staging deploy می‌کند.</li>
+          <li>روی staging تست دود را اجرا کنید: <code>./scripts/smoke.sh staging</code> (باید «OK» چاپ کند).</li>
+          <li>tag بزنید: <code>git tag -a v2.4.0 -m "Release 2.4.0" &amp;&amp; git push origin v2.4.0</code>؛ این کار deploy production را آغاز می‌کند.</li>
+          <li>migrationها به‌صورت خودکار با <code>php artisan migrate --force</code> در pipeline اجرا می‌شوند.</li>
+        </ol>
+        <p><strong>هشدار:</strong> migrationهای مخرب (حذف ستون) باید در دو مرحله و دو release انجام شوند؛ rollback کد، ستون حذف‌شده را برنمی‌گرداند.</p>
+        <p><strong>Rollback:</strong> <code>./deploy rollback billing</code>؛ اگر migration اجرا شده، ابتدا با on-call هماهنگ کنید.</p>
+        <p>نسخه‌ی دوم ترتیب، دستور دقیق، نتیجه‌ی مورد انتظار، هشدار و مسیر بازگشت را دارد.</p>
+      </div>
+    </details>
+
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h4>اصول کلی</h4>
+      <ul>
+        <li>مستند = انتقال دانشی که در کد نیست: چرا، چطور استفاده، تصویر کلان، عملیات.</li>
+        <li>مخاطب‌محور: یک مستند، یک مخاطب، یک نیاز.</li>
+        <li>مستند کهنه بدتر از نبودنش است (doc rot) ← کم، دقیق، به‌روز، دارای مالک.</li>
+        <li>اثرها: onboarding سریع‌تر، bus factor بالاتر، MTTR کمتر، تصمیم تکراری کمتر.</li>
+      </ul>
+      <h4>Comment و کد</h4>
+      <ul>
+        <li>کد = چه/چگونه؛ comment = <strong>چرا</strong>، قید، هشدار، قاعده‌ی کسب‌وکار.</li>
+        <li>ممنوع: تکرار کد، کد comment‌شده، تاریخچه در فایل، TODO بدون ticket.</li>
+        <li>خودمستندسازی: نام‌گذاری دامنه، توابع کوچک، type، enum، value object، named args، تست خوانا.</li>
+        <li>کد خودمستند ≠ بی‌نیازی از مستند (معماری، دلیل، API، عملیات).</li>
+      </ul>
+      <h4>PHPDoc</h4>
+      <ul>
+        <li>تکرار type native زائد است.</li>
+        <li>ارزشمند: <code>list&lt;T&gt;</code>، array shape، <code>@template</code>، <code>@throws</code>، <code>@property</code>، <code>@deprecated</code>، <code>@internal</code>.</li>
+        <li>PHPStan/Larastan در CI ← docblock اجرایی؛ ide-helper برای Eloquent.</li>
+      </ul>
+      <h4>README</h4>
+      <ul>
+        <li>هدف، پیش‌نیاز، راه‌اندازی، تست، env، معماری، deploy، عیب‌یابی، مالک، مشارکت.</li>
+        <li>دستورات تست‌شده؛ عضو جدید تست‌کننده‌ی README.</li>
+        <li>همراه‌ها: CONTRIBUTING، CHANGELOG، SECURITY، CODEOWNERS، .env.example.</li>
+      </ul>
+      <h4>API</h4>
+      <ul>
+        <li>OpenAPI = قرارداد قابل پردازش با ماشین (UI، SDK، mock، validation، diff).</li>
+        <li>شامل: auth، پارامترها، نمونه‌ها، قالب خطا (۴۲۲)، pagination، rate limit، نسخه.</li>
+        <li>Design-first: طراحی بهتر، کار موازی؛ Code-first: همگامی.</li>
+        <li>Laravel: Scribe (FormRequest + docblock/attribute)، Scramble (استنتاج)، L5-Swagger.</li>
+        <li>CI: تولید + <code>git diff --exit-code</code>، Spectral، breaking-change check.</li>
+      </ul>
+      <h4>معماری و تصمیم</h4>
+      <ul>
+        <li>C4: Context ← Container ← Component ← Code؛ container ≠ Docker.</li>
+        <li>نمودار: عنوان، legend، فلش برچسب‌دار با پروتکل، یک سطح انتزاع.</li>
+        <li>Diagrams as code: Mermaid، PlantUML، Structurizr.</li>
+        <li>ADR: عنوان، وضعیت، زمینه، گزینه‌ها، تصمیم، پیامدها (+ و −)؛ تغییرناپذیر، supersede.</li>
+      </ul>
+      <h4>Release و عملیات</h4>
+      <ul>
+        <li>Keep a Changelog: Unreleased بالا، تاریخ ISO، Added/Changed/Deprecated/Removed/Fixed/Security.</li>
+        <li>CHANGELOG ≠ git log؛ برای انسان.</li>
+        <li>Deprecated در MINOR ← Removed در MAJOR.</li>
+        <li>Runbook: هشدار، اثر، تشخیص، اقدام، escalation؛ لینک از alert.</li>
+        <li>Postmortem: blameless، timeline، root cause، action item با مالک.</li>
+        <li>.env.example کامل بدون secret؛ <code>env()</code> فقط در <code>config/</code>؛ fail fast در boot.</li>
+      </ul>
+      <h4>سازمان‌دهی و فرایند</h4>
+      <ul>
+        <li>Diátaxis: Tutorial (یادگیری)، How-to (هدف)، Reference (اطلاعات)، Explanation (فهم).</li>
+        <li>Docs-as-code: repo، PR، CI، نسخه همراه کد.</li>
+        <li>همگامی: DoD + قالب PR + CODEOWNERS + تولید از کد + چک CI + مستند اجرایی.</li>
+        <li>سبک: مهم‌ترین اول، scannable، دقیق، فعل امری، اصطلاح یکسان، هشدار برجسته.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1364 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MongoDB — آمادگی آزمون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body data-topic="mongodb">
+<main id="content">
+
+  <header class="topic-hero">
+    <h1>MongoDB</h1>
+    <p class="lead">پایگاه داده‌ی سندمحور (Document-oriented) با مدل BSON: از CRUD و عملگرهای کوئری و ایندکس‌ها تا Aggregation Pipeline، طراحی Schema (embedding در برابر referencing و الگوها)، Replica Set، Sharding، تراکنش‌ها و استفاده از MongoDB در Laravel.</p>
+  </header>
+
+  <!-- ===================== 1 ===================== -->
+  <section class="lesson" id="document-model" data-title="مدل سندی و BSON">
+    <h2>مدل سندی و BSON</h2>
+    <p><strong>MongoDB</strong> یک پایگاه داده‌ی <strong>NoSQL</strong> از نوع <strong>Document Store</strong> است. به‌جای سطر و ستون، داده‌ها در قالب <strong>سند (Document)</strong> ذخیره می‌شوند؛ هر سند ساختاری شبیه JSON دارد: مجموعه‌ای از جفت‌های کلید/مقدار که مقدارها می‌توانند خودشان شیء تودرتو (Embedded Document) یا آرایه باشند.</p>
+
+    <pre><code class="language-json">{
+  "_id": { "$oid": "6724a1f0c3b2a91e4f0d1a22" },
+  "name": "Ali Rezaei",
+  "email": "ali@example.com",
+  "roles": ["admin", "editor"],
+  "address": { "city": "Tehran", "zip": "1234567890" },
+  "createdAt": { "$date": "2026-11-01T08:30:00Z" },
+  "loginCount": 42
+}</code></pre>
+
+    <h3>BSON چیست؟</h3>
+    <p>MongoDB اسناد را روی دیسک و در شبکه به شکل <strong>BSON (Binary JSON)</strong> نگه می‌دارد. BSON یک فرمت باینری است که:</p>
+    <ul>
+      <li><strong>نوع‌های بیشتری</strong> از JSON دارد: <code>ObjectId</code>، <code>Date</code>، <code>Int32</code>، <code>Int64 (Long)</code>، <code>Double</code>، <code>Decimal128</code>، <code>Binary</code>، <code>Timestamp</code>، <code>Regex</code> و…</li>
+      <li><strong>قابل پیمایش سریع</strong> است، چون طول هر فیلد و سند در خودش ذخیره شده و برای رسیدن به یک فیلد لازم نیست کل متن parse شود.</li>
+      <li>در عوض ممکن است کمی <strong>حجیم‌تر</strong> از JSON متنی معادل باشد (به خاطر نگه‌داشتن طول‌ها و نام فیلدها در هر سند).</li>
+    </ul>
+
+    <div class="callout exam"><p>تفاوت JSON و BSON سوال محبوبی است: JSON فرمت متنی و خوانا برای انسان با نوع‌های محدود (string, number, bool, null, array, object) است؛ BSON باینری، نوع‌دار (Date، ObjectId، Decimal128، Int64)، مناسب پیمایش سریع و ذخیره‌سازی است. در MongoDB شما با JSON-مانند کار می‌کنید، ولی ذخیره‌سازی BSON است.</p></div>
+
+    <h3>ویژگی‌های کلیدی مدل سندی</h3>
+    <ul>
+      <li><strong>Schema انعطاف‌پذیر (Flexible Schema):</strong> اسناد یک Collection لازم نیست ساختار یکسان داشته باشند. این به معنی «بدون Schema» نیست؛ Schema به لایه‌ی برنامه منتقل می‌شود و می‌توان با <code>$jsonSchema</code> اعتبارسنجی هم گذاشت.</li>
+      <li><strong>Data locality:</strong> داده‌هایی که با هم خوانده می‌شوند، در یک سند کنار هم ذخیره می‌شوند؛ بنابراین بسیاری از JOINها حذف می‌شوند.</li>
+      <li><strong>نگاشت طبیعی به اشیای برنامه:</strong> یک سند تقریباً همان شیء/آرایه‌ی PHP یا JSON در API است، پس impedance mismatch کمتر است.</li>
+      <li><strong>اتمیک بودن در سطح یک سند:</strong> هر عملیات نوشتن روی یک سند (حتی با فیلدهای تودرتو) اتمیک است.</li>
+    </ul>
+
+    <div class="callout warn"><p>«Schemaless» اصطلاح گمراه‌کننده‌ای است. در عمل همیشه یک Schema ضمنی وجود دارد که کد شما به آن وابسته است. اگر آن را مدیریت نکنید (Validation، نسخه‌بندی Schema)، با گذشت زمان داده‌های ناسازگار خواهید داشت.</p></div>
+
+    <h3>اعتبارسنجی Schema</h3>
+    <pre><code class="language-javascript">db.createCollection("users", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["email", "createdAt"],
+      properties: {
+        email:     { bsonType: "string", pattern: "^.+@.+$" },
+        age:       { bsonType: "int", minimum: 0 },
+        createdAt: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "strict",   // یا "moderate"
+  validationAction: "error"    // یا "warn"
+});</code></pre>
+  </section>
+
+  <!-- ===================== 2 ===================== -->
+  <section class="lesson" id="when-to-use" data-title="چه زمانی MongoDB؟">
+    <h2>چه زمانی MongoDB؟</h2>
+    <p>انتخاب بین MongoDB و یک RDBMS (مثل MySQL/PostgreSQL) باید بر اساس <strong>الگوی دسترسی به داده (Access Pattern)</strong>، نیاز به یکپارچگی و مقیاس باشد، نه مُد روز.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>MongoDB مناسب است وقتی…</h4><ul>
+        <li>داده ذاتاً <strong>سلسله‌مراتبی/تودرتو</strong> است (کاتالوگ محصول با ویژگی‌های متفاوت، CMS، پروفایل کاربر).</li>
+        <li>Schema <strong>سریع تغییر می‌کند</strong> یا اسناد ساختار متنوع دارند.</li>
+        <li>نیاز به <strong>مقیاس افقی</strong> (Sharding) داخلی و حجم نوشتن بالا دارید (لاگ، رویداد، IoT).</li>
+        <li>بیشتر خواندن‌ها «یک موجودیت با تمام جزئیاتش» است و JOIN پیچیده کم است.</li>
+        <li>داده‌های <strong>Time-series</strong> یا event store با الگوی append.</li>
+      </ul></div>
+      <div class="card"><h4>RDBMS انتخاب بهتری است وقتی…</h4><ul>
+        <li>روابط <strong>زیاد و پیچیده</strong> بین موجودیت‌ها و کوئری‌های ad-hoc با JOINهای متعدد دارید.</li>
+        <li>یکپارچگی قوی بین چند موجودیت (حسابداری، بانکی، موجودی انبار) حیاتی است و تراکنش چندجدولی امری روزمره است.</li>
+        <li>گزارش‌گیری تحلیلی و SQL استاندارد برای تیم/ابزارهای BI مهم است.</li>
+        <li>Schema پایدار و به‌خوبی شناخته‌شده است.</li>
+        <li>به Foreign Key و Constraintهای سمت دیتابیس نیاز دارید.</li>
+      </ul></div>
+    </div>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>جنبه</th><th>RDBMS (MySQL/PostgreSQL)</th><th>MongoDB</th></tr></thead>
+      <tbody>
+        <tr><td>واحد ذخیره</td><td>سطر در جدول</td><td>سند در Collection</td></tr>
+        <tr><td>Schema</td><td>سخت، تعریف‌شده با DDL</td><td>انعطاف‌پذیر، اختیاری با <code>$jsonSchema</code></td></tr>
+        <tr><td>روابط</td><td>FK و JOIN</td><td>Embedding یا Reference + <code>$lookup</code></td></tr>
+        <tr><td>تراکنش</td><td>بومی و ارزان</td><td>تک‌سند اتمیک؛ چندسندی از 4.0 (هزینه‌ی بیشتر)</td></tr>
+        <tr><td>مقیاس</td><td>عمدتاً عمودی؛ افقی با ابزار جانبی</td><td>Sharding بومی</td></tr>
+        <tr><td>زبان کوئری</td><td>SQL</td><td>MQL (Query API) و Aggregation Pipeline</td></tr>
+        <tr><td>نرمال‌سازی</td><td>تشویق به نرمال‌سازی</td><td>طراحی بر اساس الگوی دسترسی، denormalization رایج</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout exam"><p>جمله‌ی کلیدی برای پاسخ تشریحی: «در RDBMS ابتدا داده را مدل می‌کنیم و بعد کوئری می‌نویسیم؛ در MongoDB ابتدا کوئری‌ها و الگوی دسترسی را می‌شناسیم و Schema را بر اساس آن طراحی می‌کنیم.» (<strong>Data that is accessed together should be stored together</strong>.)</p></div>
+
+    <h3>دسته‌بندی کلی NoSQL</h3>
+    <dl class="terms">
+      <dt>Document</dt><dd>MongoDB، CouchDB — سندهای JSON/BSON.</dd>
+      <dt>Key-Value</dt><dd>Redis، DynamoDB — دسترسی با کلید، بسیار سریع.</dd>
+      <dt>Wide-Column</dt><dd>Cassandra، HBase — مناسب نوشتن بسیار زیاد و توزیع‌شده.</dd>
+      <dt>Graph</dt><dd>Neo4j — روابط پیچیده و پیمایش گراف.</dd>
+    </dl>
+  </section>
+
+  <!-- ===================== 3 ===================== -->
+  <section class="lesson" id="structure" data-title="Database، Collection، Document و _id">
+    <h2>Database، Collection، Document و _id</h2>
+    <pre class="diagram">MongoDB Server (mongod)
+ └── Database: shop
+      ├── Collection: users      ──► { _id, name, email, ... }  (Document)
+      ├── Collection: products   ──► { _id, title, price, attrs: {...} }
+      └── Collection: orders     ──► { _id, userId, items: [ ... ] }</pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>مفهوم SQL</th><th>معادل MongoDB</th></tr></thead>
+      <tbody>
+        <tr><td>Database</td><td>Database</td></tr>
+        <tr><td>Table</td><td>Collection</td></tr>
+        <tr><td>Row</td><td>Document</td></tr>
+        <tr><td>Column</td><td>Field</td></tr>
+        <tr><td>Primary Key</td><td><code>_id</code></td></tr>
+        <tr><td>JOIN</td><td>Embedding یا <code>$lookup</code></td></tr>
+        <tr><td>GROUP BY</td><td><code>$group</code> در Aggregation</td></tr>
+      </tbody>
+    </table></div>
+
+    <p>Database و Collection به‌صورت <strong>تنبل (lazily)</strong> ساخته می‌شوند: با اولین insert ایجاد می‌شوند. نیازی به <code>CREATE TABLE</code> نیست (مگر بخواهید Validation یا تنظیمات خاص مثل Capped/Time-series بدهید).</p>
+
+    <h3>فیلد <code>_id</code> و ObjectId</h3>
+    <ul>
+      <li>هر سند <strong>باید</strong> فیلد <code>_id</code> داشته باشد که در Collection یکتاست و روی آن به‌طور خودکار یک <strong>unique index</strong> وجود دارد.</li>
+      <li>اگر شما مقداری ندهید، driver یک <strong>ObjectId</strong> می‌سازد.</li>
+      <li><code>_id</code> می‌تواند هر نوعی جز آرایه باشد (عدد، رشته، سند) و بعد از درج <strong>قابل تغییر نیست</strong>.</li>
+    </ul>
+
+    <p><strong>ObjectId</strong> یک مقدار ۱۲ بایتی است:</p>
+    <pre class="diagram">| 4 bytes timestamp | 5 bytes random (per process) | 3 bytes counter |
+   ثانیه از Unix epoch     یکتا برای ماشین/پروسس        شمارنده‌ی افزایشی</pre>
+    <ul>
+      <li>بدون هماهنگی مرکزی در سمت client ساخته می‌شود؛ پس برای سیستم توزیع‌شده مناسب است.</li>
+      <li>تقریباً <strong>بر اساس زمان مرتب</strong> است؛ مرتب‌سازی بر اساس <code>_id</code> تقریباً همان مرتب‌سازی بر اساس زمان ایجاد است.</li>
+      <li>زمان ایجاد را می‌توان از آن استخراج کرد: <code>ObjectId("...").getTimestamp()</code>.</li>
+    </ul>
+
+    <div class="callout warn"><p>چون ObjectId «یکنواخت افزایشی (monotonically increasing)» است، استفاده‌ی مستقیم از آن به‌عنوان <strong>ranged shard key</strong> باعث می‌شود همه‌ی درج‌ها به یک shard (آخرین chunk) بروند: <strong>hot shard</strong>. راه‌حل: hashed shard key یا کلید ترکیبی.</p></div>
+
+    <div class="callout tip"><p>ObjectId را رمز امنیتی فرض نکنید؛ قابل حدس‌تر از UUID تصادفی است. اگر شناسه را در URL عمومی نشان می‌دهید و نمی‌خواهید شمارش/حدس‌زدن ممکن باشد، کنترل دسترسی بگذارید یا شناسه‌ی عمومی جداگانه داشته باشید.</p></div>
+  </section>
+
+  <!-- ===================== 4 ===================== -->
+  <section class="lesson" id="crud" data-title="CRUD در mongosh">
+    <h2>CRUD در mongosh</h2>
+
+    <h3>Create</h3>
+    <pre><code class="language-javascript">use shop
+
+db.users.insertOne({ name: "Sara", email: "sara@example.com", age: 29, tags: ["vip"] })
+
+db.users.insertMany([
+  { name: "Reza", email: "reza@example.com", age: 35 },
+  { name: "Mina", email: "mina@example.com", age: 22, tags: [] }
+], { ordered: false })   // در صورت خطا روی یک سند، بقیه را ادامه بده</code></pre>
+    <p>با <code>ordered: true</code> (پیش‌فرض) در اولین خطا (مثلاً duplicate key) عملیات متوقف می‌شود؛ با <code>ordered: false</code> بقیه‌ی اسناد درج می‌شوند و خطاها در انتها گزارش می‌شوند.</p>
+
+    <h3>Read: find، فیلتر و projection</h3>
+    <pre><code class="language-javascript">// همه‌ی کاربرانی که سنشان بین 18 و 30 است، فقط name و email، مرتب و صفحه‌بندی‌شده
+db.users.find(
+  { age: { $gte: 18, $lte: 30 } },          // filter
+  { name: 1, email: 1, _id: 0 }             // projection
+).sort({ age: -1 }).skip(20).limit(10)
+
+db.users.findOne({ email: "sara@example.com" })
+
+// فیلد تودرتو با dot notation (حتماً داخل کوتیشن)
+db.users.find({ "address.city": "Tehran" })
+
+db.users.countDocuments({ age: { $gt: 30 } })</code></pre>
+
+    <div class="callout warn"><p>در projection نمی‌توانید include و exclude را با هم ترکیب کنید (جز <code>_id: 0</code>). یعنی <code>{ name: 1, age: 0 }</code> خطا می‌دهد.</p></div>
+
+    <div class="callout tip"><p>صفحه‌بندی با <code>skip</code> بزرگ کند است، چون سرور باید همه‌ی اسناد قبلی را رد کند. برای صفحه‌های عمیق از <strong>Range/Keyset pagination</strong> استفاده کنید: <code>find({ _id: { $gt: lastSeenId } }).sort({ _id: 1 }).limit(10)</code>.</p></div>
+
+    <h3>Update و عملگرهای آن</h3>
+    <pre><code class="language-javascript">db.users.updateOne(
+  { email: "sara@example.com" },
+  {
+    $set:  { "address.city": "Shiraz", updatedAt: new Date() },
+    $inc:  { loginCount: 1 },
+    $push: { loginHistory: { at: new Date(), ip: "10.0.0.5" } },
+    $addToSet: { tags: "beta-tester" },   // فقط اگر وجود نداشته باشد
+    $unset: { tempToken: "" }
+  }
+)
+
+// push چند مقدار و نگه‌داشتن فقط 10 آیتم آخر (جلوگیری از رشد بی‌حد آرایه)
+db.users.updateOne(
+  { _id: ObjectId("6724a1f0c3b2a91e4f0d1a22") },
+  { $push: { recentViews: { $each: ["p1", "p2"], $slice: -10 } } }
+)
+
+db.users.updateMany({ age: { $lt: 18 } }, { $set: { minor: true } })
+
+// حذف از آرایه
+db.users.updateOne({ name: "Sara" }, { $pull: { tags: "vip" } })</code></pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>عملگر</th><th>کار</th></tr></thead>
+      <tbody>
+        <tr><td><code>$set</code> / <code>$unset</code></td><td>تنظیم یا حذف فیلد</td></tr>
+        <tr><td><code>$inc</code></td><td>افزایش/کاهش اتمیک عددی (شمارنده، موجودی)</td></tr>
+        <tr><td><code>$min</code> / <code>$max</code></td><td>فقط اگر مقدار جدید کمتر/بیشتر باشد به‌روز کن</td></tr>
+        <tr><td><code>$push</code></td><td>افزودن به آرایه (با <code>$each</code>، <code>$slice</code>، <code>$sort</code>، <code>$position</code>)</td></tr>
+        <tr><td><code>$addToSet</code></td><td>افزودن بدون تکرار (مثل set)</td></tr>
+        <tr><td><code>$pull</code> / <code>$pop</code></td><td>حذف عناصر مطابق شرط / حذف اول یا آخر</td></tr>
+        <tr><td><code>$rename</code></td><td>تغییر نام فیلد</td></tr>
+        <tr><td><code>$currentDate</code></td><td>تنظیم زمان فعلی</td></tr>
+        <tr><td><code>$setOnInsert</code></td><td>فقط وقتی upsert منجر به درج شود</td></tr>
+        <tr><td><code>$</code>، <code>$[]</code>، <code>$[elem]</code></td><td>به‌روزرسانی عنصر مطابق، همه‌ی عناصر، یا عناصر فیلترشده با <code>arrayFilters</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <pre><code class="language-javascript">// به‌روزرسانی عنصر خاص آرایه: قیمت آیتم sku=A12 در سفارش
+db.orders.updateOne(
+  { _id: 1001, "items.sku": "A12" },
+  { $set: { "items.$.qty": 3 } }          // $ = اولین عنصر مطابق
+)
+
+// همه‌ی آیتم‌هایی که qty &gt; 5 دارند
+db.orders.updateOne(
+  { _id: 1001 },
+  { $set: { "items.$[it].bulk": true } },
+  { arrayFilters: [ { "it.qty": { $gt: 5 } } ] }
+)</code></pre>
+
+    <div class="callout warn"><p>اگر سند دوم <code>updateOne</code> را بدون عملگر بنویسید (مثلاً <code>{ name: "X" }</code>) خطا می‌گیرید؛ برای جایگزینی کامل سند باید <code>replaceOne</code> استفاده کنید. <code>replaceOne</code> همه‌ی فیلدهای قبلی (جز <code>_id</code>) را حذف می‌کند.</p></div>
+
+    <h3>Upsert</h3>
+    <p><strong>Upsert</strong> یعنی «اگر سندی با این فیلتر بود به‌روز کن، وگرنه درج کن». برای شمارنده‌ها، تنظیمات کاربر یا همگام‌سازی داده‌ی خارجی بسیار کاربردی است.</p>
+    <pre><code class="language-javascript">db.pageViews.updateOne(
+  { page: "/home", day: "2026-11-07" },
+  {
+    $inc: { views: 1 },
+    $setOnInsert: { createdAt: new Date() }
+  },
+  { upsert: true }
+)
+
+// گرفتن نتیجه‌ی بعد از تغییر به‌صورت اتمیک
+db.counters.findOneAndUpdate(
+  { _id: "invoice" },
+  { $inc: { seq: 1 } },
+  { upsert: true, returnDocument: "after" }
+)</code></pre>
+
+    <div class="callout exam"><p>Upsert تحت هم‌زمانی بالا ممکن است دو سند تکراری بسازد (دو درخواست هم‌زمان هر دو «پیدا نشد» می‌بینند). راه‌حل استاندارد: یک <strong>unique index</strong> روی فیلدهای فیلتر؛ در این صورت یکی از دو درج با duplicate key شکست می‌خورد و می‌توان آن را retry کرد.</p></div>
+
+    <h3>Delete</h3>
+    <pre><code class="language-javascript">db.sessions.deleteOne({ _id: "abc" })
+db.logs.deleteMany({ createdAt: { $lt: ISODate("2026-01-01") } })
+db.logs.deleteMany({})          // همه‌ی اسناد (ایندکس‌ها می‌مانند)
+db.logs.drop()                  // کل collection همراه ایندکس‌ها</code></pre>
+    <div class="callout tip"><p>حذف حجم بزرگ با <code>deleteMany</code> فشار زیادی (oplog، replication lag) ایجاد می‌کند. برای داده‌های منقضی‌شونده از <strong>TTL index</strong> استفاده کنید، یا حذف را دسته‌ای (batch) انجام دهید.</p></div>
+  </section>
+
+  <!-- ===================== 5 ===================== -->
+  <section class="lesson" id="query-operators" data-title="عملگرهای کوئری">
+    <h2>عملگرهای کوئری</h2>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>دسته</th><th>عملگرها</th><th>مثال</th></tr></thead>
+      <tbody>
+        <tr><td>مقایسه</td><td><code>$eq $ne $gt $gte $lt $lte $in $nin</code></td><td><code>{ status: { $in: ["paid","shipped"] } }</code></td></tr>
+        <tr><td>منطقی</td><td><code>$and $or $nor $not</code></td><td><code>{ $or: [{ age: { $lt: 18 } }, { vip: true }] }</code></td></tr>
+        <tr><td>وجود/نوع</td><td><code>$exists $type</code></td><td><code>{ deletedAt: { $exists: false } }</code></td></tr>
+        <tr><td>آرایه</td><td><code>$all $elemMatch $size</code></td><td><code>{ tags: { $all: ["php","laravel"] } }</code></td></tr>
+        <tr><td>ارزیابی</td><td><code>$regex $expr $text $mod</code></td><td><code>{ $expr: { $gt: ["$spent", "$budget"] } }</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>AND ضمنی</h3>
+    <pre><code class="language-javascript">// چند شرط در یک سند فیلتر = AND
+db.products.find({ category: "laptop", price: { $lt: 1500 }, stock: { $gt: 0 } })
+
+// $and صریح وقتی لازم است که روی یک فیلد دو شرط $or جداگانه داشته باشید
+db.products.find({ $and: [
+  { $or: [{ brand: "Dell" }, { brand: "HP" }] },
+  { $or: [{ ram: 16 }, { ram: 32 }] }
+]})</code></pre>
+
+    <h3>کوئری روی آرایه‌ها و <code>$elemMatch</code></h3>
+    <p>کوئری <code>{ tags: "php" }</code> یعنی «آرایه‌ی tags شامل php باشد». نکته‌ی ظریف وقتی است که چند شرط روی عناصر آرایه‌ای از اسناد می‌گذارید:</p>
+    <pre><code class="language-javascript">// سند نمونه:
+// { _id: 1, results: [ { product: "A", score: 3 }, { product: "B", score: 9 } ] }
+
+// ❌ هر شرط می‌تواند با عنصر متفاوتی برآورده شود → سند 1 برمی‌گردد!
+db.surveys.find({ "results.product": "A", "results.score": { $gt: 8 } })
+
+// ✅ هر دو شرط باید روی «همان یک عنصر» برقرار باشند → سند 1 برنمی‌گردد
+db.surveys.find({ results: { $elemMatch: { product: "A", score: { $gt: 8 } } } })</code></pre>
+    <div class="callout exam"><p>تفاوت dot notation و <code>$elemMatch</code> روی آرایه‌ی اسناد از سوالات کلاسیک است. dot notation شرط‌ها را روی <strong>کل آرایه</strong> می‌سنجد (هر شرط با هر عنصری)، ولی <code>$elemMatch</code> تضمین می‌کند که <strong>یک عنصر واحد</strong> همه‌ی شرط‌ها را داشته باشد.</p></div>
+
+    <h3><code>$exists</code> و null</h3>
+    <pre><code class="language-javascript">db.users.find({ phone: null })              // phone برابر null است یا اصلاً وجود ندارد
+db.users.find({ phone: { $exists: false } }) // فقط وقتی فیلد وجود ندارد
+db.users.find({ phone: { $type: "null" } })  // فقط وقتی مقدار صریحاً null است</code></pre>
+
+    <h3><code>$regex</code> و کارایی</h3>
+    <pre><code class="language-javascript">db.users.find({ email: { $regex: "^ali" } })        // prefix، می‌تواند از ایندکس استفاده کند
+db.users.find({ name: { $regex: "rez", $options: "i" } }) // کامل اسکن ایندکس/collection</code></pre>
+    <div class="callout warn"><p>فقط regex <strong>prefix و case-sensitive</strong> (با <code>^</code>) به‌طور مؤثر از ایندکس استفاده می‌کند. regex بدون anchor یا با <code>i</code> عملاً همه‌ی کلیدها را می‌خواند. برای جست‌وجوی متنی از <strong>text index</strong> یا Atlas Search / موتور جست‌وجوی جدا (Elasticsearch) استفاده کنید. همچنین ورودی کاربر را قبل از قرار دادن در regex escape کنید (خطر ReDoS و تزریق الگو).</p></div>
+
+    <h3>NoSQL Injection</h3>
+    <p>اگر ورودی کاربر مستقیماً در فیلتر قرار بگیرد، کاربر می‌تواند به جای رشته یک شیء بفرستد، مثلاً <code>password[$ne]=x</code> که در PHP به آرایه‌ی <code>['$ne' =&gt; 'x']</code> تبدیل می‌شود و شرط را دور می‌زند.</p>
+    <pre><code class="language-php">&lt;?php
+// ❌ خطرناک
+$user = $collection-&gt;findOne(['email' =&gt; $_POST['email'], 'password' =&gt; $_POST['password']]);
+
+// ✅ نوع را اجبار کنید و رمز را هرگز مستقیم مقایسه نکنید
+$email = (string) $request-&gt;input('email');
+$user  = $collection-&gt;findOne(['email' =&gt; $email]);
+if (! $user || ! password_verify((string) $request-&gt;input('password'), $user['password'])) {
+    abort(401);
+}</code></pre>
+  </section>
+
+  <!-- ===================== 6 ===================== -->
+  <section class="lesson" id="indexes" data-title="ایندکس‌ها و explain">
+    <h2>ایندکس‌ها و explain</h2>
+    <p>ایندکس در MongoDB یک ساختار <strong>B-tree</strong> است که مقادیر یک یا چند فیلد را به‌صورت مرتب به همراه اشاره‌گر به سند نگه می‌دارد. بدون ایندکس، کوئری یک <strong>COLLSCAN</strong> (اسکن کل Collection) است.</p>
+
+    <div class="callout note"><p>هزینه‌ی ایندکس: هر insert/update/delete باید همه‌ی ایندکس‌های مرتبط را به‌روز کند؛ ایندکس فضای دیسک و RAM می‌گیرد. بهترین حالت این است که «working set» (داده‌ها و ایندکس‌های پرکاربرد) در RAM جا شود.</p></div>
+
+    <h3>انواع ایندکس</h3>
+    <pre><code class="language-javascript">// Single field
+db.users.createIndex({ email: 1 }, { unique: true })
+
+// Compound
+db.orders.createIndex({ userId: 1, status: 1, createdAt: -1 })
+
+// Multikey: روی فیلد آرایه، خودکار multikey می‌شود (یک کلید برای هر عنصر)
+db.products.createIndex({ tags: 1 })
+
+// Text (حداکثر یک text index برای هر collection)
+db.articles.createIndex({ title: "text", body: "text" }, { weights: { title: 5 } })
+db.articles.find({ $text: { $search: "laravel queue" } }, { score: { $meta: "textScore" } })
+           .sort({ score: { $meta: "textScore" } })
+
+// TTL: حذف خودکار اسناد بعد از زمان مشخص (فیلد باید از نوع Date باشد)
+db.sessions.createIndex({ createdAt: 1 }, { expireAfterSeconds: 3600 })
+
+// Partial: فقط اسنادی که شرط را دارند ایندکس می‌شوند
+db.orders.createIndex(
+  { createdAt: -1 },
+  { partialFilterExpression: { status: "pending" } }
+)
+
+// Unique + Partial: ایمیل یکتا فقط بین کاربران حذف‌نشده
+db.users.createIndex(
+  { email: 1 },
+  { unique: true, partialFilterExpression: { deletedAt: { $exists: false } } }
+)
+
+// Hashed (بیشتر برای shard key)
+db.events.createIndex({ deviceId: "hashed" })</code></pre>
+
+    <dl class="terms">
+      <dt>Single field</dt><dd>ایندکس روی یک فیلد؛ جهت (1 یا -1) برای sort تک‌فیلدی اهمیتی ندارد چون در هر دو جهت قابل پیمایش است.</dd>
+      <dt>Compound</dt><dd>ایندکس چندفیلدی؛ ترتیب فیلدها حیاتی است و از قاعده‌ی <strong>prefix</strong> پیروی می‌کند.</dd>
+      <dt>Multikey</dt><dd>ایندکس روی آرایه؛ در یک compound index حداکثر یکی از فیلدها در هر سند می‌تواند آرایه باشد.</dd>
+      <dt>Text</dt><dd>جست‌وجوی کلمه‌ای با stemming و stop word؛ یکی برای هر collection.</dd>
+      <dt>TTL</dt><dd>یک thread پس‌زمینه تقریباً هر ۶۰ ثانیه اسناد منقضی را حذف می‌کند؛ پس حذف دقیقاً سر ثانیه نیست.</dd>
+      <dt>Unique</dt><dd>تضمین یکتایی؛ اسنادی که فیلد را ندارند مقدار null حساب می‌شوند (دو سند بدون فیلد = تکراری)، مگر partial/sparse باشد.</dd>
+      <dt>Partial</dt><dd>فقط زیرمجموعه‌ای از اسناد را ایندکس می‌کند؛ کوچک‌تر و ارزان‌تر. کوئری باید شرط فیلتر را شامل شود تا از آن استفاده شود.</dd>
+      <dt>Sparse</dt><dd>فقط اسنادی که فیلد را دارند؛ partial انعطاف بیشتری دارد و توصیه‌ی فعلی است.</dd>
+      <dt>Wildcard</dt><dd>ایندکس روی فیلدهای دلخواه/ناشناخته (<code>{ "attrs.$**": 1 }</code>) برای Schemaهای خیلی متغیر.</dd>
+    </dl>
+
+    <h3>قاعده‌ی Prefix در ایندکس ترکیبی</h3>
+    <p>ایندکس <code>{ a: 1, b: 1, c: 1 }</code> برای کوئری‌هایی روی <code>a</code>، <code>a,b</code> و <code>a,b,c</code> قابل استفاده است، ولی برای کوئری فقط روی <code>b</code> یا <code>c</code> (بدون <code>a</code>) کارایی ندارد.</p>
+
+    <h3>قاعده‌ی ESR (Equality → Sort → Range)</h3>
+    <p>برای چیدن فیلدها در ایندکس ترکیبی: ابتدا فیلدهایی که با <strong>برابری</strong> فیلتر می‌شوند، سپس فیلدهای <strong>مرتب‌سازی</strong>، و در آخر فیلدهای <strong>بازه‌ای</strong> (<code>$gt</code>، <code>$lt</code>، <code>$in</code> بزرگ، regex).</p>
+    <pre><code class="language-javascript">// کوئری:
+db.orders.find({ userId: 42, total: { $gte: 100 } }).sort({ createdAt: -1 })
+
+// ✅ طبق ESR: Equality (userId) → Sort (createdAt) → Range (total)
+db.orders.createIndex({ userId: 1, createdAt: -1, total: 1 })
+
+// ❌ اگر Range قبل از Sort بیاید: { userId: 1, total: 1, createdAt: -1 }
+//    خروجی بازه دیگر بر اساس createdAt مرتب نیست → SORT در حافظه (in-memory sort)</code></pre>
+    <div class="callout exam"><p>دلیل ESR: فیلدهای برابری دامنه را به یک بخش پیوسته از ایندکس محدود می‌کنند؛ در آن بخش، فیلد بعدی (sort) از قبل مرتب است و MongoDB لازم نیست در حافظه sort کند؛ فیلد بازه‌ای در انتها فقط کلیدها را فیلتر می‌کند بدون آنکه ترتیب را بشکند. اگر Range قبل از Sort باشد، ترتیب sort در خروجی از دست می‌رود.</p></div>
+
+    <h3>Covered Query</h3>
+    <p>اگر همه‌ی فیلدهای فیلتر و projection در ایندکس باشند (و <code>_id</code> را exclude کنید)، MongoDB اصلاً سراغ اسناد نمی‌رود: <code>totalDocsExamined: 0</code>.</p>
+    <pre><code class="language-javascript">db.users.createIndex({ email: 1, name: 1 })
+db.users.find({ email: "sara@example.com" }, { name: 1, _id: 0 })   // covered</code></pre>
+
+    <h3><code>explain()</code></h3>
+    <pre><code class="language-javascript">db.orders.find({ userId: 42, status: "paid" }).sort({ createdAt: -1 }).explain("executionStats")</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>فیلد/مرحله</th><th>معنی</th></tr></thead>
+      <tbody>
+        <tr><td><code>COLLSCAN</code></td><td>اسکن کامل collection — معمولاً نشانه‌ی نبود ایندکس مناسب</td></tr>
+        <tr><td><code>IXSCAN</code></td><td>اسکن ایندکس</td></tr>
+        <tr><td><code>FETCH</code></td><td>خواندن سند بعد از پیدا کردن کلید در ایندکس</td></tr>
+        <tr><td><code>SORT</code></td><td>مرتب‌سازی در حافظه (هزینه‌بر؛ محدودیت حافظه دارد)</td></tr>
+        <tr><td><code>nReturned</code></td><td>تعداد اسناد برگشتی</td></tr>
+        <tr><td><code>totalKeysExamined</code></td><td>تعداد کلیدهای ایندکس بررسی‌شده</td></tr>
+        <tr><td><code>totalDocsExamined</code></td><td>تعداد اسناد خوانده‌شده</td></tr>
+        <tr><td><code>executionTimeMillis</code></td><td>زمان اجرا</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><p>معیار طلایی: نسبت <code>totalKeysExamined</code> و <code>totalDocsExamined</code> به <code>nReturned</code> باید نزدیک ۱ باشد. اگر برای برگرداندن ۱۰ سند، ۵۰۰٬۰۰۰ سند خوانده شده، ایندکس مناسب نیست یا انتخاب‌پذیری (selectivity) ضعیف است. Profiler (<code>db.setProfilingLevel(1, { slowms: 100 })</code>) و لاگ کوئری‌های کند هم برای پیدا کردن کوئری‌های مشکل‌دار به کار می‌روند.</p></div>
+  </section>
+
+  <!-- ===================== 7 ===================== -->
+  <section class="lesson" id="aggregation" data-title="Aggregation Pipeline">
+    <h2>Aggregation Pipeline</h2>
+    <p><strong>Aggregation Pipeline</strong> زنجیره‌ای از مراحل (stage) است که اسناد از یکی به دیگری جریان می‌یابند و در هر مرحله فیلتر، تبدیل، گروه‌بندی یا join می‌شوند؛ شبیه pipe در لینوکس یا ترکیب <code>WHERE/GROUP BY/JOIN</code> در SQL.</p>
+
+    <pre class="diagram">orders ─► $match ─► $unwind ─► $group ─► $sort ─► $limit ─► $lookup ─► $project ─► result
+          (WHERE)   (پخش آرایه)  (GROUP BY)  (ORDER BY) (LIMIT)   (JOIN)     (SELECT)</pre>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>Stage</th><th>کار</th><th>معادل SQL</th></tr></thead>
+      <tbody>
+        <tr><td><code>$match</code></td><td>فیلتر اسناد (همان سینتکس find)</td><td>WHERE / HAVING</td></tr>
+        <tr><td><code>$project</code> / <code>$addFields</code> / <code>$set</code></td><td>انتخاب/محاسبه‌ی فیلدها</td><td>SELECT</td></tr>
+        <tr><td><code>$group</code></td><td>گروه‌بندی با accumulatorها (<code>$sum $avg $min $max $push $addToSet $first</code>)</td><td>GROUP BY</td></tr>
+        <tr><td><code>$sort</code> / <code>$skip</code> / <code>$limit</code></td><td>مرتب‌سازی و برش</td><td>ORDER BY / OFFSET / LIMIT</td></tr>
+        <tr><td><code>$unwind</code></td><td>هر عنصر آرایه را به یک سند جدا تبدیل می‌کند</td><td>—</td></tr>
+        <tr><td><code>$lookup</code></td><td>left outer join با collection دیگر</td><td>LEFT JOIN</td></tr>
+        <tr><td><code>$facet</code></td><td>چند pipeline موازی روی همان ورودی</td><td>چند کوئری در یک</td></tr>
+        <tr><td><code>$count</code></td><td>شمارش</td><td>COUNT(*)</td></tr>
+        <tr><td><code>$bucket</code></td><td>دسته‌بندی بازه‌ای (histogram)</td><td>CASE + GROUP BY</td></tr>
+        <tr><td><code>$out</code> / <code>$merge</code></td><td>نوشتن نتیجه در collection</td><td>INSERT INTO … SELECT</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>مثال واقعی: گزارش فروش ماهانه به تفکیک دسته‌بندی</h3>
+    <p>سند سفارش:</p>
+    <pre><code class="language-json">{
+  "_id": 1001,
+  "userId": 42,
+  "status": "paid",
+  "createdAt": { "$date": "2026-10-12T10:00:00Z" },
+  "items": [
+    { "sku": "A12", "category": "laptop", "price": 1200, "qty": 1 },
+    { "sku": "M03", "category": "mouse",  "price": 25,   "qty": 2 }
+  ]
+}</code></pre>
+
+    <pre><code class="language-javascript">db.orders.aggregate([
+  // 1) هر چه زودتر فیلتر کن تا از ایندکس استفاده شود و داده‌ی کمتری جریان یابد
+  { $match: {
+      status: "paid",
+      createdAt: { $gte: ISODate("2026-10-01"), $lt: ISODate("2026-11-01") }
+  }},
+  // 2) هر آیتم سفارش یک سند جدا
+  { $unwind: "$items" },
+  // 3) جمع فروش و تعداد به تفکیک دسته
+  { $group: {
+      _id: "$items.category",
+      revenue:  { $sum: { $multiply: ["$items.price", "$items.qty"] } },
+      unitsSold:{ $sum: "$items.qty" },
+      orders:   { $addToSet: "$_id" }
+  }},
+  // 4) شکل خروجی
+  { $project: {
+      _id: 0,
+      category: "$_id",
+      revenue: 1,
+      unitsSold: 1,
+      orderCount: { $size: "$orders" }
+  }},
+  { $sort: { revenue: -1 } },
+  { $limit: 5 }
+])</code></pre>
+
+    <h3><code>$lookup</code> (Join)</h3>
+    <pre><code class="language-javascript">// ساده: localField/foreignField
+db.orders.aggregate([
+  { $match: { status: "paid" } },
+  { $lookup: {
+      from: "users",
+      localField: "userId",
+      foreignField: "_id",
+      as: "user"
+  }},
+  { $unwind: "$user" },                         // آرایه‌ی تک‌عضوی را به شیء تبدیل کن
+  { $project: { total: 1, "user.name": 1, "user.email": 1 } }
+])
+
+// با pipeline: فقط ۳ سفارش آخر هر کاربر
+db.users.aggregate([
+  { $lookup: {
+      from: "orders",
+      let: { uid: "$_id" },
+      pipeline: [
+        { $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
+        { $sort: { createdAt: -1 } },
+        { $limit: 3 }
+      ],
+      as: "recentOrders"
+  }}
+])</code></pre>
+    <div class="callout warn"><p><code>$lookup</code> برای هر سند ورودی روی collection دیگر کوئری می‌زند؛ حتماً روی <code>foreignField</code> ایندکس بگذارید. اگر در مسیر اصلی برنامه مدام <code>$lookup</code> می‌زنید، احتمالاً Schema را برای الگوی دسترسی‌تان درست طراحی نکرده‌اید (embedding یا extended reference را بررسی کنید).</p></div>
+
+    <h3><code>$facet</code>: صفحه‌بندی + شمارش + فیلترهای جانبی در یک درخواست</h3>
+    <pre><code class="language-javascript">db.products.aggregate([
+  { $match: { category: "laptop", price: { $lte: 2000 } } },
+  { $facet: {
+      items:   [ { $sort: { price: 1 } }, { $skip: 0 }, { $limit: 20 },
+                 { $project: { title: 1, price: 1 } } ],
+      total:   [ { $count: "count" } ],
+      byBrand: [ { $group: { _id: "$brand", n: { $sum: 1 } } }, { $sort: { n: -1 } } ],
+      priceRanges: [ { $bucket: { groupBy: "$price", boundaries: [0, 500, 1000, 1500, 2001] } } ]
+  }}
+])</code></pre>
+
+    <div class="callout exam"><p>نکات بهینه‌سازی pipeline: (۱) <code>$match</code> و <code>$sort</code> را در ابتدای pipeline بگذارید تا از ایندکس استفاده کنند؛ بعد از <code>$group</code> یا <code>$unwind</code> ایندکس دیگر کاربردی ندارد. (۲) با <code>$project</code> فیلدهای غیرلازم را زود حذف کنید. (۳) هر stage محدودیت حافظه‌ی ۱۰۰ مگابایت دارد و برای عبور از آن باید از <code>allowDiskUse</code> استفاده شود (در نسخه‌های جدید رفتار پیش‌فرض اجازه‌ی استفاده از دیسک است). (۴) سند خروجی هر stage هم تابع محدودیت ۱۶MB است.</p></div>
+  </section>
+
+  <!-- ===================== 8 ===================== -->
+  <section class="lesson" id="schema-design" data-title="طراحی Schema: Embed یا Reference">
+    <h2>طراحی Schema: Embed یا Reference</h2>
+    <p>مهم‌ترین تصمیم در MongoDB این است که داده‌ی مرتبط را <strong>داخل سند جاسازی (Embed)</strong> کنیم یا در collection جدا نگه داریم و با <strong>شناسه ارجاع (Reference)</strong> بدهیم.</p>
+
+    <div class="grid-2">
+      <div class="card"><h4>Embedding</h4><ul>
+        <li>یک بار خواندن = همه‌ی داده (بدون join).</li>
+        <li>به‌روزرسانی اتمیک کل موجودیت در یک سند.</li>
+        <li>مناسب رابطه‌ی <strong>«شامل بودن» (contains)</strong> و داده‌ای که همیشه با والد خوانده می‌شود.</li>
+        <li>عیب: تکرار داده، رشد سند، محدودیت ۱۶MB، سختی کوئری مستقل روی زیرداده.</li>
+      </ul></div>
+      <div class="card"><h4>Referencing</h4><ul>
+        <li>بدون تکرار؛ به‌روزرسانی در یک نقطه.</li>
+        <li>مناسب داده‌ی بزرگ، بی‌حد، پرتغییر یا مشترک بین چند والد.</li>
+        <li>مناسب رابطه‌ی M:N.</li>
+        <li>عیب: نیاز به کوئری دوم یا <code>$lookup</code>، و نبود اتمیک بودن بین دو سند بدون تراکنش.</li>
+      </ul></div>
+    </div>
+
+    <h3>سوالات راهنما برای تصمیم</h3>
+    <ol>
+      <li>آیا زیرداده <strong>همیشه با والد</strong> خوانده می‌شود؟ → Embed.</li>
+      <li>آیا زیرداده <strong>مستقلاً</strong> کوئری یا به‌روز می‌شود؟ → Reference.</li>
+      <li>تعداد زیرداده‌ها <strong>محدود و کوچک</strong> است یا <strong>بی‌حد (unbounded)</strong>؟</li>
+      <li>نسبت خواندن به نوشتن چقدر است؟ داده‌ی تکراری چقدر تغییر می‌کند؟</li>
+      <li>چرخه‌ی حیات زیرداده به والد وابسته است؟ (حذف والد = حذف فرزند)</li>
+    </ol>
+
+    <h3>کاردینالیتی: one-to-few، one-to-many، one-to-squillions</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>رابطه</th><th>مثال</th><th>راه‌حل معمول</th></tr></thead>
+      <tbody>
+        <tr><td><strong>One-to-Few</strong> (چند تا ده‌ها)</td><td>آدرس‌های کاربر، شماره تلفن‌ها</td><td>Embed آرایه‌ی اسناد در والد</td></tr>
+        <tr><td><strong>One-to-Many</strong> (صدها تا چند هزار)</td><td>قطعات یک محصول، محصولات یک دسته</td><td>آرایه‌ای از referenceها در والد (<code>partIds: [...]</code>) یا ref در فرزند</td></tr>
+        <tr><td><strong>One-to-Squillions</strong> (میلیون‌ها، بی‌حد)</td><td>لاگ‌های یک سرور، پیام‌های یک چت</td><td>Reference به والد <strong>در فرزند</strong> (<code>hostId</code> در هر log) + ایندکس</td></tr>
+        <tr><td><strong>Many-to-Many</strong></td><td>دانشجو/درس، محصول/تگ</td><td>آرایه‌ی ref در یک یا هر دو طرف، یا collection واسط</td></tr>
+      </tbody>
+    </table></div>
+
+    <pre><code class="language-javascript">// One-to-Few: embed
+{ _id: 1, name: "Sara", addresses: [
+    { type: "home", city: "Tehran", street: "..." },
+    { type: "work", city: "Tehran", street: "..." } ] }
+
+// One-to-Many: آرایه‌ی ref در والد
+{ _id: "P-100", name: "Laptop X", partIds: [ "PT-1", "PT-2", "PT-3" ] }
+
+// One-to-Squillions: ref در فرزند
+{ _id: ObjectId("..."), hostId: "srv-17", level: "error", msg: "...", at: ISODate("...") }
+db.logs.createIndex({ hostId: 1, at: -1 })</code></pre>
+
+    <div class="callout warn"><p><strong>Anti-pattern: Unbounded Array</strong> — جاسازی آرایه‌ای که بی‌حد رشد می‌کند (مثلاً همه‌ی کامنت‌های یک پست پربازدید یا همه‌ی سفارش‌های کاربر در سند کاربر). پیامدها: نزدیک شدن به سقف ۱۶MB، به‌روزرسانی و انتقال سند بزرگ در هر تغییر، ایندکس multikey حجیم و کندی. راه‌حل: Reference در فرزند، یا الگوی Subset/Bucket.</p></div>
+
+    <h3>محدودیت اندازه‌ی سند</h3>
+    <ul>
+      <li>حداکثر اندازه‌ی یک سند BSON <strong>۱۶ مگابایت</strong> است.</li>
+      <li>حداکثر عمق تودرتویی ۱۰۰ سطح است.</li>
+      <li>برای فایل‌های بزرگ‌تر از <strong>GridFS</strong> استفاده می‌شود (فایل را به chunkهای کوچک در دو collection <code>fs.files</code> و <code>fs.chunks</code> تقسیم می‌کند)، هرچند در عمل معمولاً ذخیره‌ی فایل در Object Storage (مثل S3) و نگه‌داشتن آدرس آن بهتر است.</li>
+    </ul>
+    <div class="callout exam"><p>هدف محدودیت ۱۶MB جلوگیری از اسناد بیش از حد بزرگ است که RAM و پهنای باند را مصرف می‌کنند. اگر به این سقف نزدیک می‌شوید، تقریباً همیشه نشانه‌ی <strong>اشکال در طراحی Schema</strong> است، نه دلیلی برای GridFS.</p></div>
+
+    <h3>رابطه‌ی دوطرفه و denormalization</h3>
+    <p>در MongoDB تکرار داده (denormalization) پذیرفته است، به شرطی که: داده‌ی تکراری <strong>به‌ندرت تغییر کند</strong>، خواندن خیلی بیشتر از نوشتن باشد، و استراتژی به‌روزرسانی نسخه‌های تکراری را مشخص کرده باشید (همزمان، با job پس‌زمینه، یا پذیرش ناسازگاری موقت).</p>
+  </section>
+
+  <!-- ===================== 9 ===================== -->
+  <section class="lesson" id="patterns" data-title="الگوهای طراحی Schema">
+    <h2>الگوهای طراحی Schema</h2>
+
+    <h3>Bucket Pattern</h3>
+    <p>به جای یک سند برای هر رویداد، رویدادهای یک بازه (مثلاً یک ساعت) را در یک سند گروه‌بندی می‌کنیم. تعداد اسناد و حجم ایندکس کم می‌شود و آماره‌های پیش‌محاسبه‌شده را هم می‌توان کنارش نگه داشت. کاربرد: IoT، متریک‌ها، time-series.</p>
+    <pre><code class="language-javascript">{
+  sensorId: "S-12",
+  start: ISODate("2026-11-07T10:00:00Z"),
+  end:   ISODate("2026-11-07T10:59:59Z"),
+  count: 60,
+  sum:   1314.5,
+  readings: [ { t: ISODate("2026-11-07T10:00:00Z"), v: 21.9 }, /* ... */ ]
+}
+
+// افزودن خوانش جدید به bucket جاری (با سقف 200 آیتم)
+db.readings.updateOne(
+  { sensorId: "S-12", count: { $lt: 200 }, start: ISODate("2026-11-07T10:00:00Z") },
+  { $push: { readings: { t: new Date(), v: 22.1 } }, $inc: { count: 1, sum: 22.1 } },
+  { upsert: true }
+)</code></pre>
+    <div class="callout note"><p>MongoDB از نسخه‌ی 5.0 <strong>Time Series Collection</strong> بومی دارد که bucket کردن را به‌صورت داخلی انجام می‌دهد: <code>db.createCollection("metrics", { timeseries: { timeField: "ts", metaField: "sensor", granularity: "minutes" } })</code>.</p></div>
+
+    <h3>Computed Pattern</h3>
+    <p>محاسبات پرتکرار (جمع، میانگین، شمارش) را هنگام نوشتن انجام بده و نتیجه را ذخیره کن، تا خواندن‌ها ارزان شوند. مثال: نگه‌داشتن <code>ratingAvg</code> و <code>ratingCount</code> در سند محصول به جای aggregate روی همه‌ی نظرها در هر بار نمایش.</p>
+    <pre><code class="language-javascript">db.products.updateOne(
+  { _id: "P-100" },
+  { $inc: { ratingCount: 1, ratingSum: 4 } }
+)
+// ratingAvg = ratingSum / ratingCount در زمان خواندن یا با یک $set جداگانه</code></pre>
+
+    <h3>Subset Pattern</h3>
+    <p>وقتی سند بزرگ است ولی فقط بخش کوچکی از آن معمولاً نمایش داده می‌شود: زیرمجموعه‌ی پرکاربرد را embed کن و بقیه را در collection جدا نگه دار. مثال: ۱۰ نظر آخر محصول داخل سند محصول، همه‌ی نظرها در <code>reviews</code>.</p>
+    <pre><code class="language-javascript">// products
+{ _id: "P-100", title: "Laptop X", recentReviews: [ /* 10 تای آخر */ ], reviewCount: 1832 }
+// reviews
+{ _id: ObjectId("..."), productId: "P-100", userId: 42, rating: 5, text: "..." }</code></pre>
+
+    <h3>Extended Reference Pattern</h3>
+    <p>به جای فقط ذخیره‌ی شناسه، <strong>فیلدهای پرکاربرد</strong> سند مرجع را هم کپی کن تا join حذف شود. مثال: در سفارش، علاوه بر <code>customerId</code>، نام و آدرس ارسال را هم نگه دار. مزیت اضافه: آدرس سفارش باید همان «آدرس در زمان سفارش» بماند، حتی اگر کاربر بعداً آدرسش را عوض کند (snapshot).</p>
+    <pre><code class="language-javascript">{
+  _id: 1001,
+  customer: { _id: 42, name: "Sara Ahmadi", phone: "0912..." },   // extended reference
+  shippingAddress: { city: "Tehran", street: "..." },             // snapshot
+  items: [ { sku: "A12", title: "Laptop X", price: 1200, qty: 1 } ]
+}</code></pre>
+
+    <h3>الگوهای دیگر که خوب است بشناسید</h3>
+    <dl class="terms">
+      <dt>Outlier</dt><dd>اکثر اسناد کوچک‌اند ولی چند سند استثنایی (مثلاً کتاب پرفروش با میلیون‌ها خریدار) بزرگ می‌شوند؛ برای آن‌ها flag <code>hasOverflow</code> و سندهای سرریز جدا.</dd>
+      <dt>Attribute</dt><dd>ویژگی‌های متغیر را به آرایه‌ی <code>[{k, v}]</code> تبدیل کن تا با یک ایندکس <code>{ "attrs.k": 1, "attrs.v": 1 }</code> قابل جست‌وجو باشند.</dd>
+      <dt>Schema Versioning</dt><dd>فیلد <code>schemaVersion</code> در سند؛ برنامه هر دو نسخه را می‌فهمد و مهاجرت تدریجی انجام می‌شود.</dd>
+      <dt>Polymorphic</dt><dd>اسناد با شکل‌های متفاوت ولی هدف مشترک در یک collection (مثلاً انواع محصول) با فیلد <code>type</code>.</dd>
+      <dt>Tree</dt><dd>نمایش سلسله‌مراتب با parent reference، child references، ancestors array یا materialized path.</dd>
+    </dl>
+  </section>
+
+  <!-- ===================== 10 ===================== -->
+  <section class="lesson" id="replication" data-title="Replica Set و سطوح سازگاری">
+    <h2>Replica Set و سطوح سازگاری</h2>
+    <p><strong>Replica Set</strong> گروهی از پروسس‌های <code>mongod</code> است که یک مجموعه داده‌ی یکسان را نگه می‌دارند و <strong>High Availability</strong> و افزونگی داده فراهم می‌کنند.</p>
+
+    <pre class="diagram">              writes / reads (default)
+   App ───────────────────────────► PRIMARY
+    │                                 │  oplog (capped collection)
+    │                    ┌────────────┴────────────┐
+    │                    ▼                         ▼
+    └── reads (opt.) ► SECONDARY 1            SECONDARY 2
+                       (replicate oplog)      (replicate oplog)
+            ◄─────── heartbeat هر ۲ ثانیه بین اعضا ───────►</pre>
+
+    <ul>
+      <li><strong>Primary:</strong> تنها عضوی که نوشتن را می‌پذیرد. همه‌ی تغییرات را در <strong>oplog</strong> ثبت می‌کند.</li>
+      <li><strong>Secondary:</strong> oplog را از primary (یا عضو دیگر) کپی و به‌صورت ناهمگام (async) اعمال می‌کند.</li>
+      <li><strong>Arbiter:</strong> فقط در رأی‌گیری شرکت می‌کند و داده ندارد (توصیه می‌شود تا جای ممکن به جای arbiter از secondary داده‌دار استفاده شود).</li>
+      <li>عضوهای خاص: <strong>hidden</strong> (برای backup/گزارش)، <strong>delayed</strong> (با تأخیر عمدی برای بازیابی از خطای انسانی)، <code>priority: 0</code> (هرگز primary نمی‌شود).</li>
+      <li>تعداد اعضا: حداکثر ۵۰ عضو که حداکثر ۷ تای آن‌ها رأی دارند. تعداد اعضای رأی‌دهنده را <strong>فرد</strong> بگیرید (معمولاً ۳ یا ۵).</li>
+    </ul>
+
+    <h3>Election (انتخاب Primary)</h3>
+    <ol>
+      <li>اعضا با heartbeat وضعیت هم را چک می‌کنند.</li>
+      <li>اگر primary بیش از <code>electionTimeoutMillis</code> (پیش‌فرض ۱۰ ثانیه) در دسترس نباشد، یک secondary واجد شرایط کاندید می‌شود.</li>
+      <li>برای برنده شدن، کاندید باید رأی <strong>اکثریت (majority)</strong> اعضای رأی‌دهنده را بگیرد؛ عضوی که oplog به‌روزتر و priority بالاتر دارد شانس بیشتری دارد.</li>
+      <li>در طول انتخابات (معمولاً چند ثانیه) نوشتن ممکن نیست؛ driverها با <strong>retryable writes</strong> این را تا حدی پنهان می‌کنند.</li>
+    </ol>
+    <div class="callout exam"><p>چرا اکثریت؟ برای جلوگیری از <strong>split-brain</strong>. در partition شبکه، فقط بخشی که اکثریت را دارد می‌تواند primary داشته باشد. با ۳ عضو، از دست رفتن ۱ عضو قابل تحمل است؛ با ۵ عضو، ۲ عضو. به همین دلیل replica set دو عضوی (بدون arbiter) تحمل خطا ندارد.</p></div>
+    <div class="callout warn"><p>Rollback: اگر primary قدیمی نوشته‌هایی را پذیرفته باشد که هنوز به اکثریت نرسیده و سپس از کار بیفتد، بعد از برگشت آن نوشته‌ها rollback می‌شوند. با <code>w: "majority"</code> نوشته‌ای که تأیید شده rollback نمی‌شود.</p></div>
+
+    <h3>Write Concern</h3>
+    <p>مشخص می‌کند driver قبل از اعلام موفقیت، منتظر تأیید چند عضو باشد.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>مقدار</th><th>معنی</th><th>Trade-off</th></tr></thead>
+      <tbody>
+        <tr><td><code>w: 0</code></td><td>بدون انتظار تأیید (fire-and-forget)</td><td>سریع‌ترین، بدون اطمینان</td></tr>
+        <tr><td><code>w: 1</code></td><td>فقط primary تأیید کند</td><td>سریع؛ احتمال rollback در failover</td></tr>
+        <tr><td><code>w: "majority"</code></td><td>اکثریت اعضای رأی‌دهنده تأیید کنند</td><td>پایدار (durable) در برابر failover؛ تأخیر بیشتر. در نسخه‌های جدید (از 5.0) پیش‌فرض ضمنی برای اغلب پیکربندی‌هاست</td></tr>
+        <tr><td><code>j: true</code></td><td>نوشتن در journal روی دیسک</td><td>پایداری در برابر crash</td></tr>
+        <tr><td><code>wtimeout</code></td><td>حداکثر زمان انتظار</td><td>جلوگیری از بلاک بی‌پایان</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Read Preference</h3>
+    <p>مشخص می‌کند خواندن از کدام عضو انجام شود:</p>
+    <ul>
+      <li><code>primary</code> (پیش‌فرض): همیشه از primary؛ به‌روزترین داده.</li>
+      <li><code>primaryPreferred</code>: primary، و اگر نبود secondary.</li>
+      <li><code>secondary</code> / <code>secondaryPreferred</code>: کاهش بار primary؛ ولی داده ممکن است <strong>stale</strong> باشد (replication lag).</li>
+      <li><code>nearest</code>: کمترین latency شبکه (مناسب استقرار چندمنطقه‌ای).</li>
+    </ul>
+    <div class="callout warn"><p>خواندن از secondary برای «مقیاس دادن خواندن» راه‌حل اصلی نیست، چون همه‌ی اعضا همان بار نوشتن را هم دارند. کاربرد درستش: گزارش‌گیری سنگین روی عضو hidden/analytics، یا کاهش latency در مناطق جغرافیایی دور، در جایی که داده‌ی کمی قدیمی قابل قبول است.</p></div>
+
+    <h3>Read Concern</h3>
+    <dl class="terms">
+      <dt>local</dt><dd>جدیدترین داده‌ی همان عضو، ممکن است بعداً rollback شود (پیش‌فرض خواندن از primary).</dd>
+      <dt>available</dt><dd>شبیه local؛ در sharded cluster ممکن است اسناد orphan هم برگرداند. کمترین latency.</dd>
+      <dt>majority</dt><dd>فقط داده‌ای که اکثریت تأیید کرده‌اند؛ rollback نمی‌شود.</dd>
+      <dt>linearizable</dt><dd>قوی‌ترین؛ فقط روی primary و برای خواندن یک سند؛ کند.</dd>
+      <dt>snapshot</dt><dd>برای تراکنش‌ها؛ نمای ثابت از داده در یک لحظه.</dd>
+    </dl>
+    <div class="callout tip"><p><strong>Causal Consistency:</strong> با session سببی (causally consistent session) به همراه <code>readConcern: "majority"</code> و <code>writeConcern: "majority"</code>، تضمین می‌شود کاربر نوشته‌ی خودش را بخواند (read-your-own-writes) حتی اگر از secondary بخواند.</p></div>
+  </section>
+
+  <!-- ===================== 11 ===================== -->
+  <section class="lesson" id="sharding" data-title="Sharding">
+    <h2>Sharding</h2>
+    <p><strong>Sharding</strong> روش MongoDB برای <strong>مقیاس افقی</strong> است: داده‌ی یک collection بر اساس <strong>shard key</strong> بین چند shard تقسیم می‌شود. هر shard خودش یک replica set است.</p>
+
+    <pre class="diagram">          App + Driver
+               │
+        ┌──────┴──────┐
+        │   mongos    │  ◄── router: کوئری را به shardهای درست هدایت می‌کند
+        └──────┬──────┘
+               │      ┌─────────────────────────┐
+               ├─────►│ Config Servers (RS)     │ ◄── metadata: کدام chunk کجاست
+               │      └─────────────────────────┘
+      ┌────────┼─────────┐
+      ▼        ▼         ▼
+   Shard A   Shard B   Shard C        (هر کدام یک Replica Set)
+   chunks    chunks    chunks
+   [min,k1)  [k1,k2)   [k2,max)</pre>
+
+    <ul>
+      <li><strong>mongos:</strong> روتر بی‌حالت؛ برنامه به آن وصل می‌شود.</li>
+      <li><strong>Config servers:</strong> replica setی که متادیتای cluster و نگاشت chunk به shard را نگه می‌دارد.</li>
+      <li><strong>Chunk:</strong> بازه‌ای پیوسته از مقادیر shard key. <strong>Balancer</strong> در پس‌زمینه chunkها را بین shardها جابه‌جا می‌کند تا توزیع داده متعادل بماند.</li>
+    </ul>
+
+    <h3>Ranged در برابر Hashed</h3>
+    <div class="grid-2">
+      <div class="card"><h4>Ranged Sharding</h4><ul>
+        <li>chunkها بازه‌های پیوسته از مقدار کلید هستند.</li>
+        <li>کوئری بازه‌ای روی shard key <strong>targeted</strong> است (فقط به shardهای لازم می‌رود).</li>
+        <li>خطر: کلید یکنواخت افزایشی (زمان، ObjectId، auto-increment) → همه‌ی insertها به آخرین chunk → <strong>hot shard</strong>.</li>
+      </ul></div>
+      <div class="card"><h4>Hashed Sharding</h4><ul>
+        <li>hash مقدار کلید مبنای توزیع است.</li>
+        <li>توزیع یکنواخت نوشتن حتی با کلید افزایشی.</li>
+        <li>عیب: کوئری بازه‌ای روی کلید به همه‌ی shardها پخش می‌شود (<strong>scatter-gather</strong>).</li>
+      </ul></div>
+    </div>
+
+    <h3>انتخاب Shard Key (مهم‌ترین تصمیم)</h3>
+    <p>ویژگی‌های کلید خوب:</p>
+    <ol>
+      <li><strong>Cardinality بالا:</strong> تعداد مقادیر متمایز زیاد باشد؛ کلیدی مثل <code>country</code> با ۲۰۰ مقدار حداکثر ۲۰۰ chunk قابل تقسیم دارد و chunkهای غیرقابل تقسیم (jumbo) ایجاد می‌کند.</li>
+      <li><strong>Frequency پایین:</strong> یک مقدار خاص (مثلاً یک مشتری بسیار بزرگ) بخش عمده‌ی داده را نداشته باشد.</li>
+      <li><strong>تغییر غیریکنواخت (non-monotonic):</strong> تا نوشتن‌ها پخش شوند.</li>
+      <li><strong>هم‌خوانی با کوئری‌ها:</strong> اکثر کوئری‌های پرتکرار شامل shard key باشند تا targeted باشند نه broadcast.</li>
+    </ol>
+    <pre><code class="language-javascript">sh.enableSharding("shop")
+sh.shardCollection("shop.orders", { customerId: 1, createdAt: 1 })   // ranged، ترکیبی
+sh.shardCollection("shop.events", { deviceId: "hashed" })            // hashed
+sh.status()</code></pre>
+
+    <div class="callout exam"><p>مثال پاسخ: برای collection سفارش‌ها در یک SaaS چندمستأجره، کلید <code>{ tenantId: 1, _id: 1 }</code> انتخاب خوبی است: کوئری‌ها تقریباً همیشه tenantId دارند (targeted)، و جزء دوم cardinality را بالا می‌برد تا داده‌ی یک tenant بزرگ هم قابل تقسیم باشد. کلید <code>{ createdAt: 1 }</code> انتخاب بدی است (hot shard).</p></div>
+
+    <div class="callout note"><p>تغییر shard key در گذشته تقریباً غیرممکن بود؛ نسخه‌های جدید امکان <code>refineCollectionShardKey</code> (افزودن پسوند به کلید، از 4.4) و <strong>resharding</strong> آنلاین (از 5.0) را دارند، ولی همچنان عملیات سنگینی است. پس از ابتدا درست انتخاب کنید.</p></div>
+
+    <div class="callout tip"><p>قبل از sharding مطمئن شوید واقعاً لازم است: ایندکس‌گذاری درست، طراحی Schema، و مقیاس عمودی معمولاً تا حجم‌های بزرگ کافی‌اند. Sharding پیچیدگی عملیاتی (mongos، config server، balancer، backup) اضافه می‌کند.</p></div>
+  </section>
+
+  <!-- ===================== 12 ===================== -->
+  <section class="lesson" id="transactions" data-title="تراکنش‌ها و CAP">
+    <h2>تراکنش‌ها و CAP</h2>
+    <h3>اتمیک بودن تک‌سندی</h3>
+    <p>هر عملیات نوشتن روی <strong>یک سند</strong> اتمیک است، حتی اگر چند فیلد و آرایه‌ی تودرتو را تغییر دهد. با طراحی مناسب (embedding) بسیاری از نیازهای تراکنشی بدون تراکنش چندسندی حل می‌شوند.</p>
+    <pre><code class="language-javascript">// کم کردن موجودی فقط اگر کافی باشد — اتمیک و بدون race condition
+db.products.updateOne(
+  { _id: "P-100", stock: { $gte: 2 } },
+  { $inc: { stock: -2 } }
+)
+// اگر modifiedCount == 0 بود یعنی موجودی کافی نبوده</code></pre>
+
+    <h3>تراکنش‌های چندسندی (Multi-document Transactions)</h3>
+    <ul>
+      <li>از نسخه‌ی <strong>4.0</strong> روی replica set و از <strong>4.2</strong> روی sharded cluster.</li>
+      <li>ویژگی‌های ACID با isolation از نوع snapshot.</li>
+      <li>نیاز به replica set دارد (روی standalone کار نمی‌کند؛ برای توسعه‌ی محلی هم یک replica set تک‌عضوی بسازید).</li>
+      <li>محدودیت زمانی پیش‌فرض اجرای تراکنش ۶۰ ثانیه است؛ تراکنش طولانی lock و فشار حافظه ایجاد می‌کند.</li>
+      <li>در تعارض نوشتن (write conflict) خطای موقت <code>TransientTransactionError</code> برمی‌گردد و باید retry شود؛ API <code>withTransaction</code> این retry را انجام می‌دهد.</li>
+    </ul>
+    <pre><code class="language-javascript">const session = db.getMongo().startSession();
+session.withTransaction(() =&gt; {
+  const accounts = session.getDatabase("bank").accounts;
+  accounts.updateOne({ _id: "A", balance: { $gte: 100 } }, { $inc: { balance: -100 } });
+  accounts.updateOne({ _id: "B" }, { $inc: { balance: 100 } });
+}, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
+session.endSession();</code></pre>
+    <div class="callout exam"><p>دیدگاه درست برای پاسخ: تراکنش چندسندی در MongoDB <strong>وجود دارد ولی ابزار اصلی نیست</strong>. هزینه‌ی کارایی بیشتری نسبت به نوشتن تک‌سندی دارد. اگر طراحی شما در اکثر عملیات به تراکنش چندسندی نیاز دارد، یا Schema را بازبینی کنید یا شاید RDBMS انتخاب مناسب‌تری باشد.</p></div>
+
+    <h3>CAP و MongoDB</h3>
+    <p>قضیه‌ی <strong>CAP</strong> می‌گوید در یک سیستم توزیع‌شده، هنگام <strong>Partition</strong> شبکه، باید بین <strong>Consistency</strong> (همه یک داده‌ی یکسان و آخرین را ببینند) و <strong>Availability</strong> (هر درخواست پاسخ بگیرد) یکی را انتخاب کرد.</p>
+    <ul>
+      <li>MongoDB در پیکربندی پیش‌فرض (نوشتن فقط روی primary، خواندن از primary) معمولاً <strong>CP</strong> در نظر گرفته می‌شود: هنگام partition، بخشی که اکثریت ندارد primary ندارد و نوشتن را رد می‌کند.</li>
+      <li>با تنظیم read preference به secondary و read concern <code>local</code>، به سمت دسترس‌پذیری بیشتر و سازگاری ضعیف‌تر (eventual) می‌رود. یعنی MongoDB <strong>tunable consistency</strong> دارد.</li>
+      <li>مدل <strong>PACELC</strong> دقیق‌تر است: حتی بدون partition (Else) بین <strong>Latency</strong> و <strong>Consistency</strong> trade-off داریم؛ مثلاً <code>w: 1</code> در برابر <code>w: "majority"</code>.</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>هدف</th><th>تنظیمات</th></tr></thead>
+      <tbody>
+        <tr><td>حداکثر سازگاری</td><td><code>w: "majority"</code>، <code>readConcern: "majority"</code> یا <code>linearizable</code>، <code>readPreference: primary</code></td></tr>
+        <tr><td>تعادل معمول</td><td><code>w: "majority"</code>، خواندن از primary با <code>local</code></td></tr>
+        <tr><td>حداکثر سرعت/دسترس‌پذیری</td><td><code>w: 1</code>، <code>readPreference: nearest</code>، <code>readConcern: local</code></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ===================== 13 ===================== -->
+  <section class="lesson" id="laravel" data-title="MongoDB در Laravel">
+    <h2>MongoDB در Laravel</h2>
+    <p>پکیج رسمی <code>mongodb/laravel-mongodb</code> (که قبلاً با نام jenssegers شناخته می‌شد و اکنون توسط خود MongoDB نگه‌داری می‌شود) یک driver برای Query Builder و Eloquent فراهم می‌کند. به افزونه‌ی PHP به نام <code>mongodb</code> (ext-mongodb) نیاز دارد.</p>
+
+    <pre><code class="language-bash">pecl install mongodb          # نصب افزونه‌ی PHP
+composer require mongodb/laravel-mongodb</code></pre>
+
+    <h3>پیکربندی اتصال</h3>
+    <pre><code class="language-php">&lt;?php
+// config/database.php
+'connections' =&gt; [
+    'mongodb' =&gt; [
+        'driver'   =&gt; 'mongodb',
+        'dsn'      =&gt; env('MONGODB_URI', 'mongodb://localhost:27017'),
+        'database' =&gt; env('MONGODB_DATABASE', 'shop'),
+    ],
+],</code></pre>
+    <pre><code class="language-ini">MONGODB_URI="mongodb://user:pass@host1:27017,host2:27017,host3:27017/?replicaSet=rs0&amp;w=majority"
+MONGODB_DATABASE=shop</code></pre>
+
+    <h3>مدل</h3>
+    <pre><code class="language-php">&lt;?php
+namespace App\Models;
+
+use MongoDB\Laravel\Eloquent\Model;
+
+class Product extends Model
+{
+    protected $connection = 'mongodb';
+    protected $table = 'products';          // نام collection
+
+    protected $fillable = ['title', 'price', 'tags', 'attrs'];
+
+    protected $casts = [
+        'price' =&gt; 'float',
+    ];
+
+    public function reviews()
+    {
+        return $this-&gt;hasMany(Review::class);       // reference: reviews.product_id
+    }
+
+    public function variants()
+    {
+        return $this-&gt;embedsMany(Variant::class);   // embed: آرایه‌ی اسناد داخل product
+    }
+}</code></pre>
+
+    <h3>کوئری‌ها</h3>
+    <pre><code class="language-php">&lt;?php
+// Eloquent آشنا، ترجمه به کوئری MongoDB
+$laptops = Product::where('attrs.ram', '&gt;=', 16)
+    -&gt;whereIn('tags', ['gaming', 'workstation'])
+    -&gt;orderBy('price')
+    -&gt;limit(20)
+    -&gt;get();
+
+Product::create(['title' =&gt; 'Laptop X', 'price' =&gt; 1200, 'tags' =&gt; ['gaming']]);
+
+// عملیات آرایه‌ای اتمیک
+$product-&gt;push('tags', 'sale', true);   // true = unique مثل $addToSet
+$product-&gt;pull('tags', 'gaming');
+$product-&gt;increment('views');
+
+// Aggregation خام وقتی Eloquent کافی نیست
+$report = Order::raw(fn ($collection) =&gt; $collection-&gt;aggregate([
+    ['$match' =&gt; ['status' =&gt; 'paid']],
+    ['$group' =&gt; ['_id' =&gt; '$userId', 'total' =&gt; ['$sum' =&gt; '$total']]],
+    ['$sort'  =&gt; ['total' =&gt; -1]],
+    ['$limit' =&gt; 10],
+]));</code></pre>
+
+    <h3>ایندکس با Migration</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\Schema;
+use MongoDB\Laravel\Schema\Blueprint;
+
+return new class extends Migration {
+    protected $connection = 'mongodb';
+
+    public function up(): void
+    {
+        Schema::connection('mongodb')-&gt;create('products', function (Blueprint $collection) {
+            $collection-&gt;unique('sku');
+            $collection-&gt;index(['category', 'price']);   // ایندکس ترکیبی
+        });
+    }
+};</code></pre>
+
+    <h3>تراکنش</h3>
+    <pre><code class="language-php">&lt;?php
+use Illuminate\Support\Facades\DB;
+
+DB::connection('mongodb')-&gt;transaction(function () use ($from, $to, $amount) {
+    Account::where('_id', $from)-&gt;where('balance', '&gt;=', $amount)-&gt;decrement('balance', $amount);
+    Account::where('_id', $to)-&gt;increment('balance', $amount);
+});</code></pre>
+
+    <div class="callout warn"><p>نکات عملی در Laravel: (۱) روابط بین مدل MySQL و مدل MongoDB ممکن است ولی JOIN واقعی نیست و چند کوئری جدا اجرا می‌شود؛ مراقب N+1 باشید و از <code>with()</code> استفاده کنید. (۲) <code>_id</code> از نوع ObjectId است؛ مقایسه با رشته در کوئری‌های خام نیاز به تبدیل دارد (<code>new MongoDB\BSON\ObjectId($id)</code>). (۳) تراکنش فقط روی replica set کار می‌کند. (۴) Validation در سطح دیتابیس وجود ندارد مگر خودتان <code>$jsonSchema</code> تعریف کنید؛ FormRequest را جدی بگیرید.</p></div>
+
+    <div class="callout tip"><p>کاربرد رایج در پروژه‌های Laravel: داده‌ی اصلی تراکنشی (کاربر، پرداخت، سفارش) در MySQL/PostgreSQL، و داده‌ی حجیم/انعطاف‌پذیر (لاگ فعالیت، رویدادها، کاتالوگ با ویژگی‌های متغیر، نوتیفیکیشن‌ها) در MongoDB. این را <strong>Polyglot Persistence</strong> می‌نامند.</p></div>
+  </section>
+
+  <!-- ===================== QUESTIONS ===================== -->
+  <section class="lesson" id="questions" data-title="سوالات تشریحی">
+    <h2>سوالات تشریحی</h2>
+
+    <details class="qa" id="q-mongodb-1">
+      <summary>MongoDB را تعریف کنید و مدل سندی آن را با مدل رابطه‌ای مقایسه کنید.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> MongoDB یک پایگاه داده‌ی NoSQL سندمحور است که داده را در قالب اسناد BSON (JSON باینری نوع‌دار) درون Collectionها ذخیره می‌کند. هر سند می‌تواند شیء تودرتو و آرایه داشته باشد و اسناد یک Collection لازم نیست Schema یکسان داشته باشند.</p>
+        <p><strong>مقایسه با مدل رابطه‌ای:</strong></p>
+        <ul>
+          <li><strong>ساختار:</strong> RDBMS جدول/سطر/ستون با Schema سخت دارد؛ MongoDB Collection/Document با Schema انعطاف‌پذیر (و اعتبارسنجی اختیاری <code>$jsonSchema</code>).</li>
+          <li><strong>روابط:</strong> در RDBMS با نرمال‌سازی و FK و JOIN؛ در MongoDB با <strong>embedding</strong> (داده‌ی مرتبط داخل سند) یا <strong>referencing</strong> و <code>$lookup</code>.</li>
+          <li><strong>رویکرد طراحی:</strong> RDBMS «اول داده، بعد کوئری»؛ MongoDB «اول الگوی دسترسی، بعد Schema».</li>
+          <li><strong>تراکنش:</strong> RDBMS تراکنش چندجدولی را ارزان و بومی دارد؛ در MongoDB نوشتن تک‌سندی اتمیک است و تراکنش چندسندی (از 4.0) هزینه‌ی بیشتری دارد.</li>
+          <li><strong>مقیاس:</strong> MongoDB Sharding بومی برای مقیاس افقی دارد.</li>
+        </ul>
+        <p><strong>جمع‌بندی:</strong> مدل سندی برای داده‌ی سلسله‌مراتبی، Schema متغیر و حجم بالای خواندن/نوشتن موجودیت‌های مستقل مناسب است؛ مدل رابطه‌ای برای روابط پیچیده، یکپارچگی قوی بین موجودیت‌ها و گزارش‌گیری ad-hoc.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-2">
+      <summary>در چه شرایطی استفاده از MongoDB را توصیه نمی‌کنید؟ با مثال توضیح دهید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>سیستم‌های مالی و حسابداری:</strong> انتقال وجه، دفتر کل و موجودی انبار به تراکنش‌های متعدد چندموجودیتی و Constraintهای سخت نیاز دارند. RDBMS این را بومی، ارزان و با ابزارهای بالغ فراهم می‌کند.</li>
+          <li><strong>روابط پیچیده‌ی M:N با کوئری‌های ad-hoc:</strong> مثلاً ERP یا سیستم آموزشی با گزارش‌های متنوع که JOINهای زیادی لازم دارند. <code>$lookup</code> پرتکرار نشانه‌ی انتخاب اشتباه است.</li>
+          <li><strong>نیاز به گزارش‌گیری BI با SQL:</strong> ابزارها و تیم‌های تحلیل معمولاً SQL می‌خواهند.</li>
+          <li><strong>Schema پایدار و کاملاً رابطه‌ای:</strong> انعطاف Schema مزیتی ندارد و فقط Constraintهای دیتابیس (FK، CHECK) را از دست می‌دهید.</li>
+          <li><strong>حجم کوچک و تیم آشنا با SQL:</strong> پیچیدگی عملیاتی (replica set، طراحی بر اساس کوئری) توجیه ندارد.</li>
+        </ul>
+        <p><strong>نکته:</strong> «NoSQL سریع‌تر است» به‌تنهایی دلیل نیست. سرعت از طراحی درست بر اساس الگوی دسترسی و ایندکس می‌آید. در بسیاری از سیستم‌ها ترکیب این دو (Polyglot Persistence) بهترین پاسخ است: داده‌ی تراکنشی در PostgreSQL/MySQL و لاگ/رویداد/کاتالوگ متغیر در MongoDB.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-3">
+      <summary>Embedding و Referencing را مقایسه کنید. معیارهای انتخاب بین این دو چیست؟</summary>
+      <div class="answer">
+        <p><strong>Embedding:</strong> داده‌ی مرتبط داخل سند والد قرار می‌گیرد (مثلاً آدرس‌ها داخل کاربر). <strong>Referencing:</strong> داده در collection جدا و با شناسه به هم مرتبط می‌شوند (مثلاً <code>userId</code> در سفارش).</p>
+        <p><strong>معیارها:</strong></p>
+        <ul>
+          <li><strong>الگوی خواندن:</strong> اگر همیشه با هم خوانده می‌شوند → embed. اگر زیرداده مستقلاً کوئری می‌شود → reference.</li>
+          <li><strong>کاردینالیتی:</strong> one-to-few → embed؛ one-to-many → آرایه‌ی ref؛ one-to-squillions → ref در فرزند.</li>
+          <li><strong>رشد:</strong> آرایه‌ی بی‌حد (unbounded) را embed نکنید (سقف ۱۶MB و کندی).</li>
+          <li><strong>نرخ تغییر داده‌ی تکراری:</strong> اگر داده‌ی کپی‌شده زیاد عوض می‌شود، reference تا به‌روزرسانی در چند جا لازم نشود.</li>
+          <li><strong>اتمیک بودن:</strong> embed به‌روزرسانی اتمیک بدون تراکنش می‌دهد.</li>
+          <li><strong>چرخه‌ی حیات:</strong> اگر فرزند بدون والد معنا ندارد (آیتم‌های سفارش)، embed طبیعی است.</li>
+        </ul>
+        <pre><code class="language-javascript">// سفارش: آیتم‌ها embed (همیشه با سفارش خوانده می‌شوند، محدودند، snapshot قیمت)
+{ _id: 1, customerId: 42, items: [ { sku: "A1", price: 10, qty: 2 } ] }
+// کاربر ↔ سفارش‌ها: reference (بی‌حد و مستقل)</code></pre>
+        <p><strong>حالت میانی:</strong> الگوهای Extended Reference و Subset، یعنی کپی کردن بخش پرکاربرد و ارجاع به بقیه.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-4">
+      <summary>ObjectId چیست، از چه بخش‌هایی تشکیل شده و چه مزایا و محدودیت‌هایی دارد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> نوع پیش‌فرض <code>_id</code> در MongoDB؛ یک مقدار ۱۲ بایتی که driver در سمت client می‌سازد.</p>
+        <ul>
+          <li>۴ بایت: <strong>timestamp</strong> (ثانیه از Unix epoch)</li>
+          <li>۵ بایت: مقدار <strong>تصادفی</strong> یکتا برای هر ماشین/پروسس</li>
+          <li>۳ بایت: <strong>شمارنده‌ی</strong> افزایشی</li>
+        </ul>
+        <p><strong>مزایا:</strong></p>
+        <ul>
+          <li>تولید <strong>بدون هماهنگی مرکزی</strong> → مناسب سیستم توزیع‌شده و درج سریع (برخلاف auto-increment که نیاز به یک نقطه‌ی مرکزی دارد).</li>
+          <li>تقریباً مرتب بر اساس زمان؛ sort بر اساس <code>_id</code> ≈ ترتیب ایجاد، و زمان ایجاد قابل استخراج است.</li>
+          <li>فشرده‌تر از UUID رشته‌ای (۱۲ بایت در برابر ۳۶ کاراکتر).</li>
+        </ul>
+        <p><strong>محدودیت‌ها:</strong></p>
+        <ul>
+          <li>یکنواخت افزایشی → به‌عنوان ranged shard key باعث hot shard می‌شود.</li>
+          <li>دقت زمانی در حد ثانیه و ترتیب بین پروسس‌های مختلف در همان ثانیه تضمین نمی‌شود.</li>
+          <li>تا حدی قابل حدس است؛ نباید جای توکن امنیتی استفاده شود.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-5">
+      <summary>قاعده‌ی ESR در طراحی ایندکس ترکیبی چیست؟ برای کوئری زیر ایندکس مناسب طراحی کنید: <code>find({status: "paid", total: {$gt: 100}}).sort({createdAt: -1})</code></summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> ESR مخفف <strong>Equality → Sort → Range</strong> است؛ ترتیب پیشنهادی فیلدها در ایندکس ترکیبی.</p>
+        <ul>
+          <li><strong>Equality</strong> اول: شرط برابری ایندکس را به یک بازه‌ی پیوسته محدود می‌کند.</li>
+          <li><strong>Sort</strong> دوم: در آن بازه، کلیدها از قبل بر اساس فیلد sort مرتب‌اند؛ پس sort در حافظه حذف می‌شود.</li>
+          <li><strong>Range</strong> آخر: شرط بازه‌ای کلیدها را فیلتر می‌کند بدون اینکه ترتیب را بشکند.</li>
+        </ul>
+        <p><strong>پاسخ:</strong></p>
+        <pre><code class="language-javascript">db.orders.createIndex({ status: 1, createdAt: -1, total: 1 })</code></pre>
+        <p>اگر <code>{ status: 1, total: 1, createdAt: -1 }</code> بسازیم، اسناد با total بالاتر از ۱۰۰ در چند زیر‌بازه‌ی جدا پخش‌اند و خروجی بر اساس createdAt مرتب نیست؛ در explain یک stage <code>SORT</code> (در حافظه) می‌بینیم که با داده‌ی بزرگ کند است و محدودیت حافظه دارد.</p>
+        <p><strong>Trade-off:</strong> در ترتیب ESR ممکن است کلیدهای بیشتری بررسی شوند (range فیلتر نهایی است)، ولی معمولاً حذف sort در حافظه و امکان استفاده‌ی مؤثر از <code>limit</code> این را جبران می‌کند. همیشه با <code>explain("executionStats")</code> تأیید کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-6">
+      <summary>سناریو: یک صفحه‌ی لیست سفارش‌ها در production ناگهان کند شده است. مراحل عیب‌یابی شما در MongoDB چیست؟</summary>
+      <div class="answer">
+        <ol>
+          <li><strong>شناسایی کوئری:</strong> لاگ کوئری‌های کند (slow query log، پیش‌فرض بالای ۱۰۰ms) یا Profiler (<code>db.setProfilingLevel(1, {slowms: 100})</code>) و <code>db.currentOp()</code> برای کوئری‌های در حال اجرا. در Laravel هم می‌توان کوئری‌ها را لاگ کرد.</li>
+          <li><strong>تحلیل با explain:</strong> <code>.explain("executionStats")</code> و بررسی:
+            <ul>
+              <li>وجود <code>COLLSCAN</code> به جای <code>IXSCAN</code>؛</li>
+              <li>نسبت <code>totalDocsExamined</code> به <code>nReturned</code>؛</li>
+              <li>وجود stage <code>SORT</code> در حافظه.</li>
+            </ul>
+          </li>
+          <li><strong>رفع:</strong> ساخت/اصلاح ایندکس ترکیبی طبق ESR؛ حذف regex بدون anchor؛ جایگزینی <code>skip</code> بزرگ با keyset pagination؛ projection برای کاهش حجم؛ بررسی رشد ناگهانی اسناد (آرایه‌ی بی‌حد).</li>
+          <li><strong>بررسی منابع:</strong> آیا working set در RAM جا می‌شود؟ (cache eviction، page fault)؛ replication lag؛ تعداد اتصالات؛ ایندکسی که اخیراً حذف شده یا build در حال انجام.</li>
+          <li><strong>بررسی تغییرات اخیر:</strong> deploy جدید که شکل کوئری را عوض کرده (فیلد جدید در فیلتر، sort متفاوت)، یا رشد داده که plan cache را تغییر داده.</li>
+          <li><strong>تأیید:</strong> بعد از اصلاح دوباره explain و مانیتور latency (p95/p99).</li>
+        </ol>
+        <p><strong>نکته:</strong> ساخت ایندکس روی collection بزرگ در production بار ایجاد می‌کند؛ در زمان کم‌ترافیک یا به‌صورت rolling روی اعضای replica set انجام شود.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-7">
+      <summary>Aggregation Pipeline چیست؟ یک pipeline بنویسید که ۱۰ مشتری برتر از نظر مجموع خرید در ۳۰ روز گذشته را همراه با نام آن‌ها برگرداند.</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> چارچوب پردازش داده در MongoDB که اسناد را از دنباله‌ای از stageها عبور می‌دهد؛ هر stage خروجی قبلی را تبدیل می‌کند (فیلتر، گروه‌بندی، join، تغییر شکل). معادل ترکیب WHERE/GROUP BY/JOIN/ORDER BY در SQL است و روی سرور اجرا می‌شود.</p>
+        <pre><code class="language-javascript">const since = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+db.orders.aggregate([
+  { $match: { status: "paid", createdAt: { $gte: since } } },   // از ایندکس استفاده می‌کند
+  { $group: { _id: "$customerId", spent: { $sum: "$total" }, orders: { $sum: 1 } } },
+  { $sort: { spent: -1 } },
+  { $limit: 10 },                                                // قبل از lookup!
+  { $lookup: { from: "customers", localField: "_id", foreignField: "_id", as: "c" } },
+  { $unwind: "$c" },
+  { $project: { _id: 0, customerId: "$_id", name: "$c.name", spent: 1, orders: 1 } }
+])</code></pre>
+        <p><strong>نکات طراحی:</strong></p>
+        <ul>
+          <li><code>$match</code> در ابتدا تا از ایندکس <code>{ status: 1, createdAt: 1 }</code> استفاده و حجم داده کم شود.</li>
+          <li><code>$limit</code> <strong>قبل از</strong> <code>$lookup</code>، تا join فقط برای ۱۰ سند انجام شود، نه برای همه‌ی مشتریان.</li>
+          <li>اگر این گزارش پرتکرار است، الگوی <strong>Computed</strong> یا materialized view با <code>$merge</code> در یک job زمان‌بندی‌شده بهتر از اجرای هر بار است.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-8">
+      <summary>Replica Set را توضیح دهید. فرایند election چگونه است و چرا تعداد اعضا را فرد می‌گیرند؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> گروهی از نمونه‌های <code>mongod</code> با داده‌ی یکسان؛ یک <strong>primary</strong> که همه‌ی نوشتن‌ها را می‌پذیرد و چند <strong>secondary</strong> که با کپی و اعمال <strong>oplog</strong> هم‌گام می‌شوند. هدف: High Availability، افزونگی داده و امکان خواندن از secondary یا backup بدون فشار به primary.</p>
+        <p><strong>Election:</strong></p>
+        <ul>
+          <li>اعضا هر ۲ ثانیه heartbeat می‌فرستند.</li>
+          <li>اگر primary برای مدت <code>electionTimeoutMillis</code> (پیش‌فرض ۱۰ ثانیه) پاسخ ندهد، یک secondary واجد شرایط خود را کاندید می‌کند.</li>
+          <li>کاندیدی که رأی <strong>اکثریت</strong> اعضای رأی‌دهنده را بگیرد primary می‌شود؛ oplog به‌روزتر و priority بالاتر مؤثرند.</li>
+          <li>در این فاصله نوشتن ممکن نیست؛ retryable writes در driver کمک می‌کند.</li>
+        </ul>
+        <p><strong>چرا فرد؟</strong> شرط اکثریت از split-brain جلوگیری می‌کند. با ۳ عضو اکثریت ۲ است و از کار افتادن ۱ عضو قابل تحمل است؛ با ۴ عضو اکثریت ۳ است و باز فقط ۱ عضو قابل تحمل است. پس عضو چهارم تحمل خطا را بالا نمی‌برد و فقط هزینه دارد. اگر بخش اقلیت partition شود، primary آن بخش خودش step down می‌کند.</p>
+        <p><strong>نکته:</strong> اگر عضو زوج لازم است (مثلاً به دلیل دیتاسنتر)، یکی را <code>votes: 0</code> می‌کنند یا (با احتیاط) arbiter اضافه می‌کنند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-9">
+      <summary>Write Concern و Read Concern را تعریف کنید. چرا <code>w: "majority"</code> مهم است؟</summary>
+      <div class="answer">
+        <p><strong>Write Concern:</strong> سطح تأییدی که driver قبل از اعلام موفقیت نوشتن انتظار دارد: <code>w: 0</code> (بدون تأیید)، <code>w: 1</code> (فقط primary)، <code>w: "majority"</code> (اکثریت اعضا)، به همراه <code>j: true</code> (ثبت در journal) و <code>wtimeout</code>.</p>
+        <p><strong>Read Concern:</strong> سطح سازگاری/پایداری داده‌ی خوانده‌شده: <code>local</code> (آخرین داده‌ی همان عضو، شاید rollback شود)، <code>majority</code> (فقط داده‌ی تأییدشده توسط اکثریت)، <code>linearizable</code> (قوی‌ترین، فقط primary)، <code>snapshot</code> (برای تراکنش)، <code>available</code>.</p>
+        <p><strong>چرا majority؟</strong> با <code>w: 1</code> اگر primary بعد از تأیید نوشتن و قبل از replicate شدن از کار بیفتد، secondary جدید آن نوشته را ندارد و وقتی primary قدیمی برگردد آن نوشته <strong>rollback</strong> می‌شود؛ یعنی کاربر «موفق» دیده ولی داده از دست رفته. با <code>w: "majority"</code> نوشته روی اکثریت است و هر primary جدید حتماً آن را دارد.</p>
+        <p><strong>Trade-off:</strong> majority تأخیر نوشتن را به اندازه‌ی رفت‌وبرگشت تا secondaryها بالا می‌برد. برای داده‌ی حیاتی (پرداخت) majority، برای داده‌ی کم‌اهمیت پرحجم (لاگ کلیک) شاید <code>w: 1</code> کافی باشد. در نسخه‌های جدید (از 5.0) majority پیش‌فرض ضمنی اغلب پیکربندی‌هاست.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-10">
+      <summary>سناریو: کاربر پروفایلش را ویرایش می‌کند، ولی بلافاصله بعد از redirect، اطلاعات قدیمی را می‌بیند. تنظیمات: <code>readPreference=secondaryPreferred</code>. علت و راه‌حل چیست؟</summary>
+      <div class="answer">
+        <p><strong>علت:</strong> نوشتن روی primary انجام شده، ولی خواندن بعدی از یک secondary انجام می‌شود که هنوز oplog را اعمال نکرده است (<strong>replication lag</strong>). این نقض تضمین <strong>read-your-own-writes</strong> است؛ مدل eventual consistency.</p>
+        <p><strong>راه‌حل‌ها:</strong></p>
+        <ul>
+          <li><strong>خواندن از primary</strong> برای داده‌هایی که کاربر خودش تغییر داده است (ساده‌ترین؛ read preference پیش‌فرض primary است و فقط برای کوئری‌های گزارشی secondary انتخاب شود).</li>
+          <li><strong>Causally consistent session</strong> با <code>readConcern: "majority"</code> و <code>writeConcern: "majority"</code>؛ driver تضمین می‌کند خواندن بعدی در همان session حداقل نوشته‌ی قبلی را ببیند.</li>
+          <li>بعد از ویرایش، داده‌ی جدید را مستقیماً از نتیجه‌ی <code>findOneAndUpdate</code> با <code>returnDocument: "after"</code> نمایش دهید.</li>
+          <li>اگر cache (مثلاً Redis) دارید، آن را در زمان نوشتن invalidate کنید؛ گاهی مقصر اصلی cache است نه replication.</li>
+        </ul>
+        <p><strong>نکته:</strong> خواندن از secondary برای افزایش ظرفیت خواندن راه‌حل اصلی نیست، چون secondaryها همان بار نوشتن را هم دارند؛ برای مقیاس، ایندکس، cache یا sharding مناسب‌ترند.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-11">
+      <summary>معیارهای انتخاب Shard Key را توضیح دهید. چرا <code>createdAt</code> یا ObjectId انتخاب بدی برای ranged shard key است؟</summary>
+      <div class="answer">
+        <p><strong>Shard key</strong> فیلد(هایی) است که تعیین می‌کند هر سند در کدام chunk و در نتیجه کدام shard قرار بگیرد.</p>
+        <p><strong>معیارها:</strong></p>
+        <ul>
+          <li><strong>Cardinality بالا:</strong> تعداد مقادیر متمایز زیاد تا داده قابل تقسیم به chunkهای زیاد باشد.</li>
+          <li><strong>Frequency پایین:</strong> هیچ مقداری بخش عمده‌ی داده را نداشته باشد (وگرنه jumbo chunk).</li>
+          <li><strong>عدم یکنواختی افزایشی:</strong> تا نوشتن‌ها پخش شوند.</li>
+          <li><strong>پشتیبانی از کوئری‌ها:</strong> کوئری‌های پرتکرار شامل shard key باشند تا mongos آن‌ها را فقط به shard مربوطه بفرستد (targeted)، نه به همه (scatter-gather).</li>
+        </ul>
+        <p><strong>مشکل createdAt/ObjectId:</strong> مقادیر همیشه افزایشی‌اند، پس هر سند جدید در بازه‌ی <code>[آخرین مقدار, maxKey)</code> قرار می‌گیرد، یعنی آخرین chunk روی یک shard. همه‌ی نوشتن‌ها به همان shard می‌رود (<strong>hot shard</strong>) و balancer مدام باید chunk جابه‌جا کند؛ مقیاس افقی نوشتن عملاً از بین می‌رود.</p>
+        <p><strong>راه‌حل‌ها:</strong> <strong>hashed shard key</strong> (<code>{ _id: "hashed" }</code>) برای پخش یکنواخت (به قیمت scatter شدن کوئری‌های بازه‌ای)، یا کلید ترکیبی مثل <code>{ customerId: 1, createdAt: 1 }</code> که هم پخش‌کننده است و هم کوئری «سفارش‌های یک مشتری در بازه‌ی زمانی» را targeted نگه می‌دارد.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-12">
+      <summary>کد زیر برای ذخیره‌ی کامنت‌های یک پست استفاده شده است. چه مشکلی دارد و چگونه اصلاحش می‌کنید؟</summary>
+      <div class="answer">
+        <pre><code class="language-javascript">// هر کامنت جدید:
+db.posts.updateOne(
+  { _id: postId },
+  { $push: { comments: { userId, userName, text, at: new Date() } } }
+)
+// نمایش پست: db.posts.findOne({ _id: postId })</code></pre>
+        <p><strong>مشکلات:</strong></p>
+        <ul>
+          <li><strong>Unbounded array:</strong> پست پربازدید ممکن است ده‌ها هزار کامنت داشته باشد؛ سند به سقف <strong>۱۶MB</strong> نزدیک و در نهایت نوشتن رد می‌شود.</li>
+          <li>هر بار خواندن پست، <strong>همه‌ی کامنت‌ها</strong> منتقل می‌شوند، در حالی که معمولاً ۱۰ تای اول نمایش داده می‌شود. مصرف RAM و شبکه بالا می‌رود.</li>
+          <li>هر <code>$push</code> روی سند بزرگ هزینه‌ی نوشتن و replication بیشتری دارد؛ نوشتن‌های هم‌زمان روی یک سند داغ با هم رقابت می‌کنند.</li>
+          <li><code>userName</code> کپی شده؛ اگر کاربر نامش را عوض کند، کامنت‌های قدیمی ناهماهنگ‌اند (اگر عمدی نیست باید استراتژی به‌روزرسانی داشت).</li>
+        </ul>
+        <p><strong>اصلاح:</strong> collection جدای <code>comments</code> با reference به پست (one-to-squillions) و ایندکس، به‌علاوه‌ی الگوی <strong>Subset</strong> برای نمایش سریع:</p>
+        <pre><code class="language-javascript">db.comments.insertOne({ postId, userId, userName, text, at: new Date() })
+db.comments.createIndex({ postId: 1, at: -1 })
+db.posts.updateOne({ _id: postId }, {
+  $push: { recentComments: { $each: [ { userId, userName, text, at: new Date() } ], $slice: -5 } },
+  $inc:  { commentCount: 1 }       // Computed pattern
+})</code></pre>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-13">
+      <summary>تراکنش‌های چندسندی در MongoDB چگونه کار می‌کنند و چه زمانی باید از آن‌ها استفاده کرد؟</summary>
+      <div class="answer">
+        <p><strong>تعریف:</strong> از نسخه‌ی 4.0 (replica set) و 4.2 (sharded cluster)، MongoDB تراکنش ACID روی چند سند و چند collection را پشتیبانی می‌کند. تراکنش در یک <strong>session</strong> اجرا می‌شود، isolation از نوع <strong>snapshot</strong> دارد و تا commit تغییرات برای دیگران قابل مشاهده نیست.</p>
+        <p><strong>نکات فنی:</strong></p>
+        <ul>
+          <li>نیازمند replica set است (حتی تک‌عضوی برای توسعه).</li>
+          <li>محدودیت زمانی پیش‌فرض ۶۰ ثانیه؛ باید کوتاه باشد.</li>
+          <li>در write conflict خطای <code>TransientTransactionError</code> می‌آید؛ از <code>withTransaction</code> استفاده کنید که retry را خودکار انجام می‌دهد. منطق داخل تراکنش باید idempotent یا قابل تکرار باشد.</li>
+          <li>هزینه‌ی کارایی بیشتر از عملیات تک‌سندی دارد (lock، نگه‌داری snapshot، هماهنگی در sharded).</li>
+        </ul>
+        <p><strong>چه زمانی؟</strong> وقتی یک عملیات تجاری واقعاً باید چند سند مستقل را هم‌زمان تغییر دهد و نمی‌توان با embedding آن را تک‌سندی کرد؛ مثل انتقال وجه بین دو حساب، یا ثبت سفارش و کم کردن موجودی در collection دیگر.</p>
+        <p><strong>چه زمانی نه؟</strong> وقتی با طراحی Schema می‌شود نیاز را حذف کرد. مثلاً به‌روزرسانی سفارش و آیتم‌هایش (embed) یا کاهش موجودی با شرط (<code>updateOne({stock: {$gte: n}}, {$inc: {stock: -n}})</code>) اتمیک است و تراکنش لازم ندارد. اگر بیشتر عملیات‌ها تراکنش چندسندی می‌خواهند، RDBMS احتمالاً مناسب‌تر است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-14">
+      <summary>سناریو: برای ذخیره‌ی کدهای OTP که بعد از ۲ دقیقه منقضی می‌شوند و جلوگیری از ثبت دوباره‌ی یک سفارش (idempotency key) چه ایندکس‌هایی طراحی می‌کنید؟</summary>
+      <div class="answer">
+        <p><strong>OTP با TTL index:</strong></p>
+        <pre><code class="language-javascript">db.otps.createIndex({ createdAt: 1 }, { expireAfterSeconds: 120 })
+db.otps.createIndex({ phone: 1 })
+db.otps.insertOne({ phone: "0912...", codeHash: "...", createdAt: new Date(), attempts: 0 })</code></pre>
+        <ul>
+          <li>TTL index روی فیلد Date؛ thread پس‌زمینه تقریباً هر ۶۰ ثانیه اسناد منقضی را حذف می‌کند. پس ممکن است سند تا حدود یک دقیقه بیشتر بماند؛ برای امنیت، در کد هم شرط <code>createdAt &gt; now - 120s</code> را چک کنید.</li>
+          <li>یک روش دیگر: فیلد <code>expireAt</code> با <code>expireAfterSeconds: 0</code> تا زمان انقضا برای هر سند جداگانه تنظیم شود.</li>
+          <li>کد را hash شده ذخیره کنید و تعداد تلاش را محدود کنید.</li>
+        </ul>
+        <p><strong>Idempotency key با unique index:</strong></p>
+        <pre><code class="language-javascript">db.orders.createIndex({ idempotencyKey: 1 }, { unique: true })</code></pre>
+        <ul>
+          <li>کلاینت برای هر تلاش ثبت سفارش یک کلید یکتا می‌فرستد؛ درخواست تکراری (retry شبکه، دابل کلیک) با خطای <code>E11000 duplicate key</code> روبه‌رو می‌شود و ما سفارش موجود را برمی‌گردانیم.</li>
+          <li>این در برابر race condition امن است، چون یکتایی در سطح دیتابیس تضمین می‌شود، نه با «اول find بعد insert» در برنامه.</li>
+          <li>اگر می‌خواهید کلیدها بعد از مدتی پاک شوند، collection جدای idempotency با TTL بسازید.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-15">
+      <summary>کوئری زیر قرار است محصولاتی را برگرداند که «در انبار تهران موجودی بیش از ۱۰ دارند»، ولی نتایج اشتباه است. مشکل چیست؟</summary>
+      <div class="answer">
+        <pre><code class="language-javascript">// سند: { name: "X", stock: [ { city: "Tehran", qty: 2 }, { city: "Tabriz", qty: 50 } ] }
+db.products.find({ "stock.city": "Tehran", "stock.qty": { $gt: 10 } })</code></pre>
+        <p><strong>مشکل:</strong> وقتی روی آرایه‌ای از اسناد با dot notation چند شرط می‌گذاریم، MongoDB هر شرط را مستقل روی <strong>کل آرایه</strong> می‌سنجد: کافی است یک عنصر city=Tehran داشته باشد و <em>عنصری دیگر</em> qty&gt;10. پس محصول X (تهران ۲، تبریز ۵۰) به‌اشتباه برمی‌گردد.</p>
+        <p><strong>اصلاح:</strong> با <code>$elemMatch</code> تضمین می‌کنیم هر دو شرط روی <strong>یک عنصر</strong> برقرار باشند:</p>
+        <pre><code class="language-javascript">db.products.find({ stock: { $elemMatch: { city: "Tehran", qty: { $gt: 10 } } } })
+db.products.createIndex({ "stock.city": 1, "stock.qty": 1 })   // multikey compound</code></pre>
+        <p><strong>نکته‌ی تکمیلی:</strong> برای برگرداندن فقط عنصر مطابق در خروجی می‌توان از projection <code>{ "stock.$": 1 }</code> یا <code>$filter</code> در aggregation استفاده کرد. و <code>$elemMatch</code> برای شرط تکی لازم نیست؛ <code>{ "stock.city": "Tehran" }</code> کافی است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-16">
+      <summary>الگوهای Bucket، Computed و Extended Reference را با یک مثال برای هر کدام توضیح دهید.</summary>
+      <div class="answer">
+        <ul>
+          <li><strong>Bucket:</strong> گروه‌بندی چند رویداد کوچک در یک سند بر اساس بازه‌ی زمانی یا تعداد. مثال: خوانش‌های دمای هر سنسور در هر ساعت در یک سند با آرایه‌ی <code>readings</code> و فیلدهای <code>count</code> و <code>sum</code>. مزیت: اسناد و کلیدهای ایندکس بسیار کمتر، و آمار پیش‌محاسبه. (Time Series Collection در 5.0+ همین را بومی انجام می‌دهد.)</li>
+          <li><strong>Computed:</strong> محاسبه‌ی مقادیر پرتکرار در زمان نوشتن به جای زمان خواندن. مثال: <code>ratingCount</code> و <code>ratingSum</code> در سند محصول که با هر نظر جدید <code>$inc</code> می‌شوند؛ صفحه‌ی محصول بدون aggregate روی هزاران نظر میانگین را نشان می‌دهد. مناسب وقتی read ≫ write.</li>
+          <li><strong>Extended Reference:</strong> علاوه بر شناسه، فیلدهای پرکاربرد سند مرجع هم کپی می‌شوند. مثال: سفارش شامل <code>customer: {_id, name, phone}</code> و آدرس ارسال است؛ نمایش سفارش بدون <code>$lookup</code> انجام می‌شود و آدرس، snapshot زمان سفارش باقی می‌ماند.</li>
+        </ul>
+        <p><strong>Trade-off مشترک:</strong> همه‌ی این الگوها خواندن را ارزان و نوشتن را کمی پیچیده‌تر می‌کنند و ممکن است داده‌ی تکراری یا تقریبی (eventually consistent) ایجاد کنند. پس فقط فیلدهای کم‌تغییر را کپی کنید و استراتژی همگام‌سازی (به‌روزرسانی دسته‌ای، job پس‌زمینه، Change Streams) را مشخص کنید.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-17">
+      <summary>MongoDB را از منظر قضیه‌ی CAP تحلیل کنید.</summary>
+      <div class="answer">
+        <p><strong>CAP:</strong> در یک سیستم توزیع‌شده، هنگام partition شبکه نمی‌توان هم‌زمان Consistency (همه آخرین داده را ببینند) و Availability (همه‌ی درخواست‌ها پاسخ موفق بگیرند) را داشت؛ تحمل partition در سیستم توزیع‌شده اجباری است، پس انتخاب بین C و A است.</p>
+        <p><strong>MongoDB:</strong></p>
+        <ul>
+          <li>با پیکربندی پیش‌فرض (single primary، خواندن از primary، <code>w: "majority"</code>) رفتار <strong>CP</strong> دارد: در partition، بخش اقلیت primary ندارد و نوشتن را رد می‌کند؛ در زمان election هم نوشتن موقتاً ممکن نیست.</li>
+          <li>سازگاری <strong>قابل تنظیم (tunable)</strong> است: با <code>readPreference: secondary/nearest</code> و <code>readConcern: local</code> خواندن در دسترس‌تر ولی ممکن است stale باشد (رفتار نزدیک به AP برای خواندن).</li>
+          <li>از دید <strong>PACELC</strong>: در حالت عادی هم بین latency و consistency انتخاب داریم؛ <code>w: 1</code> سریع‌تر ولی در failover ممکن است داده rollback شود.</li>
+        </ul>
+        <p><strong>جمع‌بندی:</strong> برچسب CP یا AP برای کل محصول ساده‌سازی است؛ پاسخ دقیق این است که MongoDB به‌طور پیش‌فرض consistency را ترجیح می‌دهد و با write/read concern و read preference برای هر عملیات قابل تنظیم است.</p>
+      </div>
+    </details>
+
+    <details class="qa" id="q-mongodb-18">
+      <summary>چگونه در یک پروژه‌ی Laravel از MongoDB استفاده می‌کنید؟ نحوه‌ی تعریف مدل و یک رابطه‌ی embed را توضیح دهید.</summary>
+      <div class="answer">
+        <ol>
+          <li>نصب افزونه‌ی PHP <code>mongodb</code> و پکیج رسمی <code>composer require mongodb/laravel-mongodb</code>.</li>
+          <li>تعریف connection با <code>'driver' =&gt; 'mongodb'</code>، <code>dsn</code> و <code>database</code> در <code>config/database.php</code>.</li>
+          <li>مدل‌ها از <code>MongoDB\Laravel\Eloquent\Model</code> ارث می‌برند.</li>
+        </ol>
+        <pre><code class="language-php">&lt;?php
+use MongoDB\Laravel\Eloquent\Model;
+
+class Order extends Model
+{
+    protected $connection = 'mongodb';
+    protected $table = 'orders';
+    protected $fillable = ['customer_id', 'status', 'total'];
+
+    public function items()
+    {
+        return $this-&gt;embedsMany(OrderItem::class);   // آرایه‌ی items داخل سند سفارش
+    }
+}
+
+$order = Order::create(['customer_id' =&gt; 42, 'status' =&gt; 'pending', 'total' =&gt; 0]);
+$order-&gt;items()-&gt;create(['sku' =&gt; 'A12', 'price' =&gt; 1200, 'qty' =&gt; 1]);
+$paid = Order::where('status', 'paid')-&gt;where('total', '&gt;', 100)-&gt;get();</code></pre>
+        <p><strong>نکات:</strong> Query Builder و Eloquent آشنا کار می‌کنند و به MQL ترجمه می‌شوند؛ برای aggregation پیچیده از <code>Model::raw()</code> استفاده می‌شود؛ روابط <code>hasMany/belongsTo</code> با reference و <code>embedsOne/embedsMany</code> با embedding پیاده می‌شوند؛ تراکنش با <code>DB::connection('mongodb')-&gt;transaction()</code> و نیازمند replica set است؛ ایندکس‌ها را در migration تعریف کنید. Validation دیتابیسی ندارید، پس FormRequest و در صورت نیاز <code>$jsonSchema</code> لازم است.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ===================== CHEATSHEET ===================== -->
+  <section class="lesson" id="cheatsheet" data-title="خلاصه برای مرور سریع">
+    <h2>خلاصه برای مرور سریع</h2>
+    <div class="cheatsheet">
+      <h3>مبانی</h3>
+      <ul>
+        <li>Document store؛ ذخیره به‌صورت <strong>BSON</strong> (باینری، نوع‌دار: ObjectId، Date، Decimal128، Int64).</li>
+        <li>Database → Collection → Document → Field. ساخت تنبل با اولین insert.</li>
+        <li><code>_id</code> اجباری، یکتا، ایندکس خودکار، تغییرناپذیر.</li>
+        <li>ObjectId = ۴ بایت زمان + ۵ بایت تصادفی + ۳ بایت شمارنده؛ تقریباً مرتب زمانی.</li>
+        <li>حداکثر اندازه‌ی سند <strong>۱۶MB</strong>، عمق ۱۰۰؛ فایل بزرگ: GridFS یا S3.</li>
+        <li>نوشتن روی یک سند همیشه اتمیک است.</li>
+      </ul>
+      <h3>CRUD</h3>
+      <ul>
+        <li><code>insertOne/insertMany</code> (<code>ordered: false</code>)</li>
+        <li><code>find(filter, projection).sort().skip().limit()</code></li>
+        <li><code>updateOne/updateMany</code> با <code>$set $unset $inc $push $addToSet $pull</code></li>
+        <li><code>upsert: true</code> + <code>$setOnInsert</code>؛ هم‌زمانی → unique index.</li>
+        <li><code>replaceOne</code> = جایگزینی کامل؛ <code>findOneAndUpdate</code> + <code>returnDocument: "after"</code>.</li>
+        <li><code>$</code> / <code>$[]</code> / <code>$[x]</code> + <code>arrayFilters</code> برای عناصر آرایه.</li>
+        <li><code>$push</code> + <code>$each</code> + <code>$slice</code> = آرایه‌ی با سقف.</li>
+      </ul>
+      <h3>کوئری</h3>
+      <ul>
+        <li>چند شرط = AND ضمنی؛ <code>$or</code> صریح.</li>
+        <li>آرایه‌ی اسناد با چند شرط روی یک عنصر → <code>$elemMatch</code>.</li>
+        <li><code>{f: null}</code> = null یا ناموجود؛ <code>$exists: false</code> = فقط ناموجود.</li>
+        <li>regex فقط با <code>^</code> و بدون <code>i</code> از ایندکس بهره می‌برد.</li>
+        <li>صفحه‌بندی عمیق: keyset (<code>_id &gt; last</code>) نه skip.</li>
+        <li>NoSQL injection: نوع ورودی را به string اجبار کنید.</li>
+      </ul>
+      <h3>ایندکس</h3>
+      <ul>
+        <li>انواع: single، compound، multikey، text (یکی)، TTL، unique، partial، sparse، hashed، wildcard.</li>
+        <li>قاعده‌ی prefix در compound.</li>
+        <li><strong>ESR:</strong> Equality → Sort → Range.</li>
+        <li>Covered query: همه‌ی فیلدها در ایندکس، <code>_id: 0</code>.</li>
+        <li>explain: <code>COLLSCAN</code> بد، <code>IXSCAN</code> خوب، <code>SORT</code> در حافظه = هشدار؛ keys/docs examined ≈ nReturned.</li>
+        <li>TTL حدوداً هر ۶۰ ثانیه حذف می‌کند.</li>
+      </ul>
+      <h3>Aggregation</h3>
+      <ul>
+        <li><code>$match</code> و <code>$sort</code> اول (ایندکس)؛ <code>$project</code> زود.</li>
+        <li><code>$group</code> + <code>$sum/$avg/$push/$addToSet</code>.</li>
+        <li><code>$unwind</code> آرایه را پخش می‌کند.</li>
+        <li><code>$lookup</code> = LEFT JOIN؛ ایندکس روی foreignField؛ <code>$limit</code> قبلش.</li>
+        <li><code>$facet</code> = چند pipeline روی یک ورودی (داده + شمارش + فیلترها).</li>
+        <li>حافظه‌ی هر stage ۱۰۰MB → <code>allowDiskUse</code>.</li>
+        <li><code>$merge/$out</code> برای materialized view.</li>
+      </ul>
+      <h3>Schema</h3>
+      <ul>
+        <li>«آنچه با هم خوانده می‌شود، با هم ذخیره شود».</li>
+        <li>One-to-few → embed؛ one-to-many → آرایه‌ی ref؛ one-to-squillions → ref در فرزند.</li>
+        <li>Anti-pattern: آرایه‌ی بی‌حد، <code>$lookup</code> زیاد، collection‌های بیش از حد.</li>
+        <li>الگوها: Bucket، Computed، Subset، Extended Reference، Outlier، Attribute، Schema Versioning.</li>
+      </ul>
+      <h3>Replica Set</h3>
+      <ul>
+        <li>1 primary + secondaryها؛ همگام‌سازی async با oplog.</li>
+        <li>Election با اکثریت؛ timeout پیش‌فرض ۱۰s؛ اعضای فرد (۳ یا ۵)؛ حداکثر ۷ رأی‌دهنده.</li>
+        <li>Write concern: <code>0</code>، <code>1</code>، <code>majority</code>، <code>j: true</code>.</li>
+        <li>Read concern: local، available، majority، linearizable، snapshot.</li>
+        <li>Read pref: primary (پیش‌فرض)، primaryPreferred، secondary، secondaryPreferred، nearest.</li>
+        <li>secondary = خطر داده‌ی stale؛ causal session برای read-your-writes.</li>
+      </ul>
+      <h3>Sharding</h3>
+      <ul>
+        <li>mongos (router) + config servers + shards (هر کدام RS).</li>
+        <li>Chunk = بازه‌ی shard key؛ balancer توزیع را متعادل می‌کند.</li>
+        <li>Ranged: کوئری بازه‌ای targeted، خطر hot shard. Hashed: پخش یکنواخت، بازه scatter-gather.</li>
+        <li>کلید خوب: cardinality بالا، frequency پایین، غیرافزایشی، در کوئری‌ها حاضر.</li>
+      </ul>
+      <h3>تراکنش و CAP</h3>
+      <ul>
+        <li>چندسندی: 4.0 (RS)، 4.2 (sharded)؛ snapshot؛ ۶۰ ثانیه؛ <code>withTransaction</code> + retry.</li>
+        <li>اول با طراحی Schema نیاز به تراکنش را حذف کنید.</li>
+        <li>CAP: پیش‌فرض CP؛ tunable با read/write concern.</li>
+      </ul>
+      <h3>Laravel</h3>
+      <ul>
+        <li><code>ext-mongodb</code> + <code>mongodb/laravel-mongodb</code>.</li>
+        <li><code>'driver' =&gt; 'mongodb'</code>، مدل از <code>MongoDB\Laravel\Eloquent\Model</code>.</li>
+        <li><code>embedsMany/embedsOne</code>، <code>hasMany/belongsTo</code>، <code>push/pull</code>، <code>raw()</code> برای aggregate.</li>
+        <li>Polyglot: تراکنشی در SQL، لاگ/کاتالوگ در Mongo.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+<script src="../assets/js/manifest.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>
